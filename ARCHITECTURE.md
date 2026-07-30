@@ -34,6 +34,8 @@ CLI + eventuelt enkel web/UI i starten. Jarvis-følelsen kommer senere via stemm
 - Implementer et minimalt memory-system (f.eks. SQLite + embeddings)
 - Få til å bytte modell midt i en samtale uten å miste kontekst
 
+Aggressiv kontekst komprimering ER ekstremt viktig. Kan se på å lage effektive koblinger så systemet vet hvor det skal finne info uten å lese alt. Nødvendighet pga strenge begrensninger. 
+
 ## Milestone 1 - Token-effektivitet + evaluering
 - Bygg kontekst-komprimering og retrieval
 - Lag 8–12 faste evalueringsoppgaver (kode, research, resonnering, dine egne domener)
