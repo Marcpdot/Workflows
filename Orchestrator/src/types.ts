@@ -1,0 +1,67 @@
+/** Shared types for the orchestrator. */
+
+export type ModelChoice = "local" | "frontier";
+
+export type TaskType =
+  | "summarize"
+  | "tool"
+  | "code"
+  | "research"
+  | "reasoning"
+  | "general";
+
+export type Complexity = "low" | "medium" | "high";
+
+export interface RoutingDecision {
+  model: ModelChoice;
+  reason: string;
+  taskType: TaskType;
+  complexity: Complexity;
+  localModel?: string;
+  frontierModel?: string;
+}
+
+export interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+export interface ModelRequest {
+  messages: ChatMessage[];
+  model?: string;
+  temperature?: number;
+}
+
+export interface ModelResponse {
+  content: string;
+  model: string;
+  provider: ModelChoice;
+  usage?: {
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
+  };
+}
+
+/** Pluggable model client interface. */
+export interface ModelClient {
+  readonly provider: ModelChoice;
+  complete(request: ModelRequest): Promise<ModelResponse>;
+}
+
+export interface OrchestratorConfig {
+  ollamaBin: string;
+  ollamaModel: string;
+  xaiApiKey: string;
+  xaiBaseUrl: string;
+  grokModel: string;
+  systemPrompt: string;
+}
+
+export interface OrchestratorResult {
+  reply: string;
+  routing: RoutingDecision;
+  model: string;
+  provider: ModelChoice;
+  usage?: ModelResponse["usage"];
+}

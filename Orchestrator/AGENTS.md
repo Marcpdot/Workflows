@@ -11,8 +11,8 @@ Bygg en minimal, modulær orchestrator i TypeScript som kan:
 ## Teknologi
 - TypeScript
 - Node.js
-- Ollama (lokal)
-- Minst én frontier-provider (OpenAI-kompatibel eller Anthropic)
+- Ollama CLI (lokal) — `ollama run <model> <prompt>`
+- Frontier: xAI Grok (OpenAI-kompatibel Chat Completions API)
 
 ## Filer som skal lages
 - `src/router.ts`          → routing-logikk
