@@ -26,11 +26,15 @@ Requires:
 ## Usage
 
 ```bash
-# One-shot
+# One-shot (persists history under session "default")
 npm run dev -- "Oppsummer denne teksten: ..."
+npm run dev -- --session demo "Husk at navnet mitt er Ada"
+npm run dev -- --session demo "Hva heter jeg?"
 npm run dev -- --route-only "Design a distributed cache"
 npm run dev -- --local "Skriv en TypeScript helper"
 npm run dev -- --frontier "Reason step by step about ..."
+npm run dev -- --no-memory "Stateless one-shot"
+npm run dev -- --clear-session --session demo
 
 # Interactive REPL
 npm run dev
@@ -43,6 +47,22 @@ npm run build
 npm start -- "hello"
 ```
 
+## Memory (Milestone 0)
+
+SQLite-backed short-term chat history per `sessionId` (survives restarts). No embeddings yet.
+
+```ts
+import { createMemory } from "./memory/index.js";
+
+const memory = createMemory({ dbPath: "./data/memory.db" });
+const history = await memory.getHistory("default", 20);
+const result = await orch.handle(prompt, { history });
+await memory.add("default", { role: "user", content: prompt });
+await memory.add("default", { role: "assistant", content: result.reply });
+```
+
+Env: `SESSION_ID`, `MEMORY_DB_PATH` (default `./data/memory.db`), `MEMORY_HISTORY_LIMIT`.
+
 ## Layout
 
 | File | Role |
@@ -50,6 +70,7 @@ npm start -- "hello"
 | `src/router.ts` | Task analysis + routing rules |
 | `src/models/local.ts` | Ollama CLI client (`ollama run`) |
 | `src/models/frontier.ts` | xAI Grok client (chat completions) |
+| `src/memory/` | SQLite session history |
 | `src/orchestrator.ts` | Wire routing + models |
 | `src/types.ts` | Shared types |
 | `src/index.ts` | CLI entry |
@@ -59,3 +80,4 @@ npm start -- "hello"
 - low / summarize / tool → local  
 - medium code → local  
 - high / research / reasoning → frontier (Grok)  
+

@@ -3,6 +3,7 @@
  *
  * Usage:
  *   npx tsx src/index.ts "your prompt"
+ *   npx tsx src/index.ts --session my-chat "continue conversation"
  *   npx tsx src/index.ts --route-only "your prompt"
  *   npx tsx src/index.ts --local "force local"
  *   npx tsx src/index.ts --frontier "force grok"
@@ -14,6 +15,7 @@ import { resolve } from "node:path";
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { Orchestrator, loadConfigFromEnv } from "./orchestrator.js";
+import { createMemory, type Memory } from "./memory/index.js";
 import type { ModelChoice } from "./types.js";
 
 function loadDotEnv(filePath = resolve(process.cwd(), ".env")): void {
@@ -49,13 +51,24 @@ Options:
   --route-only, -r   Only analyze + route (no model call)
   --local, -l        Force local (Ollama CLI)
   --frontier, -f     Force frontier (Grok)
+  --session, -s ID   Conversation session id (default: env SESSION_ID or "default")
+  --no-memory        Do not load/save history for this run
+  --clear-session    Clear stored history for the session and exit
   --json             Print full result as JSON
   --help, -h         Show this help
+
+REPL commands:
+  /local ...         Force local for one turn
+  /frontier ...      Force frontier for one turn
+  /route ...         Route-only for one turn
+  /clear             Clear current session history
+  /session ID        Switch session id
 
 Env (see .env.example):
   OLLAMA_MODEL, OLLAMA_BIN
   XAI_API_KEY, XAI_BASE_URL, GROK_MODEL
   SYSTEM_PROMPT
+  SESSION_ID, MEMORY_DB_PATH, MEMORY_HISTORY_LIMIT
 `);
 }
 
@@ -65,6 +78,9 @@ interface CliArgs {
   forceModel?: ModelChoice;
   json: boolean;
   help: boolean;
+  sessionId: string;
+  useMemory: boolean;
+  clearSession: boolean;
 }
 
 function parseArgs(argv: string[]): CliArgs {
@@ -72,9 +88,14 @@ function parseArgs(argv: string[]): CliArgs {
   let forceModel: ModelChoice | undefined;
   let json = false;
   let help = false;
+  let useMemory = true;
+  let clearSession = false;
+  let sessionId =
+    process.env.SESSION_ID?.trim() || "default";
   const rest: string[] = [];
 
-  for (const arg of argv) {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!;
     switch (arg) {
       case "--route-only":
       case "-r":
@@ -87,6 +108,22 @@ function parseArgs(argv: string[]): CliArgs {
       case "--frontier":
       case "-f":
         forceModel = "frontier";
+        break;
+      case "--session":
+      case "-s": {
+        const next = argv[++i];
+        if (!next || next.startsWith("-")) {
+          console.error("--session requires an id");
+          process.exit(1);
+        }
+        sessionId = next;
+        break;
+      }
+      case "--no-memory":
+        useMemory = false;
+        break;
+      case "--clear-session":
+        clearSession = true;
         break;
       case "--json":
         json = true;
@@ -110,16 +147,51 @@ function parseArgs(argv: string[]): CliArgs {
     forceModel,
     json,
     help,
+    sessionId,
+    useMemory,
+    clearSession,
   };
+}
+
+function openMemoryFromEnv(): Memory {
+  const dbPath = resolve(
+    process.cwd(),
+    process.env.MEMORY_DB_PATH ?? "./data/memory.db"
+  );
+  const defaultLimit = Number(process.env.MEMORY_HISTORY_LIMIT ?? "50");
+  return createMemory({
+    dbPath,
+    defaultLimit: Number.isFinite(defaultLimit) && defaultLimit > 0
+      ? defaultLimit
+      : 50,
+  });
 }
 
 function printResult(
   result: Awaited<ReturnType<Orchestrator["handle"]>>,
-  asJson: boolean
+  asJson: boolean,
+  meta?: { sessionId?: string; historyCount?: number }
 ): void {
   if (asJson) {
-    console.log(JSON.stringify(result, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          ...result,
+          sessionId: meta?.sessionId,
+          historyCount: meta?.historyCount,
+        },
+        null,
+        2
+      )
+    );
     return;
+  }
+  if (meta?.sessionId) {
+    console.log(
+      `[session] ${meta.sessionId}${
+        meta.historyCount != null ? `  (history=${meta.historyCount})` : ""
+      }`
+    );
   }
   console.log(
     `\n[route] ${result.routing.reason}  (type=${result.routing.taskType}, complexity=${result.routing.complexity})`
@@ -133,7 +205,8 @@ function printResult(
 
 async function runOnce(
   orch: Orchestrator,
-  args: CliArgs
+  args: CliArgs,
+  memory: Memory | null
 ): Promise<void> {
   if (args.routeOnly) {
     const routing = orch.decide(args.prompt);
@@ -157,22 +230,77 @@ async function runOnce(
     return;
   }
 
+  const history =
+    memory && args.useMemory
+      ? await memory.getHistory(args.sessionId)
+      : [];
+
   const result = await orch.handle(args.prompt, {
     forceModel: args.forceModel,
+    history,
   });
-  printResult(result, args.json);
+
+  if (memory && args.useMemory) {
+    // Do not auto-store system prompts — only the user turn + assistant reply.
+    await memory.add(args.sessionId, { role: "user", content: args.prompt });
+    await memory.add(args.sessionId, {
+      role: "assistant",
+      content: result.reply,
+    });
+  }
+
+  printResult(result, args.json, {
+    sessionId: args.useMemory ? args.sessionId : undefined,
+    historyCount: history.length,
+  });
 }
 
-async function runRepl(orch: Orchestrator, args: CliArgs): Promise<void> {
+async function runRepl(
+  orch: Orchestrator,
+  args: CliArgs,
+  memory: Memory | null
+): Promise<void> {
   const rl = readline.createInterface({ input, output });
+  let sessionId = args.sessionId;
   console.log(
-    "Orchestrator REPL (empty line or Ctrl+C to exit). Prefix with /local /frontier /route"
+    "Orchestrator REPL (empty line or Ctrl+C to exit).\n" +
+      "Commands: /local /frontier /route /clear /session <id>"
   );
+  if (memory && args.useMemory) {
+    const n = (await memory.getHistory(sessionId)).length;
+    console.log(`[session] ${sessionId}  (history=${n})`);
+  }
 
   try {
     while (true) {
       const line = (await rl.question("> ")).trim();
       if (!line) break;
+
+      if (line === "/clear") {
+        if (!memory || !args.useMemory) {
+          console.log("Memory is disabled.");
+          continue;
+        }
+        await memory.clear(sessionId);
+        console.log(`Cleared session "${sessionId}"`);
+        continue;
+      }
+
+      if (line.startsWith("/session ")) {
+        const next = line.slice(9).trim();
+        if (!next) {
+          console.log("Usage: /session <id>");
+          continue;
+        }
+        sessionId = next;
+        if (memory && args.useMemory) {
+          const n = (await memory.getHistory(sessionId)).length;
+          console.log(`[session] ${sessionId}  (history=${n})`);
+        } else {
+          console.log(`[session] ${sessionId}`);
+        }
+        continue;
+      }
 
       let forceModel = args.forceModel;
       let routeOnly = false;
@@ -192,13 +320,20 @@ async function runRepl(orch: Orchestrator, args: CliArgs): Promise<void> {
       if (!prompt) continue;
 
       try {
-        await runOnce(orch, {
-          prompt,
-          routeOnly,
-          forceModel,
-          json: args.json,
-          help: false,
-        });
+        await runOnce(
+          orch,
+          {
+            prompt,
+            routeOnly,
+            forceModel,
+            json: args.json,
+            help: false,
+            sessionId,
+            useMemory: args.useMemory,
+            clearSession: false,
+          },
+          memory
+        );
       } catch (err) {
         console.error(
           `Error: ${err instanceof Error ? err.message : String(err)}`
@@ -219,15 +354,32 @@ async function main(): Promise<void> {
     return;
   }
 
-  const config = loadConfigFromEnv();
-  const orch = new Orchestrator(config);
+  const memory =
+    args.useMemory || args.clearSession ? openMemoryFromEnv() : null;
 
-  if (!args.prompt) {
-    await runRepl(orch, args);
-    return;
+  try {
+    if (args.clearSession) {
+      if (!memory) {
+        console.error("Memory is required for --clear-session");
+        process.exit(1);
+      }
+      await memory.clear(args.sessionId);
+      console.log(`Cleared session "${args.sessionId}"`);
+      return;
+    }
+
+    const config = loadConfigFromEnv();
+    const orch = new Orchestrator(config);
+
+    if (!args.prompt) {
+      await runRepl(orch, args, memory);
+      return;
+    }
+
+    await runOnce(orch, args, memory);
+  } finally {
+    memory?.close();
   }
-
-  await runOnce(orch, args);
 }
 
 main().catch((err) => {
