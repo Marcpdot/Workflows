@@ -22,19 +22,19 @@ Ikke et stort test-framework. Bare:
 - UI for resultater
 - Kostnadsberegning i NOK (USD-estimat + tokens er nok; ikke faktura-grade)
 
-## Filer
+## Filer (etter package refactor Step A)
 ```
-src/eval/
-  types.ts          # EvalCase, EvalResult, EvalReport
-  runner.ts         # kjør suite mot Orchestrator
-  assertions.ts     # expectRoute, expectContains
-  index.ts
-
-scripts/
-  run-eval.ts       # CLI entry
-
-eval/
+packages/eval/
   cases.json        # de faste oppgavene
+  src/
+    types.ts          # EvalCase, EvalResult, EvalReport
+    runner.ts         # kjør suite mot Orchestrator
+    assertions.ts     # expectRoute, expectContains
+    cost.ts           # tokens / USD estimate
+    index.ts
+
+Orchestrator/scripts/
+  run-eval.ts       # CLI entry (kjør fra Orchestrator/)
 ```
 
 ## Typer
@@ -124,7 +124,7 @@ Exit code: `0` hvis alle pass, `1` hvis noen fail (nyttig senere i CI).
 - Ikke hardkod API-nøkler; les `.env` som resten av prosjektet
 - Ved manglende `XAI_API_KEY` og case som treffer frontier: marker fail med «missing API key» (ikke crash hele runneren)
 - Skriv report til `data/eval-results/` (opprett mappe om nødvendig); legg `data/eval-results/` i `.gitignore` hvis ikke allerede dekket av `data/`
-- Eksporter typer fra `src/eval/index.ts`
+- Eksporter typer fra `packages/eval/src/index.ts`
 
 ## Ferdig når
 - `npx tsx scripts/run-eval.ts` kjører alle cases og printer summary

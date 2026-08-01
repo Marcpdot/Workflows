@@ -3,7 +3,7 @@
  * Rates are approximate and configurable via env — not billing-grade.
  */
 
-import type { ModelChoice } from "../types.js";
+import type { ModelChoice } from "../../../Orchestrator/src/types.js";
 
 export interface UsageLike {
   promptTokens?: number;

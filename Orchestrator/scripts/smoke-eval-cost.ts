@@ -5,7 +5,7 @@ import {
   buildCostBreakdown,
   estimateCostUsd,
   estimateTokensFromText,
-} from "../src/eval/cost.js";
+} from "../../packages/eval/src/cost.js";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);

@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "description": "Minimal modular orchestrator — Ollama (local) + Grok (frontier)",
   "type": "module",
-  "main": "dist/index.js",
+  "main": "dist/Orchestrator/src/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "node dist/Orchestrator/src/index.js",
     "dev": "tsx src/index.ts",
     "serve": "tsx src/integration/serverMain.ts",
     "ui": "tsx src/ui/web/main.ts",

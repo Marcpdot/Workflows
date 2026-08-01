@@ -10,9 +10,12 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { Orchestrator, loadConfigFromEnv } from "../orchestrator.js";
-import { createMemory } from "../memory/index.js";
-import type { ChatMessage } from "../types.js";
+import {
+  Orchestrator,
+  loadConfigFromEnv,
+} from "../../../Orchestrator/src/orchestrator.js";
+import { createMemory } from "../../../Orchestrator/src/memory/index.js";
+import type { ChatMessage } from "../../../Orchestrator/src/types.js";
 import { runAssertions } from "./assertions.js";
 import { buildCostBreakdown } from "./cost.js";
 import type {
@@ -267,12 +270,29 @@ export async function runEvalSuite(
   return report;
 }
 
+/**
+ * Default cases live in packages/eval/cases.json.
+ * resultsDir stays under the caller cwd (typically Orchestrator/data/eval-results).
+ * Discover cases from Orchestrator cwd or monorepo root without import.meta.
+ */
 export function resolveEvalPaths(cwd = process.cwd()): {
   casesPath: string;
   resultsDir: string;
 } {
+  const candidates = [
+    join(cwd, "..", "packages", "eval", "cases.json"),
+    join(cwd, "packages", "eval", "cases.json"),
+    join(cwd, "eval", "cases.json"),
+  ];
+  let casesPath = candidates[0]!;
+  for (const c of candidates) {
+    if (existsSync(c)) {
+      casesPath = c;
+      break;
+    }
+  }
   return {
-    casesPath: join(cwd, "eval", "cases.json"),
+    casesPath,
     resultsDir: join(cwd, "data", "eval-results"),
   };
 }

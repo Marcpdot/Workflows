@@ -1,0 +1,10 @@
+{
+  "name": "@workflows/eval",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Eval suite and cost helpers (Workflows layer package)",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

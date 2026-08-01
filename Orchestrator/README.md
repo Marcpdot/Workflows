@@ -343,15 +343,17 @@ const registry = await createRegistryFromConfig({
 
 ## Eval (Milestone 1)
 
-Fixed cases in `eval/cases.json`. Runner exercises the real orchestrator path:
+Fixed cases in `packages/eval/cases.json` (layer package; see `docs/PACKAGE_REFACTOR.md` Step A). Runner exercises the real orchestrator path:
 
 ```bash
 npx tsx scripts/run-eval.ts
 npx tsx scripts/run-eval.ts --case memory-name-recall
 npx tsx scripts/run-eval.ts --json
+npx tsx scripts/smoke-eval-assertions.ts
+npx tsx scripts/smoke-eval-cost.ts
 ```
 
-Reports land in `data/eval-results/`. Exit code `1` if any case fails.
+Reports land in `data/eval-results/` (when run from Orchestrator/). Exit code `1` if any case fails.
 
 Each result includes tokens and a rough USD cost estimate:
 
@@ -374,8 +376,7 @@ Report `summary` aggregates `totalTokens`, `estimatedCostUsd`, and `tokensEstima
 | `src/retrieval/` | Keyword retrieval (session + context/) |
 | `src/tools/` | Tool interface, registry, builtins |
 | `src/embeddings/` | Embedder, vector store, semantic search |
-| `src/eval/` | Eval types, assertions, runner |
-| `eval/cases.json` | Fixed eval cases |
+| `../packages/eval/` | Eval types, assertions, runner, cases.json |
 | `src/orchestrator.ts` | Wire routing + compression + models |
 | `src/types.ts` | Shared types |
 | `src/index.ts` | CLI entry |

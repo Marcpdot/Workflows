@@ -1,4 +1,4 @@
-import type { OrchestratorResult } from "../types.js";
+import type { OrchestratorResult } from "../../../Orchestrator/src/types.js";
 import type { EvalCase } from "./types.js";
 
 /**

@@ -1,4 +1,4 @@
-import type { ModelChoice } from "../types.js";
+import type { ModelChoice } from "../../../Orchestrator/src/types.js";
 
 export interface EvalCase {
   id: string;
