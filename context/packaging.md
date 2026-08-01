@@ -32,6 +32,7 @@ Refactor proceeds **step-by-step** per `docs/PACKAGE_REFACTOR.md` (behavior free
 | Step | Layer | Location |
 |------|--------|----------|
 | A (done) | eval | `packages/eval/` (`cases.json` + `src/`) |
+| B (done) | models | `packages/models/` (local + frontier/mid) |
 
 Orchestrator remains the runnable package (CLI/scripts). Further layers move only when their step runs — do not skip ahead.
 
@@ -43,7 +44,7 @@ Orchestrator remains the runnable package (CLI/scripts). Further layers move onl
 
 - **Orchestrator** `tsconfig`: `rootDir: "src"`, `include` only `src/**/*` → `dist/index.js` (normal layout).
 - **packages/eval** has its own `tsconfig` (`noEmit`) for **standalone** modules (`cost`, `assertions`, `types`). The suite `runner` still imports Orchestrator and is exercised via tsx scripts, not that isolated `tsc`.
-- Orchestrator **runtime/type imports** of cost helpers use `file:../packages/eval` as `@workflows/eval` (`import … from "@workflows/eval/cost"`) so eval is resolved like a normal package (junction under `node_modules`), not compiled under Orchestrator’s `rootDir`.
-- Scripts (`run-eval`, smokes) still use **relative** paths into `packages/eval` via tsx (suite runner still wires Orchestrator).
+- Orchestrator **runtime/type imports** of extracted layers use `file:../packages/<name>` as `@workflows/<name>` (e.g. `@workflows/eval/cost`, `@workflows/models/local`) so they resolve under `node_modules`, not under Orchestrator’s `rootDir`.
+- Scripts (`run-eval`, smokes) may still use **relative** paths into `packages/*` via tsx where convenient (eval suite runner still wires Orchestrator).
 
 **Rejected:** `rootDir: ".."` + compiling `../packages/eval` into Orchestrator’s program — forces `dist/Orchestrator/src/...` and broken `main`/`start` paths.

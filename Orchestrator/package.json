@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@workflows/eval": "file:../packages/eval",
+    "@workflows/models": "file:../packages/models",
     "better-sqlite3": "^13.0.2"
   }
 }

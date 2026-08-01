@@ -22,7 +22,7 @@ The configured default Ollama model tag is **`llama3.2:3b`**, overridable via `O
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** maintainer direction during M0 build; `Orchestrator/AGENTS.md`; `Orchestrator/src/models/local.ts`  
+**Source:** maintainer direction during M0 build; `Orchestrator/AGENTS.md`; `packages/models/src/local.ts`  
 **Revisit when:** structured streaming, concurrent requests, or richer Ollama API features are required
 
 Local inference is invoked by spawning the **Ollama CLI**: `ollama run <model> <prompt>` (subprocess), not by calling the Ollama daemon’s HTTP API.
@@ -40,7 +40,7 @@ Local inference is invoked by spawning the **Ollama CLI**: `ollama run <model> <
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** maintainer direction during M0 build; `Orchestrator/src/models/frontier.ts`  
+**Source:** maintainer direction during M0 build; `packages/models/src/frontier.ts`  
 **Revisit when:** multi-provider routing or cost/latency eval favors another frontier
 
 Frontier calls use the **xAI Grok** Chat Completions API (`XAI_API_KEY`, default base `https://api.x.ai/v1`, default model `grok-3`).

@@ -8,7 +8,7 @@ import type {
   ModelClient,
   ModelRequest,
   ModelResponse,
-} from "../types.js";
+} from "./types.js";
 
 export interface OllamaCliConfig {
   /** Binary name or path. Default: "ollama" */

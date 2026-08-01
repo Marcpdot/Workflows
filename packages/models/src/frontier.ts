@@ -9,8 +9,8 @@ import type {
   ModelClient,
   ModelRequest,
   ModelResponse,
-} from "../types.js";
-import type { ModelToolSchema } from "../tools/types.js";
+  ModelToolSchema,
+} from "./types.js";
 
 export interface GrokConfig {
   apiKey: string;

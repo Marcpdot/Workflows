@@ -16,8 +16,7 @@ Bygg en minimal, modulær orchestrator i TypeScript som kan:
 
 ## Filer som skal lages
 - `src/router.ts`          → routing-logikk
-- `src/models/local.ts`    → Ollama-klient
-- `src/models/frontier.ts` → Frontier-klient
+- `packages/models` (repo root) → Ollama-klient + frontier/mid (Grok)
 - `src/orchestrator.ts`    → hovedlogikk
 - `src/types.ts`           → delte typer
 - `src/index.ts`           → entry point (CLI eller enkel server)

@@ -369,8 +369,7 @@ Report `summary` aggregates `totalTokens`, `estimatedCostUsd`, and `tokensEstima
 | `src/router.ts` | Task analysis + routing rules |
 | `src/workspace/` | Session / workspace resolve (M9) |
 | `src/structured/` | Parseable JSON + completeStructured (M10) |
-| `src/models/local.ts` | Ollama CLI client (`ollama run`) |
-| `src/models/frontier.ts` | xAI Grok client (chat completions) |
+| `../packages/models/` | Ollama CLI + Grok/mid clients (Step B) |
 | `src/memory/` | SQLite session history |
 | `src/compression/` | Realtime history compression |
 | `src/retrieval/` | Keyword retrieval (session + context/) |

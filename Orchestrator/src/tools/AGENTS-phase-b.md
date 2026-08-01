@@ -39,7 +39,7 @@ src/tools/
   types.ts          # utvid med ToolCall, ToolLoopResult (eller egen types-b)
 
 src/orchestrator.ts # valgfri tool-loop når enabled
-src/models/*        # evt. støtte for tools i request hvis API støtter det
+packages/models/*   # evt. støtte for tools i request hvis API støtter det
 ```
 
 Hold fase A-filer stabile; utvid, ikke rewrite.

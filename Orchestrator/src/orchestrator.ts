@@ -3,8 +3,8 @@
  */
 
 import { route, type RouterConfig } from "./router.js";
-import { OllamaCliClient } from "./models/local.js";
-import { GrokClient } from "./models/frontier.js";
+import { OllamaCliClient } from "@workflows/models/local";
+import { GrokClient } from "@workflows/models/frontier";
 import {
   compressHistory,
   LocalModelSummarizer,
