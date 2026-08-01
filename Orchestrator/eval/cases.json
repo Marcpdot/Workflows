@@ -1,0 +1,76 @@
+[
+  {
+    "id": "route-summarize-local",
+    "description": "Short summarize prompt should route to local",
+    "prompt": "Oppsummer denne teksten kort: Katter sover mange timer om dagen og jakter om natten.",
+    "expectRoute": "local"
+  },
+  {
+    "id": "route-research-frontier",
+    "description": "Research-style prompt should route to frontier",
+    "prompt": "Undersøk trade-offs mellom SQLite og PostgreSQL for en lokal agent med lite trafikk. Nevn konsistens, backup og concurrent writes.",
+    "expectRoute": "frontier"
+  },
+  {
+    "id": "memory-name-recall",
+    "description": "Name given in sessionSetup must appear in reply",
+    "prompt": "Hva heter jeg?",
+    "sessionSetup": [
+      { "role": "user", "content": "Hei! Mitt navn er Ada Lovelace." },
+      { "role": "assistant", "content": "Hyggelig å møte deg, Ada Lovelace. Hvordan kan jeg hjelpe deg?" }
+    ],
+    "expectContains": ["Ada"]
+  },
+  {
+    "id": "memory-fact-recall",
+    "description": "Project fact in history must be recalled",
+    "prompt": "Hvilket prosjekt jobber jeg med?",
+    "sessionSetup": [
+      { "role": "user", "content": "Jeg jobber med prosjektet Workflows-orchestrator." },
+      { "role": "assistant", "content": "Forstått — du jobber med Workflows-orchestrator." }
+    ],
+    "expectContains": ["Workflows"]
+  },
+  {
+    "id": "norwegian-brief",
+    "description": "Norwegian brief answer stays coherent",
+    "prompt": "Svar på norsk med ett ord: Hva er hovedstaden i Norge?",
+    "expectRoute": "local",
+    "expectContains": ["Oslo"]
+  },
+  {
+    "id": "code-small-local",
+    "description": "Small code task prefers local",
+    "prompt": "Skriv en TypeScript-funksjon debounce(fn, ms) på under 15 linjer. Bare koden.",
+    "expectRoute": "local"
+  },
+  {
+    "id": "reasoning-frontier",
+    "description": "Explicit reasoning task routes to frontier",
+    "prompt": "Reason step by step: If all Bloops are Razzies and all Razzies are Lazzies, are all Bloops definitely Lazzies? Answer yes or no and explain.",
+    "expectRoute": "frontier"
+  },
+  {
+    "id": "compression-smoke",
+    "description": "Long history compresses; early name must still be usable",
+    "prompt": "Hva heter jeg? Svar med navnet.",
+    "sessionSetup": [
+      { "role": "user", "content": "Husk at mitt navn er Ada Lovelace." },
+      { "role": "assistant", "content": "Jeg husker at du heter Ada Lovelace." }
+    ],
+    "forceCompression": true,
+    "expectContains": ["Ada"]
+  },
+  {
+    "id": "route-high-complexity-frontier",
+    "description": "System design / trade-offs routes to frontier",
+    "prompt": "Design a distributed cache architecture with trade-offs between consistency and latency for a multi-region production system.",
+    "expectRoute": "frontier"
+  },
+  {
+    "id": "route-greeting-local",
+    "description": "Simple greeting is low complexity local",
+    "prompt": "Hei! Hva er en orchestrator?",
+    "expectRoute": "local"
+  }
+]

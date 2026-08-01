@@ -14,7 +14,7 @@ Minimal modular TypeScript orchestrator:
 cd Orchestrator
 npm install
 cp .env.example .env
-# Set XAI_API_KEY (local default: llama3.2:3b)
+# Set XAI_API_KEY (local default from env: llama3.2:3b)
 ```
 
 Requires:
@@ -85,6 +85,18 @@ Smoke test:
 npx tsx scripts/smoke-compression.ts
 ```
 
+## Eval (Milestone 1)
+
+Fixed cases in `eval/cases.json`. Runner exercises the real orchestrator path:
+
+```bash
+npx tsx scripts/run-eval.ts
+npx tsx scripts/run-eval.ts --case memory-name-recall
+npx tsx scripts/run-eval.ts --json
+```
+
+Reports land in `data/eval-results/`. Exit code `1` if any case fails.
+
 ## Layout
 
 | File | Role |
@@ -94,6 +106,8 @@ npx tsx scripts/smoke-compression.ts
 | `src/models/frontier.ts` | xAI Grok client (chat completions) |
 | `src/memory/` | SQLite session history |
 | `src/compression/` | Realtime history compression |
+| `src/eval/` | Eval types, assertions, runner |
+| `eval/cases.json` | Fixed eval cases |
 | `src/orchestrator.ts` | Wire routing + compression + models |
 | `src/types.ts` | Shared types |
 | `src/index.ts` | CLI entry |
