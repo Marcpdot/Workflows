@@ -6,7 +6,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { Orchestrator, loadConfigFromEnv } from "../orchestrator.js";
-import { createMemory } from "../memory/index.js";
+import { createMemory } from "@workflows/memory";
 import { createRegistryFromConfig } from "../tools/index.js";
 import { resolveWorkspace } from "../workspace/index.js";
 import type {

@@ -228,7 +228,7 @@ plan** (M10) with repair fallback — no tools on the planner stage. Role prompt
 are generic (no personal profile in repo).
 
 ```ts
-import { createMemory } from "./memory/index.js";
+import { createMemory } from "@workflows/memory";
 
 const memory = createMemory({ dbPath: "./data/memory.db" });
 const history = await memory.getHistory("default", 20);
@@ -370,7 +370,7 @@ Report `summary` aggregates `totalTokens`, `estimatedCostUsd`, and `tokensEstima
 | `src/workspace/` | Session / workspace resolve (M9) |
 | `src/structured/` | Parseable JSON + completeStructured (M10) |
 | `../packages/models/` | Ollama CLI + Grok/mid clients (Step B) |
-| `src/memory/` | SQLite session history |
+| `../packages/memory/` | Short-term + long-term SQLite memory (Step C) |
 | `src/compression/` | Realtime history compression |
 | `src/retrieval/` | Keyword retrieval (session + context/) |
 | `src/tools/` | Tool interface, registry, builtins |

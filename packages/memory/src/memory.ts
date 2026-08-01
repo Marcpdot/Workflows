@@ -2,9 +2,8 @@
  * High-level memory API used by the orchestrator / CLI.
  */
 
-import type { ChatMessage } from "../types.js";
 import { MessageStore } from "./store.js";
-import type { Memory, MemoryConfig } from "./types.js";
+import type { ChatMessage, Memory, MemoryConfig } from "./types.js";
 
 class SqliteMemory implements Memory {
   private readonly store: MessageStore;

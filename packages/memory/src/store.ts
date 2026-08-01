@@ -5,8 +5,7 @@
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { ChatMessage } from "../types.js";
-import type { StoredMessage } from "./types.js";
+import type { ChatMessage, StoredMessage } from "./types.js";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS messages (

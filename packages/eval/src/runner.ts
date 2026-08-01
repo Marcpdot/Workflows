@@ -14,7 +14,7 @@ import {
   Orchestrator,
   loadConfigFromEnv,
 } from "../../../Orchestrator/src/orchestrator.js";
-import { createMemory } from "../../../Orchestrator/src/memory/index.js";
+import { createMemory } from "../../memory/src/index.js";
 import type { ChatMessage } from "../../../Orchestrator/src/types.js";
 import { runAssertions } from "./assertions.js";
 import { buildCostBreakdown } from "./cost.js";

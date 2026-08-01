@@ -1,6 +1,11 @@
-import type { ChatMessage } from "../types.js";
+/**
+ * Short-term memory types (package-local; compatible with Orchestrator ChatMessage).
+ */
 
-export type { ChatMessage };
+export interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
 
 export interface MemoryConfig {
   /** Path to the SQLite database file. Parent dirs are created if missing. */

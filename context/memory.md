@@ -4,7 +4,7 @@
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** `Orchestrator/src/memory/`; early M0  
+**Source:** `packages/memory/`; early M0  
 **Revisit when:** multi-device sync is required
 
 Short-term conversation memory is SQLite (`better-sqlite3`) keyed by `sessionId`. Continuity across restart and model switch was the M0 goal. System prompts are not auto-persisted—only explicit user/assistant turns.
@@ -23,7 +23,7 @@ From **M9**, effective session ids are **namespaced per workspace** (`ws:<id>:<l
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** `Orchestrator/src/memory/longterm/`; commit `3ae023d`  
+**Source:** `packages/memory/src/longterm/`; commit `3ae023d`  
 
 Durable facts with `remember` / `recall` / `list` / `forget`, optional keys and tags. Keyword recall first. Storage path is local/gitignored or `PERSONAL_CONTEXT_DIR`.
 

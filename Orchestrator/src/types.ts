@@ -1,7 +1,7 @@
 /** Shared types for the orchestrator. */
 
 import type { ToolRegistry, ToolLoopStep, ModelToolSchema } from "./tools/types.js";
-import type { LongTermMemory, LongTermSettings } from "./memory/longterm/types.js";
+import type { LongTermMemory, LongTermSettings } from "@workflows/memory";
 import type { ProactiveSettings, Suggestion } from "./proactive/types.js";
 import type { Embedder, VectorStore } from "./embeddings/types.js";
 import type { ComputePolicy, PolicyDecision } from "./policy/types.js";

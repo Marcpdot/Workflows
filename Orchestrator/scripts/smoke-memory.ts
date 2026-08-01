@@ -1,5 +1,5 @@
 import { existsSync, rmSync } from "node:fs";
-import { createMemory } from "../src/memory/index.js";
+import { createMemory } from "@workflows/memory";
 
 const path = "./data/_smoke_memory.db";
 if (existsSync(path)) rmSync(path);

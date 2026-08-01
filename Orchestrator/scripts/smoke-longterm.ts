@@ -5,7 +5,7 @@
 
 import { existsSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
-import { createLongTermMemory } from "../src/memory/longterm/index.js";
+import { createLongTermMemory } from "@workflows/memory/longterm";
 
 async function main(): Promise<void> {
   const dbPath = resolve(

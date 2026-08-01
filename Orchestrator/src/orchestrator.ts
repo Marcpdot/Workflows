@@ -37,7 +37,7 @@ import {
   createLongTermMemory,
   resolveLongTermDbPath,
   type LongTermMemory,
-} from "./memory/longterm/index.js";
+} from "@workflows/memory";
 import { createEmbeddingsFromEnv } from "./embeddings/index.js";
 import { suggestNextSteps } from "./proactive/index.js";
 import {

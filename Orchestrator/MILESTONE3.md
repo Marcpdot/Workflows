@@ -10,14 +10,14 @@
 
 | Fase | Innhold | Spec |
 |------|---------|------|
-| **3A** | Langtidsminne-API + privat storage-path | [src/memory/longterm/AGENTS.md](src/memory/longterm/AGENTS.md) |
+| **3A** | Langtidsminne-API + privat storage-path | [packages/memory/src/longterm/AGENTS.md](../packages/memory/src/longterm/AGENTS.md) |
 | **3B** | Proaktivitet (foreslåtte neste steg) | [src/proactive/AGENTS.md](src/proactive/AGENTS.md) |
 | **3C** | Minimalt multi-agent (roller) | [src/agents/AGENTS.md](src/agents/AGENTS.md) |
 
 ## Rekkefølge for Grok Build
 
 ```text
-1. Implementer KUN 3A fra src/memory/longterm/AGENTS.md
+1. Implementer KUN 3A fra packages/memory/src/longterm/AGENTS.md
 2. Smoke grønn → deretter KUN 3B
 3. Smoke grønn → deretter KUN 3C
 ```

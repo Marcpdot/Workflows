@@ -17,13 +17,14 @@ Dette er **kun korttidsminne + enkel persistering**. Ingen embeddings eller vekt
 - SQLite (via `better-sqlite3` anbefalt, eller `sql.js` hvis pure JS ønskes)
 - Skal integreres med eksisterende `Orchestrator` og `ChatMessage`-type
 
-## Filer som skal lages
+## Filer (etter package refactor Step C)
 ```
-src/memory/
-  types.ts      # Memory-spesifikke typer (hvis nødvendig)
+packages/memory/src/
+  types.ts      # Memory-spesifikke typer
   store.ts      # SQLite-lagring (lavnivå)
   memory.ts     # Hoved-API som orchestratoren bruker
   index.ts      # Re-exports
+  longterm/     # LTM API (3A+)
 ```
 
 ## API som skal eksponeres

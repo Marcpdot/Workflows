@@ -15,7 +15,7 @@ import {
   cosineSimilarity,
   semanticSearch,
 } from "../src/embeddings/index.js";
-import { createLongTermMemory } from "../src/memory/longterm/index.js";
+import { createLongTermMemory } from "@workflows/memory/longterm";
 import { retrieve } from "../src/retrieval/index.js";
 
 function assert(cond: boolean, msg: string): void {

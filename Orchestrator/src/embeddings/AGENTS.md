@@ -45,7 +45,7 @@ src/embeddings/
 scripts/smoke-embeddings.ts
 ```
 
-Eventuelt utvid `src/memory/longterm/` og `src/retrieval/` i stedet for all ny kode under embeddings/ — viktigst er rene interfaces.
+Eventuelt utvid `packages/memory` (longterm) og `src/retrieval/` i stedet for all ny kode under embeddings/ — viktigst er rene interfaces.
 
 ## API
 

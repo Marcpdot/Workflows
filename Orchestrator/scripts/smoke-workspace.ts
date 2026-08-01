@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
-import { createMemory } from "../src/memory/index.js";
+import { createMemory } from "@workflows/memory";
 import { resolveSafePath } from "../src/tools/pathSafety.js";
 import {
   resolveProjectContextDir,

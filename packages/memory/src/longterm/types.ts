@@ -1,3 +1,8 @@
+/**
+ * Long-term memory types. Optional embeddings use structural interfaces
+ * (no dependency on packages/embeddings yet).
+ */
+
 export interface MemoryFact {
   id: string;
   key?: string;
@@ -31,7 +36,32 @@ export interface LongTermMemory {
   close(): void;
 }
 
-import type { Embedder, VectorStore } from "../../embeddings/types.js";
+/** Minimal embedder surface used by optional LTM semantic path. */
+export interface MemoryEmbedder {
+  embed(texts: string[]): Promise<number[][]>;
+}
+
+/** Minimal vector store surface used by optional LTM semantic path. */
+export interface MemoryVectorStore {
+  upsert(record: {
+    id: string;
+    source: string;
+    refId: string;
+    text: string;
+    vector: number[];
+    createdAt?: number;
+  }): Promise<void>;
+  deleteByRef(source: string, refId: string): Promise<void>;
+  search(
+    queryVector: number[],
+    options?: { limit?: number; source?: string; minScore?: number }
+  ): Promise<
+    Array<{
+      record: { refId: string };
+      score: number;
+    }>
+  >;
+}
 
 export interface LongTermMemoryConfig {
   /** Path to SQLite file (created if missing). Parent dirs created. */
@@ -41,8 +71,8 @@ export interface LongTermMemoryConfig {
    * also use vector search. Keyword path always remains.
    */
   embeddings?: {
-    embedder: Embedder;
-    store: VectorStore;
+    embedder: MemoryEmbedder;
+    store: MemoryVectorStore;
     minScore?: number;
   };
 }

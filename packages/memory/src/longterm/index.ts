@@ -3,7 +3,9 @@ export type {
   LongTermMemory,
   LongTermMemoryConfig,
   LongTermSettings,
+  MemoryEmbedder,
   MemoryFact,
+  MemoryVectorStore,
   RecallQuery,
   RememberInput,
 } from "./types.js";
