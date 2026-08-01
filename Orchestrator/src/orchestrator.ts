@@ -29,6 +29,7 @@ import {
   resolveLongTermDbPath,
   type LongTermMemory,
 } from "./memory/longterm/index.js";
+import { createEmbeddingsFromEnv } from "./embeddings/index.js";
 import { suggestNextSteps } from "./proactive/index.js";
 import {
   defaultPipelineRoles,
@@ -54,7 +55,6 @@ export class Orchestrator {
   private readonly tools?: ToolRegistry;
   /** Milestone 3A long-term memory (facts/preferences). Optional. */
   readonly longTerm?: LongTermMemory;
-
   constructor(
     config: OrchestratorConfig,
     clients?: { local?: ModelClient; frontier?: ModelClient }
@@ -84,6 +84,20 @@ export class Orchestrator {
   /** Analyze + route without calling a model. */
   decide(prompt: string): RoutingDecision {
     return route(prompt, this.routerConfig);
+  }
+
+  /** Close optional LTM + vector store (idempotent). */
+  close(): void {
+    try {
+      this.longTerm?.close();
+    } catch {
+      /* ignore */
+    }
+    try {
+      this.config.embeddings?.store.close();
+    } catch {
+      /* ignore */
+    }
   }
 
   /** Optional tools registry. */
@@ -222,6 +236,13 @@ export class Orchestrator {
         limit: this.config.retrieval.limit,
         maxChars: this.config.retrieval.maxChars,
         maxChunkChars: this.config.retrieval.maxChunkChars,
+        embeddings: this.config.embeddings
+          ? {
+              embedder: this.config.embeddings.embedder,
+              store: this.config.embeddings.store,
+              minScore: this.config.embeddings.minScore,
+            }
+          : undefined,
       });
       retrievalBlock = formatRetrievalBlock(chunks);
       retrievalMeta = {
@@ -475,11 +496,29 @@ export function loadConfigFromEnv(
   // Phase B loop is off by default until explicitly enabled.
   const toolsEnabled = envFlagTrue(env.TOOLS_ENABLED);
 
+  const embeddingsRuntime = createEmbeddingsFromEnv(env);
+  const embeddings = embeddingsRuntime
+    ? {
+        embedder: embeddingsRuntime.embedder,
+        store: embeddingsRuntime.store,
+        minScore: embeddingsRuntime.config.minScore,
+      }
+    : undefined;
+
   const longTermDisabled = envFlagTrue(env.LONGTERM_DISABLED);
   const longTermDbPath = resolveLongTermDbPath(process.cwd(), env);
   const longTerm = longTermDisabled
     ? undefined
-    : createLongTermMemory({ dbPath: longTermDbPath });
+    : createLongTermMemory({
+        dbPath: longTermDbPath,
+        embeddings: embeddings
+          ? {
+              embedder: embeddings.embedder,
+              store: embeddings.store,
+              minScore: embeddings.minScore,
+            }
+          : undefined,
+      });
 
   return {
     ollamaBin: env.OLLAMA_BIN ?? "ollama",
@@ -527,5 +566,6 @@ export function loadConfigFromEnv(
       })(),
       locale: env.PROACTIVE_LOCALE === "en" ? "en" : env.PROACTIVE_LOCALE === "nb" ? "nb" : "nb",
     },
+    embeddings,
   };
 }

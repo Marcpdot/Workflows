@@ -1,5 +1,5 @@
 /**
- * Long-term memory API (Milestone 3A) — facts/preferences by key + keywords.
+ * Long-term memory API (Milestone 3A) + optional semantic path (M4).
  */
 
 import { randomUUID } from "node:crypto";
@@ -24,12 +24,40 @@ function filterByTags(facts: MemoryFact[], tags?: string[]): MemoryFact[] {
 
 class SqliteLongTermMemory implements LongTermMemory {
   private readonly store: FactStore;
+  private readonly embeddings?: LongTermMemoryConfig["embeddings"];
 
   constructor(config: LongTermMemoryConfig) {
     if (!config.dbPath?.trim()) {
       throw new Error("LongTermMemoryConfig.dbPath is required");
     }
     this.store = new FactStore(config.dbPath);
+    this.embeddings = config.embeddings;
+  }
+
+  private async indexFact(fact: MemoryFact): Promise<void> {
+    if (!this.embeddings) return;
+    try {
+      const [vector] = await this.embeddings.embedder.embed([fact.content]);
+      if (!vector?.length) return;
+      await this.embeddings.store.upsert({
+        id: `ltm:${fact.id}`,
+        source: "ltm",
+        refId: fact.id,
+        text: fact.content,
+        vector,
+      });
+    } catch {
+      // Embeddings optional — do not fail remember on embed errors
+    }
+  }
+
+  private async dropFactVector(factId: string): Promise<void> {
+    if (!this.embeddings) return;
+    try {
+      await this.embeddings.store.deleteByRef("ltm", factId);
+    } catch {
+      // ignore
+    }
   }
 
   async remember(input: RememberInput): Promise<MemoryFact> {
@@ -45,13 +73,15 @@ class SqliteLongTermMemory implements LongTermMemory {
     if (key) {
       const existing = this.store.getByKey(key);
       if (existing) {
-        return this.store.updateByKey(
+        const updated = this.store.updateByKey(
           key,
           input.content,
           tags,
           source,
           now
         );
+        await this.indexFact(updated);
+        return updated;
       }
     }
 
@@ -65,6 +95,7 @@ class SqliteLongTermMemory implements LongTermMemory {
       source,
     };
     this.store.insert(fact);
+    await this.indexFact(fact);
     return fact;
   }
 
@@ -81,11 +112,36 @@ class SqliteLongTermMemory implements LongTermMemory {
     }
 
     if (query.text?.trim()) {
-      const hits = this.store.searchByText(query.text.trim(), limit * 2);
-      return filterByTags(hits, query.tags).slice(0, limit);
+      const text = query.text.trim();
+      const keywordHits = this.store.searchByText(text, limit * 2);
+      let merged = keywordHits;
+
+      // Semantic path when embeddings configured
+      if (this.embeddings) {
+        try {
+          const [qv] = await this.embeddings.embedder.embed([text]);
+          if (qv?.length) {
+            const semantic = await this.embeddings.store.search(qv, {
+              limit: limit * 2,
+              source: "ltm",
+              minScore: this.embeddings.minScore ?? 0.3,
+            });
+            const byId = new Map<string, MemoryFact>();
+            for (const f of keywordHits) byId.set(f.id, f);
+            for (const hit of semantic) {
+              const fact = this.store.getById(hit.record.refId);
+              if (fact) byId.set(fact.id, fact);
+            }
+            merged = [...byId.values()];
+          }
+        } catch {
+          // fall back to keyword only
+        }
+      }
+
+      return filterByTags(merged, query.tags).slice(0, limit);
     }
 
-    // No key/text: list recent, optional tag filter
     const all = this.store.list(limit * 3);
     return filterByTags(all, query.tags).slice(0, limit);
   }
@@ -101,12 +157,24 @@ class SqliteLongTermMemory implements LongTermMemory {
       throw new Error("forget: idOrKey is required");
     }
     const q = idOrKey.trim();
-    if (this.store.deleteById(q)) return true;
-    return this.store.deleteByKey(q);
+    const byId = this.store.getById(q);
+    if (byId) {
+      const ok = this.store.deleteById(q);
+      if (ok) await this.dropFactVector(byId.id);
+      return ok;
+    }
+    const byKey = this.store.getByKey(q);
+    if (byKey) {
+      const ok = this.store.deleteByKey(q);
+      if (ok) await this.dropFactVector(byKey.id);
+      return ok;
+    }
+    return false;
   }
 
   close(): void {
     this.store.close();
+    // Vector store lifecycle is owned by orchestrator/embeddings runtime
   }
 }
 

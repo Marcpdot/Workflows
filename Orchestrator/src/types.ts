@@ -3,6 +3,7 @@
 import type { ToolRegistry, ToolLoopStep, ModelToolSchema } from "./tools/types.js";
 import type { LongTermMemory, LongTermSettings } from "./memory/longterm/types.js";
 import type { ProactiveSettings, Suggestion } from "./proactive/types.js";
+import type { Embedder, VectorStore } from "./embeddings/types.js";
 
 export type ModelChoice = "local" | "frontier";
 
@@ -109,6 +110,15 @@ export interface OrchestratorConfig {
   longTermSettings?: LongTermSettings;
   /** Milestone 3B — next-step suggestions (default off) */
   proactive?: ProactiveSettings;
+  /**
+   * Milestone 4 embeddings. When set, LTM + retrieval may use semantic search.
+   * Default unset / disabled via EMBEDDINGS_ENABLED=false.
+   */
+  embeddings?: {
+    embedder: Embedder;
+    store: VectorStore;
+    minScore: number;
+  };
 }
 
 export interface OrchestratorResult {

@@ -1,7 +1,10 @@
 /**
  * Combine session + project_context sources, rank, limit, truncate.
+ * M4: optional semantic context hits merged with keyword scores.
  */
 
+import { indexProjectContext } from "../embeddings/indexContext.js";
+import { truncateSnippet } from "./tokenize.js";
 import type { RetrievedChunk, RetrieveOptions } from "./types.js";
 import { DEFAULT_RETRIEVE_OPTIONS } from "./types.js";
 import { retrieveFromSession } from "./session.js";
@@ -19,7 +22,11 @@ function resolveOptions(options?: RetrieveOptions): Required<
     | "projectContext"
     | "maxChunkChars"
   >
-> & { contextDir: string; sessionMessages: NonNullable<RetrieveOptions["sessionMessages"]> } {
+> & {
+  contextDir: string;
+  sessionMessages: NonNullable<RetrieveOptions["sessionMessages"]>;
+  embeddings?: RetrieveOptions["embeddings"];
+} {
   return {
     limit: options?.limit ?? DEFAULT_RETRIEVE_OPTIONS.limit,
     maxChars: options?.maxChars ?? DEFAULT_RETRIEVE_OPTIONS.maxChars,
@@ -30,6 +37,7 @@ function resolveOptions(options?: RetrieveOptions): Required<
       options?.maxChunkChars ?? DEFAULT_RETRIEVE_OPTIONS.maxChunkChars,
     contextDir: options?.contextDir ?? resolveDefaultContextDir(),
     sessionMessages: options?.sessionMessages ?? [],
+    embeddings: options?.embeddings,
   };
 }
 
@@ -45,7 +53,6 @@ export function rankAndTruncate(
     .filter((c) => c.score > 0 && c.text.trim().length > 0)
     .sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
-      // stable-ish tie-break: prefer project_context, then id
       if (a.source !== b.source) {
         return a.source === "project_context" ? -1 : 1;
       }
@@ -74,9 +81,48 @@ export function rankAndTruncate(
 }
 
 /**
+ * Simple reciprocal-rank fusion style merge: sum 1/(k+rank) scaled to score.
+ */
+function mergeById(
+  lists: RetrievedChunk[][],
+  k = 60
+): RetrievedChunk[] {
+  const map = new Map<string, RetrievedChunk & { rrf: number }>();
+
+  for (const list of lists) {
+    list.forEach((chunk, rank) => {
+      const key = `${chunk.source}:${chunk.id}`;
+      const add = 1 / (k + rank + 1);
+      const existing = map.get(key);
+      if (existing) {
+        existing.rrf += add;
+        // keep higher raw score text
+        if (chunk.score > existing.score) {
+          existing.score = chunk.score;
+          existing.text = chunk.text;
+        }
+      } else {
+        map.set(key, { ...chunk, rrf: add });
+      }
+    });
+  }
+
+  return [...map.values()]
+    .map((c) => ({
+      source: c.source,
+      id: c.id,
+      text: c.text,
+      // blend raw score with RRF so semantic (0-1) and keyword (counts) coexist
+      score: c.score + c.rrf * 10,
+    }))
+    .sort((a, b) => b.score - a.score);
+}
+
+/**
  * Retrieve relevant context snippets for a query.
  * Empty query or no hits → [] (not an error).
  * Missing context dir → session-only / empty project side.
+ * Embeddings optional — keyword path unchanged when disabled/missing.
  */
 export async function retrieve(
   query: string,
@@ -87,22 +133,63 @@ export async function retrieve(
   }
 
   const opts = resolveOptions(options);
-  const candidates: RetrievedChunk[] = [];
+  const keywordChunks: RetrievedChunk[] = [];
 
   if (opts.session && opts.sessionMessages.length > 0) {
-    candidates.push(
+    keywordChunks.push(
       ...retrieveFromSession(query, opts.sessionMessages, opts.maxChunkChars)
     );
   }
 
   if (opts.projectContext) {
-    candidates.push(
+    keywordChunks.push(
       ...retrieveFromProjectContext(
         query,
         opts.contextDir,
         opts.maxChunkChars
       )
     );
+  }
+
+  const semanticChunks: RetrievedChunk[] = [];
+  if (opts.embeddings && opts.projectContext) {
+    try {
+      await indexProjectContext({
+        contextDir: opts.contextDir,
+        embedder: opts.embeddings.embedder,
+        store: opts.embeddings.store,
+        skipIfNonEmpty: true,
+      });
+
+      const [qv] = await opts.embeddings.embedder.embed([query.trim()]);
+      if (qv?.length) {
+        const hits = await opts.embeddings.store.search(qv, {
+          limit: opts.limit * 2,
+          source: "context",
+          minScore: opts.embeddings.minScore ?? 0.3,
+        });
+        for (const hit of hits) {
+          semanticChunks.push({
+            source: "project_context",
+            id: hit.record.refId,
+            text: truncateSnippet(hit.record.text, opts.maxChunkChars),
+            // scale cosine [0,1] roughly into keyword-like range
+            score: hit.score * 5,
+          });
+        }
+      }
+    } catch {
+      // semantic optional — keep keyword only
+    }
+  }
+
+  let candidates: RetrievedChunk[];
+  if (semanticChunks.length > 0 && keywordChunks.length > 0) {
+    candidates = mergeById([keywordChunks, semanticChunks]);
+  } else if (semanticChunks.length > 0) {
+    candidates = semanticChunks;
+  } else {
+    candidates = keywordChunks;
   }
 
   return rankAndTruncate(candidates, opts.limit, opts.maxChars);

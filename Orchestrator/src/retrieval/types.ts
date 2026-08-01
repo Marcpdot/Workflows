@@ -1,4 +1,5 @@
 import type { ChatMessage } from "../types.js";
+import type { Embedder, VectorStore } from "../embeddings/types.js";
 
 export type RetrievalSource = "session" | "project_context";
 
@@ -27,6 +28,15 @@ export interface RetrieveOptions {
   sessionMessages?: ChatMessage[];
   /** Max chars per individual chunk snippet. Default 600 */
   maxChunkChars?: number;
+  /**
+   * M4: optional semantic search over indexed context vectors.
+   * When set, merges with keyword hits (or fills when keyword empty).
+   */
+  embeddings?: {
+    embedder: Embedder;
+    store: VectorStore;
+    minScore?: number;
+  };
 }
 
 export interface RetrievalSettings {

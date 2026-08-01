@@ -822,7 +822,7 @@ async function main(): Promise<void> {
 
       await runOnce(orch, args, memory);
     } finally {
-      orch.longTerm?.close();
+      orch.close();
     }
   } finally {
     memory?.close();

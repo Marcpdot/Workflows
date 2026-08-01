@@ -31,9 +31,20 @@ export interface LongTermMemory {
   close(): void;
 }
 
+import type { Embedder, VectorStore } from "../../embeddings/types.js";
+
 export interface LongTermMemoryConfig {
   /** Path to SQLite file (created if missing). Parent dirs created. */
   dbPath: string;
+  /**
+   * Optional M4 semantic layer. When set, remember/forget/recall(text)
+   * also use vector search. Keyword path always remains.
+   */
+  embeddings?: {
+    embedder: Embedder;
+    store: VectorStore;
+    minScore?: number;
+  };
 }
 
 export interface LongTermSettings {

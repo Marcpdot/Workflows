@@ -79,6 +79,21 @@ npx tsx scripts/smoke-proactive.ts
 # PROACTIVE_ENABLED=true npm run dev -- "TypeError crash in router"
 ```
 
+## Embeddings (Milestone 4)
+
+Pluggable local embedder (Ollama) + SQLite float32 vectors (linear scan).
+**Default off** (`EMBEDDINGS_ENABLED=false`) — keyword LTM/retrieval unchanged.
+
+When enabled:
+- `remember` / `forget` index LTM facts in `VECTOR_DB_PATH`
+- `recall(text)` merges keyword + cosine hits
+- retrieval merges semantic `context/` hits with keyword (RRF-style)
+
+```bash
+npx tsx scripts/smoke-embeddings.ts
+# EMBEDDINGS_ENABLED=true EMBEDDING_MODEL=nomic-embed-text npm run dev -- "..."
+```
+
 ## Multi-agent pipeline (Milestone 3C)
 
 Sequential roles only (not a swarm). Default: **planner → worker**.
@@ -237,6 +252,7 @@ Report `summary` aggregates `totalTokens`, `estimatedCostUsd`, and `tokensEstima
 | `src/compression/` | Realtime history compression |
 | `src/retrieval/` | Keyword retrieval (session + context/) |
 | `src/tools/` | Tool interface, registry, builtins |
+| `src/embeddings/` | Embedder, vector store, semantic search |
 | `src/eval/` | Eval types, assertions, runner |
 | `eval/cases.json` | Fixed eval cases |
 | `src/orchestrator.ts` | Wire routing + compression + models |
