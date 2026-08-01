@@ -15,7 +15,7 @@ import {
   tryParseJson,
   tryParseStructured,
   type PlanValue,
-} from "../src/structured/index.js";
+} from "@workflows/structured";
 import { parseToolCalls } from "@workflows/tools";
 import type { ChatMessage } from "../src/types.js";
 

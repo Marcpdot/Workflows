@@ -17,7 +17,7 @@ import {
   resolveProjectLongTermDbPath,
   resolveWorkspace,
   workspaceIdFromRoot,
-} from "../src/workspace/index.js";
+} from "@workflows/workspace";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);

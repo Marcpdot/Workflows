@@ -6,11 +6,11 @@ import type {
   ModelToolSchema,
 } from "@workflows/tools";
 import type { LongTermMemory, LongTermSettings } from "@workflows/memory";
-import type { ProactiveSettings, Suggestion } from "./proactive/types.js";
-import type { Embedder, VectorStore } from "./embeddings/types.js";
-import type { ComputePolicy, PolicyDecision } from "./policy/types.js";
-import type { Observer } from "./observability/types.js";
-import type { WorkspaceContext } from "./workspace/types.js";
+import type { ProactiveSettings, Suggestion } from "@workflows/proactive";
+import type { Embedder, VectorStore } from "@workflows/embeddings";
+import type { ComputePolicy, PolicyDecision } from "@workflows/policy";
+import type { Observer } from "@workflows/observability";
+import type { WorkspaceContext } from "@workflows/workspace";
 
 export type ModelChoice = "local" | "mid" | "frontier";
 

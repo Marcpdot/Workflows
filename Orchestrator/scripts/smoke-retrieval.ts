@@ -13,7 +13,7 @@ import {
   resolveDefaultContextDir,
   retrieve,
   type RetrievedChunk,
-} from "../src/retrieval/index.js";
+} from "@workflows/retrieval";
 import type { ChatMessage } from "../src/types.js";
 
 async function main(): Promise<void> {

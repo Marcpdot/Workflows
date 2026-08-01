@@ -367,18 +367,11 @@ Report `summary` aggregates `totalTokens`, `estimatedCostUsd`, and `tokensEstima
 | File | Role |
 |------|------|
 | `src/router.ts` | Task analysis + routing rules |
-| `src/workspace/` | Session / workspace resolve (M9) |
-| `src/structured/` | Parseable JSON + completeStructured (M10) |
-| `../packages/models/` | Ollama CLI + Grok/mid clients (Step B) |
-| `../packages/memory/` | Short-term + long-term SQLite memory (Step C) |
-| `src/compression/` | Realtime history compression |
-| `src/retrieval/` | Keyword retrieval (session + context/) |
-| `../packages/tools/` | Tool interface, registry, builtins (Step D) |
-| `src/embeddings/` | Embedder, vector store, semantic search |
-| `../packages/eval/` | Eval types, assertions, runner, cases.json |
-| `src/orchestrator.ts` | Wire routing + compression + models |
-| `src/types.ts` | Shared types |
+| `src/orchestrator.ts` | Wire layers (handle, pipeline, config) |
 | `src/index.ts` | CLI entry |
+| `src/integration/` | Thin HTTP (stays with brain; Step E) |
+| `src/ui/` | Localhost web shell entry |
+| `../packages/*` | Layer packages (eval, models, memory, tools, compression, embeddings, retrieval, workspace, policy, structured, observability, proactive, agents) |
 
 ## Routing (Milestone 0)
 

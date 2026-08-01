@@ -14,9 +14,9 @@ import {
   SqliteVectorStore,
   cosineSimilarity,
   semanticSearch,
-} from "../src/embeddings/index.js";
+} from "@workflows/embeddings";
 import { createLongTermMemory } from "@workflows/memory/longterm";
-import { retrieve } from "../src/retrieval/index.js";
+import { retrieve } from "@workflows/retrieval";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);

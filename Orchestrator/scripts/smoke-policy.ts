@@ -5,7 +5,7 @@
 import {
   DefaultComputePolicy,
   type PolicyConfig,
-} from "../src/policy/index.js";
+} from "@workflows/policy";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);

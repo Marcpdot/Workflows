@@ -8,7 +8,7 @@ import {
   JsonlFileObserver,
   NoopObserver,
   type OrchestratorEvent,
-} from "../src/observability/index.js";
+} from "@workflows/observability";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);

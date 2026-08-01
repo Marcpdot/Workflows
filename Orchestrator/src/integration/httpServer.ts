@@ -8,7 +8,7 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { Orchestrator, loadConfigFromEnv } from "../orchestrator.js";
 import { createMemory } from "@workflows/memory";
 import { createRegistryFromConfig } from "@workflows/tools";
-import { resolveWorkspace } from "../workspace/index.js";
+import { resolveWorkspace } from "@workflows/workspace";
 import type {
   IntegrationChatRequest,
   IntegrationChatResponse,

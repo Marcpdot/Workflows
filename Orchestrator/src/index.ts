@@ -17,7 +17,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { Orchestrator, loadConfigFromEnv } from "./orchestrator.js";
 import { createMemory, type Memory } from "@workflows/memory";
 import { createRegistryFromConfig } from "@workflows/tools";
-import { resolveWorkspace, type WorkspaceContext } from "./workspace/index.js";
+import { resolveWorkspace, type WorkspaceContext } from "@workflows/workspace";
 import type { ModelChoice } from "./types.js";
 
 function loadDotEnv(filePath = resolve(process.cwd(), ".env")): void {

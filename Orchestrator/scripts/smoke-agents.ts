@@ -8,7 +8,7 @@ import {
   runRolePipeline,
   workerRole,
   type AgentRole,
-} from "../src/agents/index.js";
+} from "@workflows/agents";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);

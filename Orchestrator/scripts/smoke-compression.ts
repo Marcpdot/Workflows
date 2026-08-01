@@ -9,7 +9,7 @@
 import {
   compressHistory,
   type Summarizer,
-} from "../src/compression/index.js";
+} from "@workflows/compression";
 import type { ChatMessage } from "../src/types.js";
 
 function buildFakeHistory(n: number): ChatMessage[] {

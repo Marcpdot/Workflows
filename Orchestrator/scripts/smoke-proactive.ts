@@ -2,7 +2,7 @@
  * Offline smoke for Milestone 3B proactive suggestions.
  */
 
-import { suggestNextSteps } from "../src/proactive/index.js";
+import { suggestNextSteps } from "@workflows/proactive";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);

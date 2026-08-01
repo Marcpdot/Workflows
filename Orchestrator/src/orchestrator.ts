@@ -8,22 +8,22 @@ import { GrokClient } from "@workflows/models/frontier";
 import {
   compressHistory,
   LocalModelSummarizer,
-} from "./compression/index.js";
+} from "@workflows/compression";
 import {
   formatRetrievalBlock,
   retrieve,
-} from "./retrieval/index.js";
+} from "@workflows/retrieval";
 import {
   resolveProjectLongTermDbPath,
   resolveWorkspace,
   type WorkspaceContext,
-} from "./workspace/index.js";
+} from "@workflows/workspace";
 import {
   completeStructured,
   parseStructured,
   PLAN_SCHEMA,
   type PlanValue,
-} from "./structured/index.js";
+} from "@workflows/structured";
 import {
   createBuiltinRegistry,
   formatToolsForPrompt,
@@ -38,19 +38,19 @@ import {
   resolveLongTermDbPath,
   type LongTermMemory,
 } from "@workflows/memory";
-import { createEmbeddingsFromEnv } from "./embeddings/index.js";
-import { suggestNextSteps } from "./proactive/index.js";
+import { createEmbeddingsFromEnv } from "@workflows/embeddings";
+import { suggestNextSteps } from "@workflows/proactive";
 import {
   DefaultComputePolicy,
   loadPolicyConfig,
   type ComputePolicy,
   type PolicyDecision,
-} from "./policy/index.js";
+} from "@workflows/policy";
 import {
   createObserverFromEnv,
   loadObservabilityConfig,
   type Observer,
-} from "./observability/index.js";
+} from "@workflows/observability";
 import { estimateTokensFromText } from "@workflows/eval/cost";
 import {
   defaultPipelineRoles,
@@ -58,7 +58,7 @@ import {
   runRolePipeline,
   type AgentRole,
   type PipelineResult,
-} from "./agents/index.js";
+} from "@workflows/agents";
 import type {
   ChatMessage,
   ModelClient,

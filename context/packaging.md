@@ -35,8 +35,24 @@ Refactor proceeds **step-by-step** per `docs/PACKAGE_REFACTOR.md` (behavior free
 | B (done) | models | `packages/models/` (local + frontier/mid) |
 | C (done) | memory | `packages/memory/` (short-term + longterm) |
 | D (done) | tools | `packages/tools/` (registry, builtins, loop) |
+| E (done) | satellites | see below |
 
-Orchestrator remains the runnable package (CLI/scripts). Further layers move only when their step runs — do not skip ahead.
+**Step E satellites** (all under `packages/` except integration):
+
+| Package | Notes |
+|---------|--------|
+| `compression` | history compress + local summarizer |
+| `embeddings` | embedder + vector SQLite |
+| `retrieval` | depends on embeddings |
+| `workspace` | depends on retrieval (`resolveDefaultContextDir`) |
+| `policy` | depends on eval/cost |
+| `structured` | completeStructured + parse |
+| `observability` | JSONL observer |
+| `proactive` | suggestions |
+| `agents` | role pipeline; depends on tools |
+| *(integration)* | **stays in `Orchestrator/src/integration`** — HTTP server must import Orchestrator brain; moving it creates a circular package graph. Contract helpers live next to the entry. |
+
+Orchestrator remains the runnable package (CLI/scripts). Step F thins it further when ready.
 
 ### Typecheck / compile strategy (Step A follow-up)
 
@@ -46,7 +62,7 @@ Orchestrator remains the runnable package (CLI/scripts). Further layers move onl
 
 - **Orchestrator** `tsconfig`: `rootDir: "src"`, `include` only `src/**/*` → `dist/index.js` (normal layout).
 - **packages/eval** has its own `tsconfig` (`noEmit`) for **standalone** modules (`cost`, `assertions`, `types`). The suite `runner` still imports Orchestrator and is exercised via tsx scripts, not that isolated `tsc`.
-- Orchestrator **runtime/type imports** of extracted layers use `file:../packages/<name>` as `@workflows/<name>` (e.g. `@workflows/eval/cost`, `@workflows/models/local`, `@workflows/memory`, `@workflows/tools`) so they resolve under `node_modules`, not under Orchestrator’s `rootDir`.
+- Orchestrator **runtime/type imports** of extracted layers use `file:../packages/<name>` as `@workflows/<name>` so they resolve under `node_modules`, not under Orchestrator’s `rootDir`.
 - Scripts (`run-eval`, smokes) may still use **relative** paths into `packages/*` via tsx where convenient (eval suite runner still wires Orchestrator).
 
 **Rejected:** `rootDir: ".."` + compiling `../packages/eval` into Orchestrator’s program — forces `dist/Orchestrator/src/...` and broken `main`/`start` paths.

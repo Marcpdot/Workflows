@@ -23,10 +23,19 @@
     "typescript": "^5.8.2"
   },
   "dependencies": {
+    "@workflows/agents": "file:../packages/agents",
+    "@workflows/compression": "file:../packages/compression",
+    "@workflows/embeddings": "file:../packages/embeddings",
     "@workflows/eval": "file:../packages/eval",
     "@workflows/memory": "file:../packages/memory",
     "@workflows/models": "file:../packages/models",
+    "@workflows/observability": "file:../packages/observability",
+    "@workflows/policy": "file:../packages/policy",
+    "@workflows/proactive": "file:../packages/proactive",
+    "@workflows/retrieval": "file:../packages/retrieval",
+    "@workflows/structured": "file:../packages/structured",
     "@workflows/tools": "file:../packages/tools",
+    "@workflows/workspace": "file:../packages/workspace",
     "better-sqlite3": "^13.0.2"
   }
 }
