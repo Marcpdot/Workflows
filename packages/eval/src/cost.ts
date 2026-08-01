@@ -1,9 +1,8 @@
 /**
  * Token estimation and rough USD cost for eval reports.
  * Rates are approximate and configurable via env — not billing-grade.
+ * No dependency on Orchestrator types (importable from Orchestrator without rootDir: "..").
  */
-
-import type { ModelChoice } from "../../../Orchestrator/src/types.js";
 
 export interface UsageLike {
   promptTokens?: number;
@@ -43,9 +42,10 @@ function rateFromEnv(
 /**
  * Default rates USD per 1M tokens (approx, mid-2026 ballpark for Grok-class).
  * Override with EVAL_COST_INPUT_PER_M / EVAL_COST_OUTPUT_PER_M.
+ * @param provider model tier string (e.g. "local" | "mid" | "frontier")
  */
 export function estimateCostUsd(
-  provider: ModelChoice | string,
+  provider: string,
   promptTokens: number,
   completionTokens: number
 ): { usd: number; note: string } {
@@ -69,7 +69,7 @@ export function estimateCostUsd(
  * Build cost breakdown from API usage and/or reply+prompt text fallback.
  */
 export function buildCostBreakdown(input: {
-  provider: ModelChoice | string;
+  provider: string;
   usage?: UsageLike;
   promptText?: string;
   replyText?: string;

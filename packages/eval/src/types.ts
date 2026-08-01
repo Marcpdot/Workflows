@@ -1,4 +1,5 @@
-import type { ModelChoice } from "../../../Orchestrator/src/types.js";
+/** Aligns with Orchestrator ModelChoice values without importing Orchestrator. */
+export type EvalRouteModel = "local" | "mid" | "frontier";
 
 export interface EvalCase {
   id: string;
@@ -9,7 +10,7 @@ export interface EvalCase {
     role: "user" | "assistant" | "system";
     content: string;
   }>;
-  expectRoute?: ModelChoice;
+  expectRoute?: EvalRouteModel;
   /** All strings must appear in the reply (case-insensitive) */
   expectContains?: string[];
   /** If true, force a long sessionSetup so compression is likely */

@@ -3,15 +3,20 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "outDir": "dist",
     "rootDir": "src",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "declaration": true,
-    "resolveJsonModule": true
+    "noEmit": true,
+    "types": ["node"],
+    "typeRoots": ["../../Orchestrator/node_modules/@types"]
   },
-  "include": ["src/**/*"],
+  "include": [
+    "src/cost.ts",
+    "src/assertions.ts",
+    "src/types.ts"
+  ],
   "exclude": ["node_modules", "dist"]
 }

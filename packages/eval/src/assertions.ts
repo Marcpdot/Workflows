@@ -1,5 +1,10 @@
-import type { OrchestratorResult } from "../../../Orchestrator/src/types.js";
 import type { EvalCase } from "./types.js";
+
+/** Minimal shape for assertions (satisfied by OrchestratorResult). */
+export interface AssertableResult {
+  reply: string;
+  routing?: { model?: string };
+}
 
 /**
  * Run expectRoute / expectContains against an orchestrator result.
@@ -7,7 +12,7 @@ import type { EvalCase } from "./types.js";
  */
 export function runAssertions(
   evalCase: EvalCase,
-  result: OrchestratorResult
+  result: AssertableResult
 ): string[] {
   const failures: string[] = [];
 

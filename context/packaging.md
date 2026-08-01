@@ -33,4 +33,17 @@ Refactor proceeds **step-by-step** per `docs/PACKAGE_REFACTOR.md` (behavior free
 |------|--------|----------|
 | A (done) | eval | `packages/eval/` (`cases.json` + `src/`) |
 
-Orchestrator remains the runnable package (CLI/scripts); it imports eval via relative path. Further layers move only when their step runs — do not skip ahead.
+Orchestrator remains the runnable package (CLI/scripts). Further layers move only when their step runs — do not skip ahead.
+
+### Typecheck / compile strategy (Step A follow-up)
+
+**Status:** active  
+**Evidence:** confirmed  
+**Source:** Step A path cleanup after `rootDir: ".."` was rejected as too awkward  
+
+- **Orchestrator** `tsconfig`: `rootDir: "src"`, `include` only `src/**/*` → `dist/index.js` (normal layout).
+- **packages/eval** has its own `tsconfig` (`noEmit`) for **standalone** modules (`cost`, `assertions`, `types`). The suite `runner` still imports Orchestrator and is exercised via tsx scripts, not that isolated `tsc`.
+- Orchestrator **runtime/type imports** of cost helpers use `file:../packages/eval` as `@workflows/eval` (`import … from "@workflows/eval/cost"`) so eval is resolved like a normal package (junction under `node_modules`), not compiled under Orchestrator’s `rootDir`.
+- Scripts (`run-eval`, smokes) still use **relative** paths into `packages/eval` via tsx (suite runner still wires Orchestrator).
+
+**Rejected:** `rootDir: ".."` + compiling `../packages/eval` into Orchestrator’s program — forces `dist/Orchestrator/src/...` and broken `main`/`start` paths.

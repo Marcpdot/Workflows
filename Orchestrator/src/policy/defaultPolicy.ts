@@ -3,7 +3,7 @@
  * When disabled, mirrors router choice (no cap enforcement).
  */
 
-import { estimateTokensFromText } from "../../../packages/eval/src/cost.js";
+import { estimateTokensFromText } from "@workflows/eval/cost";
 import { BudgetTracker } from "./budget.js";
 import type {
   ComputePolicy,

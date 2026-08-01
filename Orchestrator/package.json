@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "description": "Minimal modular orchestrator — Ollama (local) + Grok (frontier)",
   "type": "module",
-  "main": "dist/Orchestrator/src/index.js",
+  "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/Orchestrator/src/index.js",
+    "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "serve": "tsx src/integration/serverMain.ts",
     "ui": "tsx src/ui/web/main.ts",
@@ -23,6 +23,7 @@
     "typescript": "^5.8.2"
   },
   "dependencies": {
+    "@workflows/eval": "file:../packages/eval",
     "better-sqlite3": "^13.0.2"
   }
 }

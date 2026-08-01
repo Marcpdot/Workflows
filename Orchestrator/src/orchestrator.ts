@@ -51,7 +51,7 @@ import {
   loadObservabilityConfig,
   type Observer,
 } from "./observability/index.js";
-import { estimateTokensFromText } from "../../packages/eval/src/cost.js";
+import { estimateTokensFromText } from "@workflows/eval/cost";
 import {
   defaultPipelineRoles,
   registryForRole,

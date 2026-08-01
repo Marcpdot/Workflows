@@ -10,11 +10,14 @@ Evaluation suite (Milestone 1) — fixed cases, runner, assertions, token/cost h
 | `src/` | Types, assertions, cost helpers, suite runner |
 | `Orchestrator/scripts/run-eval.ts` | CLI entry (unchanged command from Orchestrator cwd) |
 
+**Imports:** Orchestrator depends on this package as `@workflows/eval` (`file:../packages/eval`) and imports cost via `@workflows/eval/cost` so Orchestrator `tsconfig` can keep `rootDir: "src"`. Scripts use relative paths + tsx.
+
 ```bash
 cd Orchestrator
+npm install
 npx tsx scripts/run-eval.ts
 npx tsx scripts/smoke-eval-assertions.ts
 npx tsx scripts/smoke-eval-cost.ts
 ```
 
-Runner still wires the Orchestrator package (same handle path as CLI). Cost helpers are imported by orchestrator/policy for token estimates.
+Runner still wires the Orchestrator package (same handle path as CLI).
