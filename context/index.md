@@ -2,11 +2,14 @@
 
 Lean index of why-knowledge. Load a topic file only when relevant.
 
-- [architecture.md](architecture.md) — layered intent vs current package shape
-- [milestones.md](milestones.md) — M0–M10 status, shell-first delivery, planned refactor
+- [architecture.md](architecture.md) — layered intent vs current package shape; handle pipeline
+- [milestones.md](milestones.md) — shell-first delivery, defaults-off, M0–M8 status, M9–M10 next
 - [packaging.md](packaging.md) — everything under Orchestrator/ for now; split after M10
 - [routing.md](routing.md) — rule-based local vs frontier selection
+- [policy.md](policy.md) — budget/tier compute policy over the router (M7)
 - [memory.md](memory.md) — short-term SQLite; LTM + embeddings as later layers
-- [models.md](models.md) — default small local model, Ollama, Grok frontier
+- [models.md](models.md) — default small local model, Ollama CLI, Grok frontier
 - [privacy.md](privacy.md) — personal model outside public repo
 - [interface.md](interface.md) — CLI first; M6 localhost web shell not TUI
+- [integration.md](integration.md) — CLI contract + thin HTTP, same brain (M5)
+- [observability.md](observability.md) — local JSONL events, prompts off (M8)

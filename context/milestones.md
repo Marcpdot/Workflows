@@ -7,7 +7,7 @@
 **Source:** working session 2026-08-01  
 **Revisit when:** stronger local models are in daily use and gaps hurt
 
-Milestones are implemented as **working shells**: interfaces, defaults off, smokes, keyword/fallback paths. Deep calibration (embedding reindex, score fusion, rich UI) is intentionally thin.
+Milestones are implemented as **working shells**: interfaces, env-gated features, smokes, keyword/fallback paths. Deep calibration (embedding reindex, score fusion, rich UI) is intentionally thin.
 
 **Reason:** Weak local models and incomplete product use cases make early optimization noise. A complete vertical path (spec → code → smoke) compounds better than polishing one layer.
 
@@ -15,6 +15,19 @@ Milestones are implemented as **working shells**: interfaces, defaults off, smok
 
 - **Production-harden each milestone before the next** — delays the platform surface and invents requirements without usage.
 - **Skip milestones that need a strong model** — still worth having the code path so 12b+ can be dropped in later.
+
+## Defaults-off for costly or side-effecting paths
+
+**Status:** active  
+**Evidence:** confirmed  
+**Source:** env flags across tools, policy, embeddings, proactive, pipeline; M8 config exception below  
+**Revisit when:** daily use shows a safer default for a given feature
+
+Most optional brain features start **off** until explicitly enabled (`TOOLS_ENABLED`, `POLICY_ENABLED`, `EMBEDDINGS_ENABLED`, `PROACTIVE_ENABLED`, `AGENTS_PIPELINE_ENABLED`, LTM auto-inject, etc.). Chat + rule routing remain usable without them.
+
+**Exception:** observability defaults **on** (JSONL under gitignored `data/logs/`) so operators can see route/model/tokens without flipping a flag first. Prompt bodies stay off (`OBS_LOG_PROMPTS=false`).
+
+**Reason:** A personal stack should not burn tokens, run tools, or inject LTM by surprise. Seeing *what happened* is cheap and local; *acting* is gated.
 
 ## Order after M3 (2026-08-01)
 
@@ -32,6 +45,20 @@ Milestones are implemented as **working shells**: interfaces, defaults off, smok
 | M10 | Structured output | Stabilize tools/pipeline parsing |
 
 **After M10:** package refactor so layers are not all owned by the Orchestrator folder (see [packaging.md](packaging.md)).
+
+## Implementation status (shells)
+
+**Status:** active  
+**Evidence:** confirmed  
+**Source:** git history through `fe3dfee` (M8); context refresh 2026-08-01  
+
+| Range | State |
+|-------|--------|
+| M0–M3 | Delivered (chat path, compression/retrieval/eval, tools A–C, LTM API, proactive suggestions, sequential multi-role pipeline) |
+| M4–M8 | Delivered as shells (embeddings, CLI+thin HTTP, localhost web UI, compute policy, JSONL observability) |
+| M9–M10 | Specced / stubs may exist; not the current delivery focus |
+
+Thin spots accepted under shell-first (e.g. heuristic score fusion, static UI, linear vector scan) are documented per topic, not treated as blockers for the next milestone.
 
 ## Milestone 3 privacy cut
 

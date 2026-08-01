@@ -25,3 +25,5 @@ The orchestrator classifies each user prompt into a coarse **task type** (summar
 - **Always frontier** — rejected for cost and latency on routine tasks; conflicts with the product goal of token-efficient local-first use.
 - **Always local** — rejected because research/reasoning and hard design work still need a frontier model in M0.
 - **LLM-as-router on every request** — deferred. It adds latency, cost, and failure modes before evaluation exists to justify it. Smart routing is a later upgrade path, not the M0 baseline.
+
+Budget caps and mid-tier selection are a separate **compute policy** layer (M7), default off — see [policy.md](policy.md).
