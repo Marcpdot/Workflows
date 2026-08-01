@@ -65,7 +65,19 @@ npm run dev -- --ltm list
 npm run dev -- --ltm forget user.preferred_name
 ```
 
-`orch.longTerm` is available programmatically. `LONGTERM_AUTO_INJECT=true` can add top keyword hits as a system block (off by default; full proactivity is 3B — not enabled here).
+`orch.longTerm` is available programmatically. `LONGTERM_AUTO_INJECT=true` can add top keyword hits as a system block (off by default).
+
+## Proactivity (Milestone 3B)
+
+When `PROACTIVE_ENABLED=true`, after each reply the CLI may print **0–3**
+suggested next steps (`[next] …`) from heuristics (bug → smoke, file paths →
+tools, architecture hits → update `context/`, etc.). Suggestions are metadata
+only — nothing is auto-executed. Default is **off**.
+
+```bash
+npx tsx scripts/smoke-proactive.ts
+# PROACTIVE_ENABLED=true npm run dev -- "TypeError crash in router"
+```
 
 ```ts
 import { createMemory } from "./memory/index.js";

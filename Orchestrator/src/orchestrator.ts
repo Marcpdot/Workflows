@@ -29,6 +29,7 @@ import {
   resolveLongTermDbPath,
   type LongTermMemory,
 } from "./memory/longterm/index.js";
+import { suggestNextSteps } from "./proactive/index.js";
 import type {
   ChatMessage,
   ModelClient,
@@ -256,8 +257,9 @@ export class Orchestrator {
         },
       });
 
+      const reply = loopResult.finalText;
       return {
-        reply: loopResult.finalText,
+        reply,
         routing,
         model: modelName,
         provider: choice,
@@ -270,6 +272,12 @@ export class Orchestrator {
         retrieval: retrievalMeta,
         toolSteps: loopResult.steps,
         toolsHitMaxSteps: loopResult.hitMaxSteps,
+        suggestions: await this.buildSuggestions(
+          prompt,
+          reply,
+          retrievalBlock,
+          longTermBlock
+        ),
       };
     }
 
@@ -292,7 +300,64 @@ export class Orchestrator {
         originalCount,
       },
       retrieval: retrievalMeta,
+      suggestions: await this.buildSuggestions(
+        prompt,
+        response.content,
+        retrievalBlock,
+        longTermBlock
+      ),
     };
+  }
+
+  /**
+   * Milestone 3B: optional next-step suggestions (never mutates reply).
+   * Off unless proactive.enabled. Does not auto-run anything.
+   */
+  private async buildSuggestions(
+    userPrompt: string,
+    assistantReply: string,
+    retrievedContext: string | null,
+    longTermBlock: string | null
+  ): Promise<OrchestratorResult["suggestions"]> {
+    const settings = this.config.proactive;
+    if (!settings?.enabled) return undefined;
+
+    const snippets: string[] = [];
+    if (longTermBlock) {
+      for (const line of longTermBlock.split("\n")) {
+        const s = line.replace(/^-\s*/, "").trim();
+        if (s) snippets.push(s);
+      }
+    } else if (this.longTerm) {
+      try {
+        const hits = await this.longTerm.recall({
+          text: userPrompt,
+          limit: 3,
+        });
+        for (const f of hits) {
+          snippets.push(f.key ? `[${f.key}] ${f.content}` : f.content);
+        }
+      } catch {
+        // LTM optional — ignore recall failures
+      }
+    }
+
+    const tips = suggestNextSteps(
+      {
+        userPrompt,
+        assistantReply,
+        retrievedContext: retrievedContext ?? undefined,
+        longTermSnippets: snippets.length > 0 ? snippets : undefined,
+      },
+      {
+        max: settings.max,
+        locale: settings.locale,
+        minConfidence: settings.minConfidence,
+      }
+    );
+
+    // useModel polish intentionally not implemented in 3B (flag reserved)
+    return tips;
   }
 }
 
@@ -363,6 +428,16 @@ export function loadConfigFromEnv(
       autoInject: envFlagTrue(env.LONGTERM_AUTO_INJECT),
       injectMaxChars: parsePositiveInt(env.LONGTERM_INJECT_MAX_CHARS, 1500),
       injectLimit: parsePositiveInt(env.LONGTERM_INJECT_LIMIT, 5),
+    },
+    proactive: {
+      enabled: envFlagTrue(env.PROACTIVE_ENABLED),
+      max: parsePositiveInt(env.PROACTIVE_MAX, 3),
+      useModel: envFlagTrue(env.PROACTIVE_USE_MODEL),
+      minConfidence: (() => {
+        const n = Number(env.PROACTIVE_MIN_CONFIDENCE ?? "0.45");
+        return Number.isFinite(n) && n >= 0 && n <= 1 ? n : 0.45;
+      })(),
+      locale: env.PROACTIVE_LOCALE === "en" ? "en" : env.PROACTIVE_LOCALE === "nb" ? "nb" : "nb",
     },
   };
 }

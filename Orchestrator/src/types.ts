@@ -2,6 +2,7 @@
 
 import type { ToolRegistry, ToolLoopStep, ModelToolSchema } from "./tools/types.js";
 import type { LongTermMemory, LongTermSettings } from "./memory/longterm/types.js";
+import type { ProactiveSettings, Suggestion } from "./proactive/types.js";
 
 export type ModelChoice = "local" | "frontier";
 
@@ -106,6 +107,8 @@ export interface OrchestratorConfig {
    */
   longTerm?: LongTermMemory;
   longTermSettings?: LongTermSettings;
+  /** Milestone 3B — next-step suggestions (default off) */
+  proactive?: ProactiveSettings;
 }
 
 export interface OrchestratorResult {
@@ -130,4 +133,6 @@ export interface OrchestratorResult {
   /** Present when phase B tool loop ran */
   toolSteps?: ToolLoopStep[];
   toolsHitMaxSteps?: boolean;
+  /** Milestone 3B suggestions (metadata — does not alter reply) */
+  suggestions?: Suggestion[];
 }

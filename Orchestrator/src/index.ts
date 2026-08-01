@@ -86,6 +86,7 @@ Env (see .env.example):
   TOOL_WORKSPACE_ROOT, TOOL_READ_MAX_BYTES, TOOL_COMMAND_TIMEOUT_MS
   TOOLS_DISABLED, TOOLS_ENABLED, TOOLS_MAX_STEPS
   LONGTERM_DB_PATH, PERSONAL_CONTEXT_DIR, LONGTERM_AUTO_INJECT, LONGTERM_DISABLED
+  PROACTIVE_ENABLED, PROACTIVE_MAX, PROACTIVE_USE_MODEL
 `);
 }
 
@@ -455,6 +456,11 @@ function printResult(
     }
     if (result.toolsHitMaxSteps) {
       console.log("[tool] hit max steps");
+    }
+  }
+  if (result.suggestions && result.suggestions.length > 0) {
+    for (const tip of result.suggestions) {
+      console.log(`[next] ${tip.text}`);
     }
   }
   if (result.compression) {
