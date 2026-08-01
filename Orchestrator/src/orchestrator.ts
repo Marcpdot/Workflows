@@ -37,6 +37,11 @@ import {
   type ComputePolicy,
   type PolicyDecision,
 } from "./policy/index.js";
+import {
+  createObserverFromEnv,
+  loadObservabilityConfig,
+  type Observer,
+} from "./observability/index.js";
 import { estimateTokensFromText } from "./eval/cost.js";
 import {
   defaultPipelineRoles,
@@ -62,6 +67,8 @@ export class Orchestrator {
   private readonly routerConfig: RouterConfig;
   private readonly tools?: ToolRegistry;
   private readonly policy: ComputePolicy;
+  private readonly observer: Observer;
+  private readonly obsLogPrompts: boolean;
   /** Milestone 3A long-term memory (facts/preferences). Optional. */
   readonly longTerm?: LongTermMemory;
   constructor(
@@ -78,6 +85,10 @@ export class Orchestrator {
     this.policy =
       config.policy ??
       new DefaultComputePolicy(loadPolicyConfig(process.env));
+    this.observer = config.observer ?? createObserverFromEnv(process.env);
+    this.obsLogPrompts =
+      config.obsLogPrompts ??
+      loadObservabilityConfig(process.env).logPrompts;
     this.local =
       clients?.local ??
       new OllamaCliClient({
@@ -248,7 +259,39 @@ export class Orchestrator {
     options?: {
       forceModel?: ModelChoice;
       history?: ChatMessage[];
+      sessionId?: string;
     }
+  ): Promise<OrchestratorResult> {
+    const started = performance.now();
+    const sessionId = options?.sessionId;
+
+    try {
+      return await this.handleInner(prompt, options, started, sessionId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.observer.emit({
+        ts: new Date().toISOString(),
+        kind: "error",
+        sessionId,
+        latencyMs: Math.round(performance.now() - started),
+        error: message,
+        meta: this.obsLogPrompts
+          ? { promptPreview: prompt.slice(0, 200) }
+          : undefined,
+      });
+      throw err;
+    }
+  }
+
+  private async handleInner(
+    prompt: string,
+    options: {
+      forceModel?: ModelChoice;
+      history?: ChatMessage[];
+      sessionId?: string;
+    } | undefined,
+    started: number,
+    sessionId?: string
   ): Promise<OrchestratorResult> {
     const routing = this.decide(prompt);
 
@@ -423,13 +466,26 @@ export class Orchestrator {
       });
 
       const reply = loopResult.finalText;
+      const tokens =
+        estimateTokensFromText(prompt) + estimateTokensFromText(reply);
       // Tool-loop usage often missing — estimate from prompt+reply
-      this.policy.recordUsage(policyDecision.tier, {
-        tokens:
-          estimateTokensFromText(prompt) + estimateTokensFromText(reply),
-      });
+      this.policy.recordUsage(policyDecision.tier, { tokens });
 
-      return {
+      for (const step of loopResult.steps) {
+        this.observer.emit({
+          ts: new Date().toISOString(),
+          kind: "tool",
+          sessionId,
+          tools: [step.call.name],
+          meta: {
+            ok: step.result.ok,
+            durationMs: step.durationMs,
+            error: step.result.error,
+          },
+        });
+      }
+
+      const result: OrchestratorResult = {
         reply,
         routing,
         model: modelName,
@@ -451,6 +507,13 @@ export class Orchestrator {
           longTermBlock
         ),
       };
+      this.emitRequestEvent(result, {
+        sessionId,
+        started,
+        tokens,
+        prompt,
+      });
+      return result;
     }
 
     // Phase A / tools off: single completion
@@ -467,7 +530,7 @@ export class Orchestrator {
       tokens,
     });
 
-    return {
+    const result: OrchestratorResult = {
       reply: response.content,
       routing,
       model: response.model,
@@ -488,6 +551,49 @@ export class Orchestrator {
         longTermBlock
       ),
     };
+    this.emitRequestEvent(result, {
+      sessionId,
+      started,
+      tokens,
+      prompt,
+    });
+    return result;
+  }
+
+  private emitRequestEvent(
+    result: OrchestratorResult,
+    ctx: {
+      sessionId?: string;
+      started: number;
+      tokens?: number;
+      prompt: string;
+    }
+  ): void {
+    const toolNames =
+      result.toolSteps?.map((s) => s.call.name).filter(Boolean) ?? [];
+    this.observer.emit({
+      ts: new Date().toISOString(),
+      kind: "request",
+      sessionId: ctx.sessionId,
+      route: result.routing.model,
+      model: result.model,
+      provider: result.provider,
+      latencyMs: Math.round(performance.now() - ctx.started),
+      tokens: ctx.tokens ?? result.usage?.totalTokens,
+      tools: toolNames.length > 0 ? toolNames : undefined,
+      meta: {
+        policyReason: result.policy?.reason,
+        policyTier: result.policy?.tier,
+        budgetCapped: result.policy?.budgetCapped,
+        taskType: result.routing.taskType,
+        complexity: result.routing.complexity,
+        compressed: result.compression?.compressed,
+        retrievalChunks: result.retrieval?.chunkCount,
+        ...(this.obsLogPrompts
+          ? { promptPreview: ctx.prompt.slice(0, 200) }
+          : {}),
+      },
+    });
   }
 
   private resolveClient(
@@ -677,5 +783,7 @@ export function loadConfigFromEnv(
     embeddings,
     policy: new DefaultComputePolicy(loadPolicyConfig(env)),
     midModel: env.POLICY_MID_MODEL?.trim() || undefined,
+    observer: createObserverFromEnv(env),
+    obsLogPrompts: loadObservabilityConfig(env).logPrompts,
   };
 }

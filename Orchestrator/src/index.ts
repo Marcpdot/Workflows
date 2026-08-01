@@ -64,6 +64,7 @@ Options:
   --pipeline <task>  Sequential planner→worker pipeline (Milestone 3C)
   --workspace, -w PATH  Tool workspace root (env WORKSPACE_ROOT)
   --json             Machine JSON on stdout only (logs → stderr)
+  --verbose          Mirror observability events to stderr
   --help, -h         Show this help
 
 REPL commands:
@@ -92,6 +93,7 @@ Env (see .env.example):
   PROACTIVE_ENABLED, PROACTIVE_MAX, PROACTIVE_USE_MODEL
   AGENTS_PIPELINE_ENABLED
   WORKSPACE_ROOT (or TOOL_WORKSPACE_ROOT), INTEGRATION_HTTP_PORT, INTEGRATION_HTTP_TOKEN
+  OBS_ENABLED, OBS_LOG_PATH, OBS_LOG_PROMPTS, OBS_STDERR
 `);
 }
 
@@ -596,6 +598,7 @@ async function runOnce(
   const result = await orch.handle(args.prompt, {
     forceModel: args.forceModel,
     history,
+    sessionId: args.sessionId,
   });
   const latencyMs = Math.round(performance.now() - started);
 

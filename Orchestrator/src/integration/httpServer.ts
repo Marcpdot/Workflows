@@ -230,6 +230,7 @@ export function createIntegrationServer(
             const result = await orch.handle(parsed.prompt, {
               history,
               forceModel: parsed.options?.forceModel,
+              sessionId,
             });
 
             if (memory) {

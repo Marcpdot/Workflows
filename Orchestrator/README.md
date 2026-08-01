@@ -79,6 +79,21 @@ npx tsx scripts/smoke-proactive.ts
 # PROACTIVE_ENABLED=true npm run dev -- "TypeError crash in router"
 ```
 
+## Observability (Milestone 8)
+
+Structured JSONL events per request (and tool steps) under `data/logs/`
+(gitignored via `data/`). Default **on**; disable with `OBS_ENABLED=false`.
+Full prompts are **not** logged unless `OBS_LOG_PROMPTS=true`.
+
+```bash
+npx tsx scripts/smoke-observability.ts
+# OBS_STDERR=true or --verbose → mirror events to stderr
+# tail -f data/logs/orchestrator.jsonl
+```
+
+Fields: `ts`, `kind` (request|tool|error), `sessionId`, `route`, `model`,
+`provider`, `latencyMs`, `tokens`, `tools`, `meta.policyReason`, …
+
 ## Compute policy (Milestone 7)
 
 Optional budget-aware tier selection (`local` | `mid` | `frontier`) wrapping

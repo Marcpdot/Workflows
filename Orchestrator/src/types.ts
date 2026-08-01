@@ -5,6 +5,7 @@ import type { LongTermMemory, LongTermSettings } from "./memory/longterm/types.j
 import type { ProactiveSettings, Suggestion } from "./proactive/types.js";
 import type { Embedder, VectorStore } from "./embeddings/types.js";
 import type { ComputePolicy, PolicyDecision } from "./policy/types.js";
+import type { Observer } from "./observability/types.js";
 
 export type ModelChoice = "local" | "mid" | "frontier";
 
@@ -123,6 +124,10 @@ export interface OrchestratorConfig {
   /** Milestone 7 compute policy (budget + tier) */
   policy?: ComputePolicy;
   midModel?: string;
+  /** Milestone 8 observability sink */
+  observer?: Observer;
+  /** When true, include truncated prompt in request events */
+  obsLogPrompts?: boolean;
 }
 
 export interface OrchestratorResult {
