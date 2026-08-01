@@ -85,6 +85,29 @@ Smoke test:
 npx tsx scripts/smoke-compression.ts
 ```
 
+## Retrieval (Milestone 1)
+
+Deterministic keyword retrieval over **session history** and **`context/*.md`**
+(Keep the Why). Runs *before* compression; results are injected as a system
+block (`Retrieved context: …`) with hard `limit` / `maxChars` caps. No embeddings.
+
+```ts
+import { retrieve } from "./retrieval/index.js";
+
+const chunks = await retrieve(prompt, {
+  sessionMessages: history,
+  contextDir: "../context",
+  limit: 4,
+  maxChars: 2000,
+});
+```
+
+Env: `RETRIEVAL_LIMIT`, `RETRIEVAL_MAX_CHARS`, `RETRIEVAL_CONTEXT_DIR`, `RETRIEVAL_DISABLED`.
+
+```bash
+npx tsx scripts/smoke-retrieval.ts
+```
+
 ## Eval (Milestone 1)
 
 Fixed cases in `eval/cases.json`. Runner exercises the real orchestrator path:
@@ -106,6 +129,7 @@ Reports land in `data/eval-results/`. Exit code `1` if any case fails.
 | `src/models/frontier.ts` | xAI Grok client (chat completions) |
 | `src/memory/` | SQLite session history |
 | `src/compression/` | Realtime history compression |
+| `src/retrieval/` | Keyword retrieval (session + context/) |
 | `src/eval/` | Eval types, assertions, runner |
 | `eval/cases.json` | Fixed eval cases |
 | `src/orchestrator.ts` | Wire routing + compression + models |

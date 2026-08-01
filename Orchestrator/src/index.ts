@@ -70,6 +70,7 @@ Env (see .env.example):
   SYSTEM_PROMPT
   SESSION_ID, MEMORY_DB_PATH, MEMORY_HISTORY_LIMIT
   COMPRESSION_THRESHOLD, COMPRESSION_KEEP_RECENT, COMPRESSION_DISABLED
+  RETRIEVAL_LIMIT, RETRIEVAL_MAX_CHARS, RETRIEVAL_CONTEXT_DIR, RETRIEVAL_DISABLED
 `);
 }
 
@@ -198,6 +199,11 @@ function printResult(
     `\n[route] ${result.routing.reason}  (type=${result.routing.taskType}, complexity=${result.routing.complexity})`
   );
   console.log(`[model] ${result.provider}/${result.model}`);
+  if (result.retrieval) {
+    console.log(
+      `[retrieval] chunks=${result.retrieval.chunkCount}  chars=${result.retrieval.chars}  sources=${result.retrieval.sources.join(",") || "-"}`
+    );
+  }
   if (result.compression) {
     if (result.compression.compressed) {
       console.log(

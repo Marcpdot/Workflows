@@ -60,6 +60,15 @@ export interface CompressionSettings {
   disabled?: boolean;
 }
 
+export interface RetrievalSettings {
+  limit: number;
+  maxChars: number;
+  maxChunkChars: number;
+  /** Absolute or relative path to Keep the Why context dir */
+  contextDir: string;
+  disabled?: boolean;
+}
+
 export interface OrchestratorConfig {
   ollamaBin: string;
   ollamaModel: string;
@@ -68,6 +77,7 @@ export interface OrchestratorConfig {
   grokModel: string;
   systemPrompt: string;
   compression: CompressionSettings;
+  retrieval: RetrievalSettings;
 }
 
 export interface OrchestratorResult {
@@ -82,5 +92,11 @@ export interface OrchestratorResult {
     summary: string | null;
     recentCount: number;
     originalCount: number;
+  };
+  /** Present when retrieval ran */
+  retrieval?: {
+    chunkCount: number;
+    sources: string[];
+    chars: number;
   };
 }

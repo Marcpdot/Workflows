@@ -1,6 +1,6 @@
 /**
- * Main orchestrator: route → compress history → call model → return reply.
- * Routing, compression, and model clients are intentionally separate.
+ * Main orchestrator: route → retrieve → compress → call model → return reply.
+ * Routing, retrieval, compression, and model clients are intentionally separate.
  */
 
 import { route, type RouterConfig } from "./router.js";
@@ -10,6 +10,11 @@ import {
   compressHistory,
   LocalModelSummarizer,
 } from "./compression/index.js";
+import {
+  formatRetrievalBlock,
+  resolveDefaultContextDir,
+  retrieve,
+} from "./retrieval/index.js";
 import type {
   ChatMessage,
   ModelClient,
@@ -55,9 +60,10 @@ export class Orchestrator {
   }
 
   /**
-   * Full pipeline: route → compress history → call selected model → return.
+   * Full pipeline: route → retrieve → compress history → call model → return.
    * Optional `forceModel` overrides routing (useful for testing / manual pick).
    * Compression uses the **local** model only (never frontier).
+   * Retrieval sees full history; compression only reduces chat turns sent.
    * Callers should still persist full user/assistant messages to memory.
    */
   async handle(
@@ -78,6 +84,27 @@ export class Orchestrator {
     const history = options?.history ?? [];
     const originalCount = history.length;
 
+    // 1) Retrieval over full history + project context (before compression)
+    let retrievalBlock: string | null = null;
+    let retrievalMeta: OrchestratorResult["retrieval"];
+
+    if (!this.config.retrieval.disabled) {
+      const chunks = await retrieve(prompt, {
+        sessionMessages: history,
+        contextDir: this.config.retrieval.contextDir,
+        limit: this.config.retrieval.limit,
+        maxChars: this.config.retrieval.maxChars,
+        maxChunkChars: this.config.retrieval.maxChunkChars,
+      });
+      retrievalBlock = formatRetrievalBlock(chunks);
+      retrievalMeta = {
+        chunkCount: chunks.length,
+        sources: chunks.map((c) => c.source),
+        chars: chunks.reduce((n, c) => n + c.text.length, 0),
+      };
+    }
+
+    // 2) Compression of chat history
     let recentMessages: ChatMessage[] = history;
     let summary: string | null = null;
     let compressed = false;
@@ -104,8 +131,17 @@ export class Orchestrator {
       compressed = result.compressed;
     }
 
+    // 3) Build messages: system → retrieval → summary → recent → user
     const messages: ChatMessage[] = [
       { role: "system", content: this.config.systemPrompt },
+      ...(retrievalBlock
+        ? [
+            {
+              role: "system" as const,
+              content: `Retrieved context:\n${retrievalBlock}`,
+            },
+          ]
+        : []),
       ...(summary
         ? [
             {
@@ -141,6 +177,7 @@ export class Orchestrator {
         recentCount: recentMessages.length,
         originalCount,
       },
+      retrieval: retrievalMeta,
     };
   }
 }
@@ -154,6 +191,10 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 export function loadConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env
 ): OrchestratorConfig {
+  const contextDir =
+    env.RETRIEVAL_CONTEXT_DIR?.trim() ||
+    resolveDefaultContextDir(process.cwd());
+
   return {
     ollamaBin: env.OLLAMA_BIN ?? "ollama",
     ollamaModel: env.OLLAMA_MODEL ?? "llama3.2:3b",
@@ -170,6 +211,14 @@ export function loadConfigFromEnv(
       disabled:
         env.COMPRESSION_DISABLED === "1" ||
         env.COMPRESSION_DISABLED === "true",
+    },
+    retrieval: {
+      limit: parsePositiveInt(env.RETRIEVAL_LIMIT, 4),
+      maxChars: parsePositiveInt(env.RETRIEVAL_MAX_CHARS, 2000),
+      maxChunkChars: parsePositiveInt(env.RETRIEVAL_MAX_CHUNK_CHARS, 600),
+      contextDir,
+      disabled:
+        env.RETRIEVAL_DISABLED === "1" || env.RETRIEVAL_DISABLED === "true",
     },
   };
 }
