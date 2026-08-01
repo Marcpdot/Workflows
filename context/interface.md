@@ -4,7 +4,7 @@
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** M5/M6 specs and README; commit `86c49f6`  
+**Source:** M5/M6 specs and README; commit `86c49f6`; run from `packages/orchestrator`  
 
 Scripts, eval, and CI use CLI (`tsx src/index.ts`, pure `--json` stdout, `--workspace`, `--session`, `--list-sessions`). The web UI is optional human shell.
 

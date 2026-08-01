@@ -4,7 +4,7 @@
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** commits `7d07643`, `6091db2` (PR #4); default in `Orchestrator/src/orchestrator.ts` and `Orchestrator/.env.example`  
+**Source:** commits `7d07643`, `6091db2` (PR #4); default in `packages/orchestrator/src/orchestrator.ts` and `packages/orchestrator/.env.example`  
 **Revisit when:** target hardware improves, eval shows 3B quality is blocking, or a better small default is adopted project-wide
 
 The configured default Ollama model tag is **`llama3.2:3b`**, overridable via `OLLAMA_MODEL`.
@@ -22,7 +22,7 @@ The configured default Ollama model tag is **`llama3.2:3b`**, overridable via `O
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** maintainer direction during M0 build; `Orchestrator/AGENTS.md`; `packages/models/src/local.ts`  
+**Source:** maintainer direction during M0 build; `packages/orchestrator/AGENTS.md`; `packages/models/src/local.ts`  
 **Revisit when:** structured streaming, concurrent requests, or richer Ollama API features are required
 
 Local inference is invoked by spawning the **Ollama CLI**: `ollama run <model> <prompt>` (subprocess), not by calling the Ollama daemon’s HTTP API.

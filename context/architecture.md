@@ -5,7 +5,7 @@
 **Status:** active  
 **Evidence:** confirmed  
 **Source:** root `ARCHITECTURE.md`; conversation 2026-08-01  
-**Revisit when:** post-M10 package refactor lands
+**Revisit when:** layer list or handle pipeline shape changes
 
 Intended layers remain:
 

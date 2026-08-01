@@ -4,7 +4,7 @@
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** M10 commit `74cd7f2`; `Orchestrator/src/structured/`; pipeline planner path  
+**Source:** M10 commit `74cd7f2`; `packages/structured/`; pipeline planner path  
 **Revisit when:** a backend gains reliable constrained decoding and eval shows repair is insufficient
 
 `completeStructured` runs model complete → parse/validate → optional **repair turn** (default max 2 attempts). Schema is a **light JSON Schema subset** (no Zod). On failure: `ok: false`, raw text preserved — **does not crash** the pipeline.

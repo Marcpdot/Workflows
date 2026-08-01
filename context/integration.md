@@ -4,9 +4,9 @@
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** M5 commit `86c49f6`; `Orchestrator/src/integration/`; CLI `--workspace`, pure `--json`  
+**Source:** M5 commit `86c49f6`; `packages/orchestrator/src/integration/`; CLI `--workspace`, pure `--json`  
 
-Other projects call Workflows through a **documented CLI contract** and optional **thin HTTP** (`GET /health`, `POST /v1/chat`). Tools bind to the caller’s workspace; orchestration logic stays inside Orchestrator.
+Other projects call Workflows through a **documented CLI contract** and optional **thin HTTP** (`GET /health`, `POST /v1/chat`). Tools bind to the caller’s workspace; orchestration logic stays inside the orchestrator package (not a second brain in the HTTP layer).
 
 **M9 boundaries (after shell delivery):** short-term sessions are namespaced per workspace; retrieval prefers `{workspace}/context` when present; LTM stays personal/global unless `LONGTERM_PROJECT_SCOPED`. See [workspace.md](workspace.md).
 

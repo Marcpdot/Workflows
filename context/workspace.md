@@ -4,7 +4,7 @@
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** M9 commit `6dfb2a3`; `Orchestrator/src/workspace/`; CLI `--workspace` / `--list-sessions`  
+**Source:** M9 commit `6dfb2a3`; `packages/workspace/`; CLI `--workspace` / `--list-sessions`  
 **Revisit when:** multi-device sync or automatic repo discovery is required
 
 Three layers stay distinct:

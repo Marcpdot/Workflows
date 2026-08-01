@@ -4,7 +4,7 @@
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** M7 commit `fce312c`; `Orchestrator/src/policy/`; `POLICY_ENABLED` default false  
+**Source:** M7 commit `fce312c`; `packages/policy/`; `POLICY_ENABLED` default false  
 
 Rule routing alone cannot **cap cost**. Compute policy sits before model selection: session/daily budgets, optional mid tier, force flags, and a recorded reason. When `POLICY_ENABLED` is false, behavior matches the prior router-only path.
 

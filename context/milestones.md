@@ -44,13 +44,13 @@ Most optional brain features start **off** until explicitly enabled (`TOOLS_ENAB
 | M9 | Workspace/session | Multi-project without mixing context |
 | M10 | Structured output | Stabilize tools/pipeline parsing |
 
-**After M10:** package refactor remains the *intended* follow-up, but was **re-confirmed deferred** after M10 delivery (stay one Orchestrator package until multi-package friction is real). See [packaging.md](packaging.md).
+**After M10:** package layout was refactored (A–F). See [packaging.md](packaging.md).
 
 ## Implementation status (shells)
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** git history through `74cd7f2` (M10); commits `6dfb2a3` (M9), `fe3dfee` (M8)  
+**Source:** git through M10 (`74cd7f2`) and package refactor A–F (`e07dc0f` Step F, later cleanup)  
 
 | Range | State |
 |-------|--------|
@@ -58,8 +58,9 @@ Most optional brain features start **off** until explicitly enabled (`TOOLS_ENAB
 | M4–M8 | Delivered as shells (embeddings, CLI+thin HTTP, localhost web UI, compute policy, JSONL observability) |
 | M9 | Delivered as shell — session/workspace namespace, project context, list-sessions (see [workspace.md](workspace.md)) |
 | M10 | Delivered as shell — completeStructured, planner plan JSON, shared tool JSON extract (see [structured.md](structured.md)) |
+| Packaging | **Done** — layers under `packages/*`, glue at `packages/orchestrator` (see [packaging.md](packaging.md)) |
 
-Vertical M0–M10 shells are in place. Packaging split is deferred (re-confirmed post-M10). Near-term focus is usage and deepening any shell that daily use shows is thin.
+Vertical M0–M10 shells are in place and the package map is readable. Near-term focus is **usage** and deepening any shell that daily use shows is thin.
 
 Thin spots accepted under shell-first (e.g. heuristic score fusion, static UI, linear vector scan, repair-not-constrained-decoding) are documented per topic.
 

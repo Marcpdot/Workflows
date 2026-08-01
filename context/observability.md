@@ -4,7 +4,7 @@
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** M8 commit `fe3dfee`; `Orchestrator/src/observability/`; `data/logs/` gitignored  
+**Source:** M8 commit `fe3dfee`; `packages/observability/`; logs under gitignored `data/logs/`  
 
 Structured **Observer** events (request / tool / error) record route, model, tokens, latency, tools, and errors. Default sink is **JSONL under `data/logs/`**, with optional stderr/`--verbose`. Full prompt bodies are **off by default** (`OBS_LOG_PROMPTS`).
 

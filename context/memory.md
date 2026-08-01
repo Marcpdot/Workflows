@@ -35,7 +35,7 @@ Durable facts with `remember` / `recall` / `list` / `forget`, optional keys and 
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** `Orchestrator/src/embeddings/`; commit `7debfab`  
+**Source:** `packages/embeddings/`; commit `7debfab`  
 
 Pluggable embedder (Ollama + mock), SQLite float vectors, linear scan, default **off**. When on: LTM index on remember/forget; retrieval can merge semantic context hits with keyword (RRF-style). Keyword path remains when disabled.
 

@@ -2,9 +2,9 @@
 
 Lean index of why-knowledge. Load a topic file only when relevant.
 
-- [architecture.md](architecture.md) — layered intent vs package shape; handle pipeline
-- [milestones.md](milestones.md) — shell-first delivery; **M0–M10 shells delivered**
-- [packaging.md](packaging.md) — packages/* layers + thin packages/orchestrator (Step F)
+- [architecture.md](architecture.md) — layered intent; handle pipeline; package shape
+- [milestones.md](milestones.md) — shell-first delivery; **M0–M10 delivered**; packaging done
+- [packaging.md](packaging.md) — **packages/* + packages/orchestrator** (refactor A–F why)
 - [routing.md](routing.md) — rule-based local vs frontier selection
 - [policy.md](policy.md) — budget/tier compute policy over the router (M7)
 - [memory.md](memory.md) — short-term SQLite; LTM + embeddings; session keys vs workspace
