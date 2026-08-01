@@ -1,22 +1,37 @@
 # Architecture
 
-## Milestone 0 foundation shape
+## Layered system (intent)
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** `ARCHITECTURE.md`; M0 orchestrator under `Orchestrator/`  
-**Revisit when:** Milestone 1+ layers (eval, tools standardization, proactive multi-agent) start reshaping boundaries
+**Source:** root `ARCHITECTURE.md`; conversation 2026-08-01  
+**Revisit when:** post-M10 package refactor
 
-The system is layered as **orchestration → memory → tools → evaluation → interface**. Milestone 0 only hardens the foundation:
+Intended layers remain:
 
-1. **Orchestration** — receive prompt, rule-route local vs frontier, call one model, return reply (CLI entry).
-2. **Memory** — short-term session history so restarts and model switches keep context (see [memory.md](memory.md)).
-3. **Models** — Ollama CLI locally, Grok as frontier (see [models.md](models.md)).
-4. **Routing** — fixed rules, not an LLM router yet (see [routing.md](routing.md)).
+1. **Orchestration** — receive, route, call model, return  
+2. **Memory** — short-term + long-term  
+3. **Tools** — external capabilities via one interface  
+4. **Evaluation** — fixed cases, tokens/cost  
+5. **Interface** — CLI, then optional UI  
 
-**Reason:** Ship a thin, modular path end-to-end before investing in embeddings, eval harnesses, or tool frameworks. Later milestones plug into the same seams rather than rewriting a monolith.
+Plus later platform concerns: embeddings, integration surface, compute policy, observability, workspace isolation, structured output.
+
+**Reason:** Jarvis-like personal system should be a **layer under many workflows**, not a single chatbot app. Layers let models and UIs change without losing progress.
+
+## Current package shape (pragmatic)
+
+**Status:** active (temporary)  
+**Evidence:** confirmed  
+**Source:** repo layout under `Orchestrator/`  
+
+Almost all implementation lives in the **Orchestrator package** (memory, tools, eval, embeddings, integration HTTP, web UI, policy as subfolders). That is **not** the long-term discipline target.
+
+**Reason:** Ship milestones end-to-end with one runnable package and one Build loop. Structure purity deferred until features exist to split.
 
 **Rejected alternatives:**
 
-- **Build tools + multi-agent + long-term memory in the first cut** — deferred by the milestone plan; each is a later layer once M0 continuity works.
-- **Web UI as the primary M0 interface** — CLI first; UI is optional later per architecture notes.
+- **One git repo per layer from day one** — more overhead than value while APIs were still moving.
+- **Full modular monorepo packages before M3** — would slow delivery of a working path.
+
+See [packaging.md](packaging.md) and [milestones.md](milestones.md).
