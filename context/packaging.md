@@ -10,7 +10,7 @@ Runnable glue is **`packages/orchestrator`**. Feature layers are sibling package
 
 **Orchestrator package contains only:** routing, `Orchestrator` / `handle`, CLI `index`, UI entry, config load, and **integration HTTP** (must import the brain — kept with glue to avoid a circular package).
 
-Root `Orchestrator/README.md` is a **pointer** to `packages/orchestrator` for old links.
+The old root `Orchestrator/` path is **removed** after Step F (no runtime role; start at `packages/orchestrator`).
 
 **Reason:** Newcomers should answer “where is memory?” with `packages/memory`, not dig through a monolith `src/`. Glue stays thin; layers stay moveable.
 

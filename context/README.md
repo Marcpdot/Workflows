@@ -19,7 +19,7 @@ It answers:
 > Why is the project built this way?
 
 For usage, installation, operation, or troubleshooting, see `docs/`
-(when present) and `Orchestrator/README.md`.
+(when present) and `packages/orchestrator/README.md`.
 
 ## Reading the entries
 

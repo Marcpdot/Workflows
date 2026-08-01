@@ -5,3 +5,7 @@ AGENTS.local.md
 .DS_Store
 Thumbs.db
 *.log
+
+# Pre-Step-F path; package is packages/orchestrator (delete local leftovers if present)
+Orchestrator/
+
