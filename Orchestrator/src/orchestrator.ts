@@ -30,6 +30,13 @@ import {
   type LongTermMemory,
 } from "./memory/longterm/index.js";
 import { suggestNextSteps } from "./proactive/index.js";
+import {
+  defaultPipelineRoles,
+  registryForRole,
+  runRolePipeline,
+  type AgentRole,
+  type PipelineResult,
+} from "./agents/index.js";
 import type {
   ChatMessage,
   ModelClient,
@@ -98,6 +105,87 @@ export class Orchestrator {
     }
     return this.tools.execute(name, args, {
       workspaceRoot: this.config.workspaceRoot,
+    });
+  }
+
+  /**
+   * Milestone 3C: sequential role pipeline (planner → worker by default).
+   * Uses models + optional tool loop per role; does not replace handle().
+   */
+  async runPipeline(
+    task: string,
+    roles: AgentRole[] = defaultPipelineRoles()
+  ): Promise<PipelineResult> {
+    return runRolePipeline({
+      task,
+      roles,
+      runStage: async ({ role, task: stageTask, priorStages }) => {
+        const preference = role.modelPreference ?? "local";
+        const client =
+          preference === "frontier" ? this.frontier : this.local;
+        const modelName =
+          preference === "frontier"
+            ? this.config.grokModel
+            : this.config.ollamaModel;
+
+        const priorBlock =
+          priorStages.length === 0
+            ? ""
+            : priorStages
+                .map((s) => `### Stage ${s.role}\n${s.text}`)
+                .join("\n\n");
+
+        const messages: ChatMessage[] = [
+          { role: "system", content: role.systemPrompt },
+          {
+            role: "user",
+            content:
+              `Task:\n${stageTask}` +
+              (priorBlock
+                ? `\n\nPrior pipeline stages:\n${priorBlock}\n\nContinue as role "${role.name}".`
+                : `\n\nRespond as role "${role.name}".`),
+          },
+        ];
+
+        const stageRegistry = registryForRole(
+          this.tools,
+          role.toolsAllowed
+        );
+
+        if (stageRegistry && stageRegistry.list().length > 0) {
+          const loop = await runToolLoop(messages, {
+            maxSteps: this.config.toolsMaxSteps,
+            workspaceRoot: this.config.workspaceRoot,
+            registry: stageRegistry,
+            complete: async (msgs, tools) => {
+              const response = await client.complete({
+                messages: msgs,
+                model: modelName,
+                tools: toModelToolSchemas(tools),
+              });
+              return {
+                text: response.content,
+                toolCalls: response.toolCalls,
+              };
+            },
+          });
+          return { text: loop.finalText, toolSteps: loop.steps };
+        }
+
+        const response = await client.complete({
+          messages: [
+            ...messages.slice(0, 1),
+            {
+              role: "system",
+              content:
+                "You have no tools in this stage. Answer with text only.",
+            },
+            ...messages.slice(1),
+          ],
+          model: modelName,
+        });
+        return { text: response.content };
+      },
     });
   }
 

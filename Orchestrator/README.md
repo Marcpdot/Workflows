@@ -79,6 +79,20 @@ npx tsx scripts/smoke-proactive.ts
 # PROACTIVE_ENABLED=true npm run dev -- "TypeError crash in router"
 ```
 
+## Multi-agent pipeline (Milestone 3C)
+
+Sequential roles only (not a swarm). Default: **planner → worker**.
+Explicit CLI — normal `handle()` stays unchanged.
+
+```bash
+npx tsx scripts/smoke-agents.ts
+npm run dev -- --pipeline "Add a smoke test for long-term memory"
+# REPL: /pipeline ...
+```
+
+Worker may use tools (existing registry/loop). Planner is limited to
+read/list/search. Role prompts are generic (no personal profile in repo).
+
 ```ts
 import { createMemory } from "./memory/index.js";
 

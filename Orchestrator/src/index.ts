@@ -61,6 +61,7 @@ Options:
   --ltm recall [key=...|text=...] [limit=N]
   --ltm list [limit=N]
   --ltm forget <idOrKey>
+  --pipeline <task>  Sequential planner→worker pipeline (Milestone 3C)
   --json             Print full result as JSON
   --help, -h         Show this help
 
@@ -68,6 +69,7 @@ REPL commands:
   /local ...         Force local for one turn
   /frontier ...      Force frontier for one turn
   /route ...         Route-only for one turn
+  /pipeline ...      Role pipeline for this task
   /tool list | /tool run NAME [k=v...]
   /remember [key=...] <content>
   /recall [key=...|text=...]
@@ -87,6 +89,7 @@ Env (see .env.example):
   TOOLS_DISABLED, TOOLS_ENABLED, TOOLS_MAX_STEPS
   LONGTERM_DB_PATH, PERSONAL_CONTEXT_DIR, LONGTERM_AUTO_INJECT, LONGTERM_DISABLED
   PROACTIVE_ENABLED, PROACTIVE_MAX, PROACTIVE_USE_MODEL
+  AGENTS_PIPELINE_ENABLED
 `);
 }
 
@@ -113,6 +116,8 @@ interface CliArgs {
   clearSession: boolean;
   toolAction?: ToolCliAction;
   ltmAction?: LtmCliAction;
+  /** When set, run sequential role pipeline instead of handle() */
+  pipelineTask?: string;
 }
 
 /** Parse key=value tokens into a plain object (values stay strings). */
@@ -135,6 +140,7 @@ function parseArgs(argv: string[]): CliArgs {
   let clearSession = false;
   let toolAction: ToolCliAction | undefined;
   let ltmAction: LtmCliAction | undefined;
+  let pipelineTask: string | undefined;
   let sessionId =
     process.env.SESSION_ID?.trim() || "default";
   const rest: string[] = [];
@@ -142,6 +148,19 @@ function parseArgs(argv: string[]): CliArgs {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
     switch (arg) {
+      case "--pipeline": {
+        // Remaining non-flag args form the task (or next token)
+        const parts: string[] = [];
+        while (i + 1 < argv.length && !argv[i + 1]!.startsWith("-")) {
+          parts.push(argv[++i]!);
+        }
+        pipelineTask = parts.join(" ").trim();
+        if (!pipelineTask) {
+          console.error('--pipeline requires a task string');
+          process.exit(1);
+        }
+        break;
+      }
       case "--route-only":
       case "-r":
         routeOnly = true;
@@ -259,7 +278,33 @@ function parseArgs(argv: string[]): CliArgs {
     clearSession,
     toolAction,
     ltmAction,
+    pipelineTask,
   };
+}
+
+async function runPipelineTask(
+  orch: Orchestrator,
+  task: string,
+  asJson: boolean
+): Promise<void> {
+  console.log(`[pipeline] planner → worker  task=${task.slice(0, 80)}`);
+  const result = await orch.runPipeline(task);
+  if (asJson) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  for (const stage of result.stages) {
+    console.log(`\n--- stage: ${stage.role} ---`);
+    if (stage.toolSteps && stage.toolSteps.length > 0) {
+      for (const step of stage.toolSteps) {
+        console.log(
+          `[tool] ${step.call.name} ${step.result.ok ? "ok" : "fail"}  ${step.durationMs}ms`
+        );
+      }
+    }
+    console.log(stage.text);
+  }
+  console.log(`\n[pipeline final]\n${result.finalText}\n`);
 }
 
 async function runLtmAction(
@@ -541,7 +586,7 @@ async function runRepl(
   let sessionId = args.sessionId;
   console.log(
     "Orchestrator REPL (empty line or Ctrl+C to exit).\n" +
-      "Commands: /local /frontier /route /tool /remember /recall /forget /ltm /clear /session <id>"
+      "Commands: /local /frontier /route /pipeline /tool /remember /recall /forget /ltm /clear /session <id>"
   );
   if (memory && args.useMemory) {
     const n = (await memory.getHistory(sessionId)).length;
@@ -600,6 +645,22 @@ async function runRepl(
           } else {
             console.log("Usage: /tool list | /tool run NAME [k=v...]");
           }
+        } catch (err) {
+          console.error(
+            `Error: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
+        continue;
+      }
+
+      if (line.startsWith("/pipeline ")) {
+        const task = line.slice("/pipeline ".length).trim();
+        if (!task) {
+          console.log("Usage: /pipeline <task>");
+          continue;
+        }
+        try {
+          await runPipelineTask(orch, task, args.json);
         } catch (err) {
           console.error(
             `Error: ${err instanceof Error ? err.message : String(err)}`
@@ -746,6 +807,11 @@ async function main(): Promise<void> {
 
       if (args.ltmAction) {
         await runLtmAction(orch, args.ltmAction, args.json);
+        return;
+      }
+
+      if (args.pipelineTask) {
+        await runPipelineTask(orch, args.pipelineTask, args.json);
         return;
       }
 
