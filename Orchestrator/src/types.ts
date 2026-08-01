@@ -1,5 +1,7 @@
 /** Shared types for the orchestrator. */
 
+import type { ToolRegistry } from "./tools/types.js";
+
 export type ModelChoice = "local" | "frontier";
 
 export type TaskType =
@@ -78,6 +80,13 @@ export interface OrchestratorConfig {
   systemPrompt: string;
   compression: CompressionSettings;
   retrieval: RetrievalSettings;
+  /** Workspace root for tools (path safety). Default: process.cwd() */
+  workspaceRoot: string;
+  /**
+   * Optional tool registry (Milestone 2 phase A).
+   * Not auto-invoked by handle() — use getTools()/runTool() or phase B later.
+   */
+  tools?: ToolRegistry;
 }
 
 export interface OrchestratorResult {

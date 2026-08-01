@@ -108,6 +108,25 @@ Env: `RETRIEVAL_LIMIT`, `RETRIEVAL_MAX_CHARS`, `RETRIEVAL_CONTEXT_DIR`, `RETRIEV
 npx tsx scripts/smoke-retrieval.ts
 ```
 
+## Tools (Milestone 2 — phase A)
+
+Pluggable tool interface + registry. Built-ins: `read_file`, `list_dir`,
+`run_command` (whitelist: node/npm/npx/tsc/git status|diff|log|branch).
+Paths cannot escape `TOOL_WORKSPACE_ROOT`. **Not** auto-called from
+`handle()` yet — phase B will add model-driven tool use.
+
+```bash
+npx tsx scripts/smoke-tools.ts
+npm run dev -- --tool list
+npm run dev -- --tool run read_file path=package.json
+npm run dev -- --tool run run_command command=git status
+```
+
+```ts
+const orch = new Orchestrator(loadConfigFromEnv());
+await orch.runTool("list_dir", { path: "." });
+```
+
 ## Eval (Milestone 1)
 
 Fixed cases in `eval/cases.json`. Runner exercises the real orchestrator path:
@@ -137,6 +156,7 @@ Report `summary` aggregates `totalTokens`, `estimatedCostUsd`, and `tokensEstima
 | `src/memory/` | SQLite session history |
 | `src/compression/` | Realtime history compression |
 | `src/retrieval/` | Keyword retrieval (session + context/) |
+| `src/tools/` | Tool interface, registry, builtins |
 | `src/eval/` | Eval types, assertions, runner |
 | `eval/cases.json` | Fixed eval cases |
 | `src/orchestrator.ts` | Wire routing + compression + models |

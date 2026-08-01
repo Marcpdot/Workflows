@@ -54,6 +54,8 @@ Options:
   --session, -s ID   Conversation session id (default: env SESSION_ID or "default")
   --no-memory        Do not load/save history for this run
   --clear-session    Clear stored history for the session and exit
+  --tool list        List registered tools and exit
+  --tool run NAME [k=v...]   Run a tool and exit
   --json             Print full result as JSON
   --help, -h         Show this help
 
@@ -61,6 +63,7 @@ REPL commands:
   /local ...         Force local for one turn
   /frontier ...      Force frontier for one turn
   /route ...         Route-only for one turn
+  /tool list | /tool run NAME [k=v...]
   /clear             Clear current session history
   /session ID        Switch session id
 
@@ -71,7 +74,14 @@ Env (see .env.example):
   SESSION_ID, MEMORY_DB_PATH, MEMORY_HISTORY_LIMIT
   COMPRESSION_THRESHOLD, COMPRESSION_KEEP_RECENT, COMPRESSION_DISABLED
   RETRIEVAL_LIMIT, RETRIEVAL_MAX_CHARS, RETRIEVAL_CONTEXT_DIR, RETRIEVAL_DISABLED
+  TOOL_WORKSPACE_ROOT, TOOL_READ_MAX_BYTES, TOOL_COMMAND_TIMEOUT_MS, TOOLS_DISABLED
 `);
+}
+
+interface ToolCliAction {
+  kind: "list" | "run";
+  name?: string;
+  args: Record<string, unknown>;
 }
 
 interface CliArgs {
@@ -83,6 +93,18 @@ interface CliArgs {
   sessionId: string;
   useMemory: boolean;
   clearSession: boolean;
+  toolAction?: ToolCliAction;
+}
+
+/** Parse key=value tokens into a plain object (values stay strings). */
+function parseKvArgs(tokens: string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const t of tokens) {
+    const eq = t.indexOf("=");
+    if (eq <= 0) continue;
+    out[t.slice(0, eq)] = t.slice(eq + 1);
+  }
+  return out;
 }
 
 function parseArgs(argv: string[]): CliArgs {
@@ -92,6 +114,7 @@ function parseArgs(argv: string[]): CliArgs {
   let help = false;
   let useMemory = true;
   let clearSession = false;
+  let toolAction: ToolCliAction | undefined;
   let sessionId =
     process.env.SESSION_ID?.trim() || "default";
   const rest: string[] = [];
@@ -119,6 +142,27 @@ function parseArgs(argv: string[]): CliArgs {
           process.exit(1);
         }
         sessionId = next;
+        break;
+      }
+      case "--tool": {
+        const sub = argv[++i];
+        if (sub === "list") {
+          toolAction = { kind: "list", args: {} };
+        } else if (sub === "run") {
+          const name = argv[++i];
+          if (!name) {
+            console.error("--tool run requires a tool name");
+            process.exit(1);
+          }
+          const kv: string[] = [];
+          while (i + 1 < argv.length && argv[i + 1]!.includes("=")) {
+            kv.push(argv[++i]!);
+          }
+          toolAction = { kind: "run", name, args: parseKvArgs(kv) };
+        } else {
+          console.error('--tool requires "list" or "run"');
+          process.exit(1);
+        }
         break;
       }
       case "--no-memory":
@@ -152,7 +196,58 @@ function parseArgs(argv: string[]): CliArgs {
     sessionId,
     useMemory,
     clearSession,
+    toolAction,
   };
+}
+
+async function runToolAction(
+  orch: Orchestrator,
+  action: ToolCliAction,
+  asJson: boolean
+): Promise<void> {
+  if (action.kind === "list") {
+    const tools = orch.getTools()?.list() ?? [];
+    if (asJson) {
+      console.log(
+        JSON.stringify(
+          tools.map((t) => ({
+            name: t.name,
+            description: t.description,
+            parameters: t.parameters,
+          })),
+          null,
+          2
+        )
+      );
+      return;
+    }
+    if (tools.length === 0) {
+      console.log("No tools registered.");
+      return;
+    }
+    for (const t of tools) {
+      const params = t.parameters
+        .map((p) => `${p.name}${p.required ? "*" : ""}:${p.type}`)
+        .join(", ");
+      console.log(`${t.name.padEnd(14)} ${t.description}  (${params})`);
+    }
+    return;
+  }
+
+  if (!action.name) {
+    console.error("Tool name required");
+    process.exit(1);
+  }
+  const result = await orch.runTool(action.name, action.args);
+  if (asJson) {
+    console.log(JSON.stringify(result, null, 2));
+  } else if (result.ok) {
+    console.log(result.output);
+  } else {
+    console.error(`Tool error: ${result.error}`);
+    if (result.output) console.error(result.output);
+    process.exitCode = 1;
+  }
 }
 
 function openMemoryFromEnv(): Memory {
@@ -282,7 +377,7 @@ async function runRepl(
   let sessionId = args.sessionId;
   console.log(
     "Orchestrator REPL (empty line or Ctrl+C to exit).\n" +
-      "Commands: /local /frontier /route /clear /session <id>"
+      "Commands: /local /frontier /route /tool /clear /session <id>"
   );
   if (memory && args.useMemory) {
     const n = (await memory.getHistory(sessionId)).length;
@@ -316,6 +411,35 @@ async function runRepl(
           console.log(`[session] ${sessionId}  (history=${n})`);
         } else {
           console.log(`[session] ${sessionId}`);
+        }
+        continue;
+      }
+
+      if (line === "/tool list" || line.startsWith("/tool ")) {
+        try {
+          if (line === "/tool list" || line === "/tool") {
+            await runToolAction(orch, { kind: "list", args: {} }, args.json);
+          } else if (line.startsWith("/tool run ")) {
+            const parts = line.slice("/tool run ".length).trim().split(/\s+/);
+            const name = parts[0];
+            if (!name) {
+              console.log("Usage: /tool run NAME [k=v...]");
+              continue;
+            }
+            await runToolAction(
+              orch,
+              { kind: "run", name, args: parseKvArgs(parts.slice(1)) },
+              args.json
+            );
+          } else if (line.startsWith("/tool list")) {
+            await runToolAction(orch, { kind: "list", args: {} }, args.json);
+          } else {
+            console.log("Usage: /tool list | /tool run NAME [k=v...]");
+          }
+        } catch (err) {
+          console.error(
+            `Error: ${err instanceof Error ? err.message : String(err)}`
+          );
         }
         continue;
       }
@@ -388,6 +512,11 @@ async function main(): Promise<void> {
 
     const config = loadConfigFromEnv();
     const orch = new Orchestrator(config);
+
+    if (args.toolAction) {
+      await runToolAction(orch, args.toolAction, args.json);
+      return;
+    }
 
     if (!args.prompt) {
       await runRepl(orch, args, memory);

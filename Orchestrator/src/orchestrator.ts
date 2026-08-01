@@ -15,6 +15,11 @@ import {
   resolveDefaultContextDir,
   retrieve,
 } from "./retrieval/index.js";
+import {
+  createBuiltinRegistry,
+  type ToolRegistry,
+  type ToolResult,
+} from "./tools/index.js";
 import type {
   ChatMessage,
   ModelClient,
@@ -23,18 +28,21 @@ import type {
   OrchestratorResult,
   RoutingDecision,
 } from "./types.js";
+import { resolve } from "node:path";
 
 export class Orchestrator {
   private readonly config: OrchestratorConfig;
   private readonly local: ModelClient;
   private readonly frontier: ModelClient;
   private readonly routerConfig: RouterConfig;
+  private readonly tools?: ToolRegistry;
 
   constructor(
     config: OrchestratorConfig,
     clients?: { local?: ModelClient; frontier?: ModelClient }
   ) {
     this.config = config;
+    this.tools = config.tools;
     this.local =
       clients?.local ??
       new OllamaCliClient({
@@ -57,6 +65,28 @@ export class Orchestrator {
   /** Analyze + route without calling a model. */
   decide(prompt: string): RoutingDecision {
     return route(prompt, this.routerConfig);
+  }
+
+  /** Optional tools registry (phase A — not used inside handle). */
+  getTools(): ToolRegistry | undefined {
+    return this.tools;
+  }
+
+  /** Execute a registered tool against the configured workspace root. */
+  async runTool(
+    name: string,
+    args: Record<string, unknown> = {}
+  ): Promise<ToolResult> {
+    if (!this.tools) {
+      return {
+        ok: false,
+        output: "",
+        error: "No tools registry configured on this orchestrator",
+      };
+    }
+    return this.tools.execute(name, args, {
+      workspaceRoot: this.config.workspaceRoot,
+    });
   }
 
   /**
@@ -195,6 +225,14 @@ export function loadConfigFromEnv(
     env.RETRIEVAL_CONTEXT_DIR?.trim() ||
     resolveDefaultContextDir(process.cwd());
 
+  const workspaceRoot = resolve(
+    process.cwd(),
+    env.TOOL_WORKSPACE_ROOT?.trim() || "."
+  );
+
+  const toolsDisabled =
+    env.TOOLS_DISABLED === "1" || env.TOOLS_DISABLED === "true";
+
   return {
     ollamaBin: env.OLLAMA_BIN ?? "ollama",
     ollamaModel: env.OLLAMA_MODEL ?? "llama3.2:3b",
@@ -220,5 +258,7 @@ export function loadConfigFromEnv(
       disabled:
         env.RETRIEVAL_DISABLED === "1" || env.RETRIEVAL_DISABLED === "true",
     },
+    workspaceRoot,
+    tools: toolsDisabled ? undefined : createBuiltinRegistry(),
   };
 }
