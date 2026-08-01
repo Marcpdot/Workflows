@@ -16,6 +16,7 @@ import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { Orchestrator, loadConfigFromEnv } from "./orchestrator.js";
 import { createMemory, type Memory } from "./memory/index.js";
+import { createRegistryFromConfig } from "./tools/index.js";
 import type { ModelChoice } from "./types.js";
 
 function loadDotEnv(filePath = resolve(process.cwd(), ".env")): void {
@@ -525,6 +526,10 @@ async function main(): Promise<void> {
     }
 
     const config = loadConfigFromEnv();
+    // Phase C: load optional TOOL_EXTRA_MODULES into the registry.
+    if (config.tools) {
+      config.tools = await createRegistryFromConfig();
+    }
     const orch = new Orchestrator(config);
 
     if (args.toolAction) {

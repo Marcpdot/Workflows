@@ -15,9 +15,14 @@ export type {
 export { MapToolRegistry } from "./registry.js";
 export { resolveSafePath, isInsideWorkspace } from "./pathSafety.js";
 export { createBuiltinRegistry } from "./createBuiltinRegistry.js";
+export { loadExtraTools, createRegistryFromConfig } from "./loadExtras.js";
 export { readFileTool } from "./builtin/readFile.js";
 export { listDirTool } from "./builtin/listDir.js";
 export { runCommandTool, parseCommandLine } from "./builtin/runCommand.js";
+export { writeFileTool } from "./builtin/writeFile.js";
+export { searchFilesTool } from "./builtin/searchFiles.js";
+export { webSearchTool } from "./builtin/webSearch.js";
+export { runScriptTool } from "./builtin/runScript.js";
 export {
   toModelToolSchemas,
   formatToolsForPrompt,

@@ -136,6 +136,35 @@ npx tsx scripts/smoke-tool-loop.ts
 
 CLI logs each step: `[tool] read_file ok  12ms`.
 
+### Phase C — more tools + plugins
+
+Additional built-ins: `write_file`, `search_files`, `run_script` (under
+`TOOL_SCRIPT_ROOTS`), `web_search` (off unless `WEB_SEARCH_ENABLED=true`).
+
+```bash
+npx tsx scripts/smoke-tools-phase-c.ts
+```
+
+**Add your own tool** (no loop/orchestrator changes):
+
+```ts
+// examples/extra-tools/myTool.ts
+import type { Tool } from "../../src/tools/types.js";
+export const tools: Tool[] = [{ name: "my_tool", description: "...", parameters: [], execute: async () => ({ ok: true, output: "hi" }) }];
+```
+
+```bash
+# TOOL_EXTRA_MODULES=./examples/extra-tools/echoTool.ts
+```
+
+Or in code:
+
+```ts
+const registry = await createRegistryFromConfig({
+  extraModules: ["./examples/extra-tools/echoTool.ts"],
+});
+```
+
 ## Eval (Milestone 1)
 
 Fixed cases in `eval/cases.json`. Runner exercises the real orchestrator path:
