@@ -108,10 +108,11 @@ async function main(): Promise<void> {
   assert(three.stages[2]!.text === "c:2", "c sees 2 priors");
   console.log("OK: three custom roles");
 
-  // 6. Built-in roles shape
+  // 6. Built-in roles shape (planner is structured JSON, no tools — M10)
   assert(
-    plannerRole.toolsAllowed?.includes("read_file") === true,
-    "planner read tools"
+    Array.isArray(plannerRole.toolsAllowed) &&
+      plannerRole.toolsAllowed.length === 0,
+    "planner has no tools (structured plan)"
   );
   assert(workerRole.toolsAllowed === undefined, "worker all tools");
   console.log("OK: built-in role defaults");

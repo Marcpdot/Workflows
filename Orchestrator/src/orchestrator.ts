@@ -19,6 +19,12 @@ import {
   type WorkspaceContext,
 } from "./workspace/index.js";
 import {
+  completeStructured,
+  parseStructured,
+  PLAN_SCHEMA,
+  type PlanValue,
+} from "./structured/index.js";
+import {
   createBuiltinRegistry,
   formatToolsForPrompt,
   runToolLoop,
@@ -215,6 +221,65 @@ export class Orchestrator {
                 : `\n\nRespond as role "${role.name}".`),
           },
         ];
+
+        // M10: planner uses completeStructured for { steps: string[] }
+        if (role.name === "planner") {
+          const structured = await completeStructured<PlanValue>({
+            complete: async (msgs) => {
+              const response = await client.complete({
+                messages: msgs,
+                model: modelName,
+              });
+              return response.content;
+            },
+            messages: [
+              ...messages,
+              {
+                role: "system",
+                content:
+                  'Output ONLY JSON: {"steps":["..."],"summary":"optional"}. steps must be non-empty strings.',
+              },
+            ],
+            parse: (raw) => {
+              const plan = parseStructured<PlanValue>(raw, PLAN_SCHEMA);
+              if (!plan.steps || plan.steps.length === 0) {
+                throw new Error("steps must be a non-empty array");
+              }
+              for (const s of plan.steps) {
+                if (typeof s !== "string" || !s.trim()) {
+                  throw new Error("each step must be a non-empty string");
+                }
+              }
+              return plan;
+            },
+            maxAttempts: 2,
+          });
+
+          if (structured.ok && structured.value) {
+            const plan = structured.value;
+            const lines = plan.steps.map((s, i) => `${i + 1}. ${s}`);
+            const text =
+              (plan.summary?.trim()
+                ? `Summary: ${plan.summary.trim()}\n\n`
+                : "") + `Plan:\n${lines.join("\n")}`;
+            return {
+              text,
+              structured: plan,
+              structuredOk: true,
+              structuredAttempts: structured.attempts,
+            };
+          }
+
+          // Fallback: raw text + failure metadata (do not crash pipeline)
+          return {
+            text:
+              structured.raw?.trim() ||
+              `(planner structured parse failed: ${structured.error ?? "unknown"})`,
+            structuredOk: false,
+            structuredError: structured.error,
+            structuredAttempts: structured.attempts,
+          };
+        }
 
         const stageRegistry = registryForRole(
           this.tools,

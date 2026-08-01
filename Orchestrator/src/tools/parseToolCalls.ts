@@ -1,9 +1,14 @@
 /**
  * Extract tool calls from model text (fallback when API has no structured calls).
  * Never throws on messy output — returns [] and lets the loop finish with text.
+ * Uses Milestone 10 JSON extract helpers (shared with completeStructured).
  */
 
 import { randomUUID } from "node:crypto";
+import {
+  extractJsonCandidates,
+  lenientJsonRepair,
+} from "../structured/extractJson.js";
 import type { ToolCall } from "./types.js";
 
 function asArgs(value: unknown): Record<string, unknown> {
@@ -50,45 +55,6 @@ function normalizeCall(raw: unknown, index: number): ToolCall | null {
   };
 }
 
-function extractJsonCandidates(text: string): string[] {
-  const candidates: string[] = [];
-
-  // Fenced ```json ... ```
-  const fenceRe = /```(?:json)?\s*([\s\S]*?)```/gi;
-  let m: RegExpExecArray | null;
-  while ((m = fenceRe.exec(text)) !== null) {
-    if (m[1]?.trim()) candidates.push(m[1].trim());
-  }
-
-  // Whole text if it looks like JSON
-  const trimmed = text.trim();
-  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-    candidates.push(trimmed);
-  }
-
-  // First balanced {...} containing tool_calls
-  const marker = text.indexOf("tool_calls");
-  if (marker >= 0) {
-    const start = text.lastIndexOf("{", marker);
-    if (start >= 0) {
-      let depth = 0;
-      for (let i = start; i < text.length; i++) {
-        const ch = text[i];
-        if (ch === "{") depth++;
-        else if (ch === "}") {
-          depth--;
-          if (depth === 0) {
-            candidates.push(text.slice(start, i + 1));
-            break;
-          }
-        }
-      }
-    }
-  }
-
-  return candidates;
-}
-
 function callsFromParsed(parsed: unknown): ToolCall[] {
   if (Array.isArray(parsed)) {
     return parsed
@@ -118,12 +84,14 @@ export function parseToolCalls(text: string): ToolCall[] {
   if (!text || !text.trim()) return [];
 
   for (const candidate of extractJsonCandidates(text)) {
-    try {
-      const parsed = JSON.parse(candidate) as unknown;
-      const calls = callsFromParsed(parsed);
-      if (calls.length > 0) return calls;
-    } catch {
-      // try next candidate
+    for (const variant of [candidate, lenientJsonRepair(candidate)]) {
+      try {
+        const parsed = JSON.parse(variant) as unknown;
+        const calls = callsFromParsed(parsed);
+        if (calls.length > 0) return calls;
+      } catch {
+        // try next
+      }
     }
   }
 

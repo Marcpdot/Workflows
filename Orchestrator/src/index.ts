@@ -325,6 +325,15 @@ async function runPipelineTask(
   }
   for (const stage of result.stages) {
     console.log(`\n--- stage: ${stage.role} ---`);
+    if (stage.structuredOk != null) {
+      console.log(
+        `[structured] ${stage.structuredOk ? "ok" : "fail"}${
+          stage.structuredAttempts != null
+            ? `  attempts=${stage.structuredAttempts}`
+            : ""
+        }${stage.structuredError ? `  (${stage.structuredError})` : ""}`
+      );
+    }
     if (stage.toolSteps && stage.toolSteps.length > 0) {
       for (const step of stage.toolSteps) {
         console.log(

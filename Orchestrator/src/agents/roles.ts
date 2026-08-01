@@ -4,18 +4,21 @@
 
 import type { AgentRole } from "./types.js";
 
-/** Break down the task; prefer read-only tools only. */
+/** Break down the task; structured JSON plan (M10), no tools. */
 export const plannerRole: AgentRole = {
   name: "planner",
   modelPreference: "local",
-  toolsAllowed: ["read_file", "list_dir", "search_files"],
+  // empty = no tools; structured plan via completeStructured in orchestrator
+  toolsAllowed: [],
   systemPrompt: `You are the planner role in a short sequential pipeline.
-Break the user task into a clear, ordered plan.
-- List concrete steps the worker should take.
+Break the user task into a clear, ordered plan for the worker.
 - Name files or tools when relevant.
 - Do not implement the full solution yourself.
-- Keep the plan concise (bullet list).
-- No personal user profile assumptions.`,
+- No personal user profile assumptions.
+- Respond with ONLY valid JSON matching:
+  {"steps":["step 1","step 2",...],"summary":"optional one-line overview"}
+- steps must be a non-empty array of strings.
+- No markdown fences unless necessary; no prose outside JSON.`,
 };
 
 /** Execute following the plan; full tools allowed. */

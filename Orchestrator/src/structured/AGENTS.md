@@ -3,18 +3,29 @@
 ## Mål
 Påliteligere **parsebare** modelsvar (JSON / planer) for tools, pipeline og eval.
 
-## Scope
-1. `completeStructured(prompt, schema)`-stil API over model clients
-2. Schema: enkel JSON Schema-subset eller Zod-lignende beskrivelse (hold deps lette)
-3. Retry/repair: 1–2 forsøk hvis parse feiler (valgfri lokal «fix JSON»-pass)
-4. Brukes av: tool-call parsing (forsterker M2), pipeline planner output, eval assertions
-5. Fallback: raw text + parse failure object (ikke crash)
+## Implementert (shell)
+
+| Del | Hvor |
+|-----|------|
+| `completeStructured` + repair turns | `completeStructured.ts` |
+| JSON extract + lenient repair | `extractJson.ts` |
+| JSON Schema subset validate | `validate.ts` |
+| `PLAN_SCHEMA` / `TOOL_CALLS_SCHEMA` | `schemas.ts` |
+| Pipeline planner | `orchestrator.runPipeline` asks for plan JSON when no tool loop |
+| Tool text parse | `parseToolCalls` uses shared `extractJsonCandidates` |
+
+```bash
+npx tsx scripts/smoke-structured.ts
+```
+
+Raw `handle()` chat path is **unchanged**.
 
 ## Utenfor scope
 - Full constrained decoding / grammar på alle backends
 - Kun-frontier structured mode som eneste path
+- Zod / full JSON Schema draft
 
-## API (skisse)
+## API
 
 ```ts
 export interface StructuredResult<T> {
@@ -32,11 +43,6 @@ export async function completeStructured<T>(options: {
   maxAttempts?: number;
 }): Promise<StructuredResult<T>>;
 ```
-
-## Integrasjon
-- Tool-loop kan bruke structured parse for `tool_calls`
-- Pipeline planner kan be om `{ steps: string[] }`
-- Eval kan assert'e på strukturerte felt senere
 
 ## Ferdig når
 - Smoke: mock complete returnerer rotten JSON → repair eller ok:false

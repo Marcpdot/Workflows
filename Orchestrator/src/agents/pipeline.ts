@@ -43,6 +43,10 @@ export async function runRolePipeline(
       role: role.name,
       text,
       toolSteps: out.toolSteps,
+      structured: out.structured,
+      structuredOk: out.structuredOk,
+      structuredError: out.structuredError,
+      structuredAttempts: out.structuredAttempts,
     });
   }
 

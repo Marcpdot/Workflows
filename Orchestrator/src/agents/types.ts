@@ -16,6 +16,11 @@ export interface PipelineStageResult {
   role: string;
   text: string;
   toolSteps?: ToolLoopStep[];
+  /** Milestone 10 — parsed structured value when stage used completeStructured */
+  structured?: unknown;
+  structuredOk?: boolean;
+  structuredError?: string;
+  structuredAttempts?: number;
 }
 
 export interface PipelineResult {
@@ -32,6 +37,10 @@ export interface RunStageInput {
 export interface RunStageOutput {
   text: string;
   toolSteps?: ToolLoopStep[];
+  structured?: unknown;
+  structuredOk?: boolean;
+  structuredError?: string;
+  structuredAttempts?: number;
 }
 
 export interface RolePipelineOptions {

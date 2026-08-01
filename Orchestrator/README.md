@@ -168,6 +168,35 @@ npx tsx scripts/smoke-workspace.ts
 
 Legacy un-prefixed session ids: `SESSION_NAMESPACE=false`.
 
+## Structured output (Milestone 10)
+
+Parseable model JSON for tools/pipeline without constrained decoding on every backend.
+
+| Piece | Role |
+|-------|------|
+| `completeStructured` | Model complete + parse; 1–2 attempts with repair turn on failure |
+| JSON Schema subset | Lightweight validate (no Zod) |
+| Planner pipeline | Asks for `{"steps":[...],"summary"?}`; falls back to raw text if parse fails |
+| Tool text calls | `parseToolCalls` shares extract/lenient JSON helpers |
+
+Raw `handle()` chat path is unchanged.
+
+```bash
+npx tsx scripts/smoke-structured.ts
+```
+
+```ts
+import { completeStructured, parseStructured, PLAN_SCHEMA } from "./structured/index.js";
+
+const result = await completeStructured({
+  complete: async (messages) => (await client.complete({ messages })).content,
+  messages,
+  parse: (raw) => parseStructured(raw, PLAN_SCHEMA),
+  maxAttempts: 2,
+});
+// result.ok ? result.value : result.error — never throws on bad JSON
+```
+
 ## Embeddings (Milestone 4)
 
 Pluggable local embedder (Ollama) + SQLite float32 vectors (linear scan).
@@ -194,8 +223,9 @@ npm run dev -- --pipeline "Add a smoke test for long-term memory"
 # REPL: /pipeline ...
 ```
 
-Worker may use tools (existing registry/loop). Planner is limited to
-read/list/search. Role prompts are generic (no personal profile in repo).
+Worker may use tools (existing registry/loop). Planner uses **structured JSON
+plan** (M10) with repair fallback — no tools on the planner stage. Role prompts
+are generic (no personal profile in repo).
 
 ```ts
 import { createMemory } from "./memory/index.js";
@@ -336,6 +366,7 @@ Report `summary` aggregates `totalTokens`, `estimatedCostUsd`, and `tokensEstima
 |------|------|
 | `src/router.ts` | Task analysis + routing rules |
 | `src/workspace/` | Session / workspace resolve (M9) |
+| `src/structured/` | Parseable JSON + completeStructured (M10) |
 | `src/models/local.ts` | Ollama CLI client (`ollama run`) |
 | `src/models/frontier.ts` | xAI Grok client (chat completions) |
 | `src/memory/` | SQLite session history |
