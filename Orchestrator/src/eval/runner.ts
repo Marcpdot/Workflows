@@ -14,6 +14,7 @@ import { Orchestrator, loadConfigFromEnv } from "../orchestrator.js";
 import { createMemory } from "../memory/index.js";
 import type { ChatMessage } from "../types.js";
 import { runAssertions } from "./assertions.js";
+import { buildCostBreakdown } from "./cost.js";
 import type {
   EvalCase,
   EvalReport,
@@ -72,6 +73,7 @@ async function runOneCase(
   let replyPreview = "";
   let usage: EvalResult["usage"];
   let compressed: boolean | undefined;
+  let replyText = "";
 
   const memory = createMemory({ dbPath, defaultLimit: 100 });
 
@@ -102,6 +104,10 @@ async function runOneCase(
           latencyMs: Math.round(performance.now() - started),
           replyPreview: "",
           failures: ["missing API key (XAI_API_KEY)"],
+          totalTokens: 0,
+          estimatedCostUsd: 0,
+          tokensEstimated: false,
+          costNote: "skipped — missing API key",
         };
       }
     }
@@ -112,6 +118,7 @@ async function runOneCase(
     route = result.routing.model;
     model = result.model;
     provider = result.provider;
+    replyText = result.reply;
     replyPreview = preview(result.reply);
     usage = result.usage;
     compressed = result.compression?.compressed;
@@ -124,6 +131,13 @@ async function runOneCase(
       );
     }
 
+    const cost = buildCostBreakdown({
+      provider,
+      usage,
+      promptText: evalCase.prompt,
+      replyText,
+    });
+
     return {
       id: evalCase.id,
       pass: failures.length === 0,
@@ -132,6 +146,10 @@ async function runOneCase(
       provider,
       latencyMs,
       usage,
+      totalTokens: cost.totalTokens,
+      tokensEstimated: cost.tokensEstimated,
+      estimatedCostUsd: cost.estimatedCostUsd,
+      costNote: cost.costNote,
       compressed,
       replyPreview,
       failures,
@@ -148,6 +166,8 @@ async function runOneCase(
       latencyMs: Math.round(performance.now() - started),
       replyPreview,
       failures,
+      totalTokens: 0,
+      estimatedCostUsd: 0,
     };
   } finally {
     try {
@@ -187,13 +207,28 @@ export async function runEvalSuite(
     const result = await runOneCase(orch, evalCase, runId, dbPath);
     results.push(result);
     const mark = result.pass ? "PASS" : "FAIL";
+    const tok =
+      result.totalTokens != null
+        ? `${result.totalTokens}tok${result.tokensEstimated ? "~" : ""}`
+        : "-tok";
+    const cost =
+      result.estimatedCostUsd != null
+        ? `$${result.estimatedCostUsd.toFixed(6)}`
+        : "-";
     console.log(
-      `${mark}  ${result.id.padEnd(28)}  route=${(result.route || "-").padEnd(8)}  ${result.latencyMs}ms  ${result.failures.join("; ") || "ok"}`
+      `${mark}  ${result.id.padEnd(28)}  route=${(result.route || "-").padEnd(8)}  ${String(result.latencyMs).padStart(5)}ms  ${tok.padStart(8)}  ${cost.padStart(10)}  ${result.failures.join("; ") || "ok"}`
     );
   }
 
   const finishedAt = new Date().toISOString();
   const passed = results.filter((r) => r.pass).length;
+  const totalTokens = results.reduce((s, r) => s + (r.totalTokens ?? 0), 0);
+  const estimatedCostUsd = results.reduce(
+    (s, r) => s + (r.estimatedCostUsd ?? 0),
+    0
+  );
+  const tokensEstimatedCases = results.filter((r) => r.tokensEstimated).length;
+
   const report: EvalReport = {
     startedAt,
     finishedAt,
@@ -202,6 +237,9 @@ export async function runEvalSuite(
       total: results.length,
       passed,
       failed: results.length - passed,
+      totalTokens,
+      estimatedCostUsd: Math.round(estimatedCostUsd * 1_000_000) / 1_000_000,
+      tokensEstimatedCases,
     },
   };
 
@@ -211,7 +249,7 @@ export async function runEvalSuite(
   writeFileSync(outPath, JSON.stringify(report, null, 2), "utf8");
   console.log(`\nReport written: ${outPath}`);
   console.log(
-    `Summary: ${report.summary.passed}/${report.summary.total} passed, ${report.summary.failed} failed`
+    `Summary: ${report.summary.passed}/${report.summary.total} passed, ${report.summary.failed} failed | tokens=${report.summary.totalTokens} cost≈$${report.summary.estimatedCostUsd}`
   );
 
   try {
