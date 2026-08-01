@@ -1,0 +1,7 @@
+# Personal agent preferences (Keep the Why and others)
+AGENTS.local.md
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
