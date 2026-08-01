@@ -24,6 +24,11 @@ import {
   type ToolRegistry,
   type ToolResult,
 } from "./tools/index.js";
+import {
+  createLongTermMemory,
+  resolveLongTermDbPath,
+  type LongTermMemory,
+} from "./memory/longterm/index.js";
 import type {
   ChatMessage,
   ModelClient,
@@ -39,6 +44,8 @@ export class Orchestrator {
   private readonly frontier: ModelClient;
   private readonly routerConfig: RouterConfig;
   private readonly tools?: ToolRegistry;
+  /** Milestone 3A long-term memory (facts/preferences). Optional. */
+  readonly longTerm?: LongTermMemory;
 
   constructor(
     config: OrchestratorConfig,
@@ -46,6 +53,7 @@ export class Orchestrator {
   ) {
     this.config = config;
     this.tools = config.tools;
+    this.longTerm = config.longTerm;
     this.local =
       clients?.local ??
       new OllamaCliClient({
@@ -170,9 +178,40 @@ export class Orchestrator {
       systemParts.push(formatToolsForPrompt(this.tools.list()));
     }
 
+    // Optional LTM auto-inject (3A flag; default off — full proactivity is 3B)
+    let longTermBlock: string | null = null;
+    const ltm = this.longTerm;
+    const ltmSettings = this.config.longTermSettings;
+    if (ltm && ltmSettings?.autoInject) {
+      const hits = await ltm.recall({
+        text: prompt,
+        limit: ltmSettings.injectLimit,
+      });
+      if (hits.length > 0) {
+        let block = hits
+          .map((f) =>
+            f.key ? `- [${f.key}] ${f.content}` : `- ${f.content}`
+          )
+          .join("\n");
+        if (block.length > ltmSettings.injectMaxChars) {
+          block =
+            block.slice(0, Math.max(0, ltmSettings.injectMaxChars - 1)) + "…";
+        }
+        longTermBlock = block;
+      }
+    }
+
     // 3) Build messages
     const messages: ChatMessage[] = [
       { role: "system", content: systemParts.join("\n\n") },
+      ...(longTermBlock
+        ? [
+            {
+              role: "system" as const,
+              content: `Long-term memory (relevant facts):\n${longTermBlock}`,
+            },
+          ]
+        : []),
       ...(retrievalBlock
         ? [
             {
@@ -283,6 +322,12 @@ export function loadConfigFromEnv(
   // Phase B loop is off by default until explicitly enabled.
   const toolsEnabled = envFlagTrue(env.TOOLS_ENABLED);
 
+  const longTermDisabled = envFlagTrue(env.LONGTERM_DISABLED);
+  const longTermDbPath = resolveLongTermDbPath(process.cwd(), env);
+  const longTerm = longTermDisabled
+    ? undefined
+    : createLongTermMemory({ dbPath: longTermDbPath });
+
   return {
     ollamaBin: env.OLLAMA_BIN ?? "ollama",
     ollamaModel: env.OLLAMA_MODEL ?? "llama3.2:3b",
@@ -312,5 +357,12 @@ export function loadConfigFromEnv(
     tools: toolsDisabled ? undefined : createBuiltinRegistry(),
     toolsEnabled,
     toolsMaxSteps: parsePositiveInt(env.TOOLS_MAX_STEPS, 5),
+    longTerm,
+    longTermSettings: {
+      dbPath: longTermDbPath,
+      autoInject: envFlagTrue(env.LONGTERM_AUTO_INJECT),
+      injectMaxChars: parsePositiveInt(env.LONGTERM_INJECT_MAX_CHARS, 1500),
+      injectLimit: parsePositiveInt(env.LONGTERM_INJECT_LIMIT, 5),
+    },
   };
 }

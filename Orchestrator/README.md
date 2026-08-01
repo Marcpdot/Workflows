@@ -47,9 +47,25 @@ npm run build
 npm start -- "hello"
 ```
 
-## Memory (Milestone 0)
+## Memory (Milestone 0 short-term + 3A long-term)
 
 SQLite-backed short-term chat history per `sessionId` (survives restarts). No embeddings yet.
+
+### Long-term facts (Milestone 3A)
+
+Separate store for durable facts/preferences (keyword/`key` recall — no embeddings).
+Default DB: `./data/longterm.db` (gitignored). Prefer `PERSONAL_CONTEXT_DIR` outside the repo for real personal data.
+
+```bash
+npx tsx scripts/smoke-longterm.ts
+npm run dev -- --ltm remember key=user.preferred_name content=Ada
+npm run dev -- --ltm recall key=user.preferred_name
+npm run dev -- --ltm recall text=Ada
+npm run dev -- --ltm list
+npm run dev -- --ltm forget user.preferred_name
+```
+
+`orch.longTerm` is available programmatically. `LONGTERM_AUTO_INJECT=true` can add top keyword hits as a system block (off by default; full proactivity is 3B — not enabled here).
 
 ```ts
 import { createMemory } from "./memory/index.js";

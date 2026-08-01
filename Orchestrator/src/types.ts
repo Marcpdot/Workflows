@@ -1,6 +1,7 @@
 /** Shared types for the orchestrator. */
 
 import type { ToolRegistry, ToolLoopStep, ModelToolSchema } from "./tools/types.js";
+import type { LongTermMemory, LongTermSettings } from "./memory/longterm/types.js";
 
 export type ModelChoice = "local" | "frontier";
 
@@ -99,6 +100,12 @@ export interface OrchestratorConfig {
   toolsEnabled: boolean;
   /** Max model↔tool rounds in the loop. Default 5 */
   toolsMaxSteps: number;
+  /**
+   * Optional long-term memory (Milestone 3A).
+   * Not required for chat; exposed as orch.longTerm. Auto-inject is off by default.
+   */
+  longTerm?: LongTermMemory;
+  longTermSettings?: LongTermSettings;
 }
 
 export interface OrchestratorResult {

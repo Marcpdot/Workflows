@@ -57,6 +57,10 @@ Options:
   --clear-session    Clear stored history for the session and exit
   --tool list        List registered tools and exit
   --tool run NAME [k=v...]   Run a tool and exit
+  --ltm remember [key=...] content=... [tags=a,b]
+  --ltm recall [key=...|text=...] [limit=N]
+  --ltm list [limit=N]
+  --ltm forget <idOrKey>
   --json             Print full result as JSON
   --help, -h         Show this help
 
@@ -65,6 +69,10 @@ REPL commands:
   /frontier ...      Force frontier for one turn
   /route ...         Route-only for one turn
   /tool list | /tool run NAME [k=v...]
+  /remember [key=...] <content>
+  /recall [key=...|text=...]
+  /forget <idOrKey>
+  /ltm list
   /clear             Clear current session history
   /session ID        Switch session id
 
@@ -77,6 +85,7 @@ Env (see .env.example):
   RETRIEVAL_LIMIT, RETRIEVAL_MAX_CHARS, RETRIEVAL_CONTEXT_DIR, RETRIEVAL_DISABLED
   TOOL_WORKSPACE_ROOT, TOOL_READ_MAX_BYTES, TOOL_COMMAND_TIMEOUT_MS
   TOOLS_DISABLED, TOOLS_ENABLED, TOOLS_MAX_STEPS
+  LONGTERM_DB_PATH, PERSONAL_CONTEXT_DIR, LONGTERM_AUTO_INJECT, LONGTERM_DISABLED
 `);
 }
 
@@ -84,6 +93,12 @@ interface ToolCliAction {
   kind: "list" | "run";
   name?: string;
   args: Record<string, unknown>;
+}
+
+interface LtmCliAction {
+  kind: "remember" | "recall" | "list" | "forget";
+  args: Record<string, unknown>;
+  idOrKey?: string;
 }
 
 interface CliArgs {
@@ -96,6 +111,7 @@ interface CliArgs {
   useMemory: boolean;
   clearSession: boolean;
   toolAction?: ToolCliAction;
+  ltmAction?: LtmCliAction;
 }
 
 /** Parse key=value tokens into a plain object (values stay strings). */
@@ -117,6 +133,7 @@ function parseArgs(argv: string[]): CliArgs {
   let useMemory = true;
   let clearSession = false;
   let toolAction: ToolCliAction | undefined;
+  let ltmAction: LtmCliAction | undefined;
   let sessionId =
     process.env.SESSION_ID?.trim() || "default";
   const rest: string[] = [];
@@ -167,6 +184,47 @@ function parseArgs(argv: string[]): CliArgs {
         }
         break;
       }
+      case "--ltm": {
+        const sub = argv[++i];
+        if (!sub || !["remember", "recall", "list", "forget"].includes(sub)) {
+          console.error("--ltm requires remember|recall|list|forget");
+          process.exit(1);
+        }
+        if (sub === "forget") {
+          const idOrKey = argv[++i];
+          if (!idOrKey) {
+            console.error("--ltm forget requires id or key");
+            process.exit(1);
+          }
+          ltmAction = { kind: "forget", args: {}, idOrKey };
+        } else {
+          const kv: string[] = [];
+          while (i + 1 < argv.length && !argv[i + 1]!.startsWith("-")) {
+            const next = argv[i + 1]!;
+            if (next.includes("=")) {
+              kv.push(argv[++i]!);
+            } else if (sub === "remember" && !kv.some((x) => x.startsWith("content="))) {
+              // allow bare content tokens after key=...
+              i++;
+              const prev = kv.find((x) => x.startsWith("content="));
+              if (!prev) {
+                kv.push(`content=${next}`);
+              } else {
+                // append free text into content
+                const idx = kv.indexOf(prev);
+                kv[idx] = prev + " " + next;
+              }
+            } else {
+              break;
+            }
+          }
+          ltmAction = {
+            kind: sub as LtmCliAction["kind"],
+            args: parseKvArgs(kv),
+          };
+        }
+        break;
+      }
       case "--no-memory":
         useMemory = false;
         break;
@@ -199,7 +257,92 @@ function parseArgs(argv: string[]): CliArgs {
     useMemory,
     clearSession,
     toolAction,
+    ltmAction,
   };
+}
+
+async function runLtmAction(
+  orch: Orchestrator,
+  action: LtmCliAction,
+  asJson: boolean
+): Promise<void> {
+  const ltm = orch.longTerm;
+  if (!ltm) {
+    console.error("Long-term memory is disabled (LONGTERM_DISABLED?)");
+    process.exit(1);
+  }
+
+  if (action.kind === "remember") {
+    const content = String(action.args.content ?? "").trim();
+    if (!content) {
+      console.error("remember requires content=...");
+      process.exit(1);
+    }
+    const key =
+      action.args.key !== undefined
+        ? String(action.args.key)
+        : undefined;
+    const tagsRaw = action.args.tags;
+    const tags =
+      typeof tagsRaw === "string" && tagsRaw.trim()
+        ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean)
+        : undefined;
+    const fact = await ltm.remember({ content, key, tags, source: "user" });
+    if (asJson) console.log(JSON.stringify(fact, null, 2));
+    else
+      console.log(
+        `remembered ${fact.key ? `key=${fact.key}` : `id=${fact.id}`}: ${fact.content}`
+      );
+    return;
+  }
+
+  if (action.kind === "recall") {
+    const key =
+      action.args.key !== undefined ? String(action.args.key) : undefined;
+    const text =
+      action.args.text !== undefined ? String(action.args.text) : undefined;
+    const limit = action.args.limit ? Number(action.args.limit) : 10;
+    const facts = await ltm.recall({ key, text, limit });
+    if (asJson) {
+      console.log(JSON.stringify(facts, null, 2));
+      return;
+    }
+    if (facts.length === 0) {
+      console.log("(no facts)");
+      return;
+    }
+    for (const f of facts) {
+      console.log(
+        `${f.key ?? f.id}  ${f.content}${f.tags?.length ? `  [${f.tags.join(",")}]` : ""}`
+      );
+    }
+    return;
+  }
+
+  if (action.kind === "list") {
+    const limit = action.args.limit ? Number(action.args.limit) : 20;
+    const facts = await ltm.list(limit);
+    if (asJson) {
+      console.log(JSON.stringify(facts, null, 2));
+      return;
+    }
+    if (facts.length === 0) {
+      console.log("(empty)");
+      return;
+    }
+    for (const f of facts) {
+      console.log(`${f.key ?? f.id}  ${f.content}`);
+    }
+    return;
+  }
+
+  if (action.kind === "forget") {
+    const idOrKey = action.idOrKey ?? String(action.args.idOrKey ?? "");
+    const ok = await ltm.forget(idOrKey);
+    if (asJson) console.log(JSON.stringify({ forgotten: ok, idOrKey }));
+    else console.log(ok ? `forgot ${idOrKey}` : `not found: ${idOrKey}`);
+    if (!ok) process.exitCode = 1;
+  }
 }
 
 async function runToolAction(
@@ -392,7 +535,7 @@ async function runRepl(
   let sessionId = args.sessionId;
   console.log(
     "Orchestrator REPL (empty line or Ctrl+C to exit).\n" +
-      "Commands: /local /frontier /route /tool /clear /session <id>"
+      "Commands: /local /frontier /route /tool /remember /recall /forget /ltm /clear /session <id>"
   );
   if (memory && args.useMemory) {
     const n = (await memory.getHistory(sessionId)).length;
@@ -450,6 +593,63 @@ async function runRepl(
             await runToolAction(orch, { kind: "list", args: {} }, args.json);
           } else {
             console.log("Usage: /tool list | /tool run NAME [k=v...]");
+          }
+        } catch (err) {
+          console.error(
+            `Error: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
+        continue;
+      }
+
+      if (
+        line.startsWith("/remember ") ||
+        line.startsWith("/recall") ||
+        line.startsWith("/forget ") ||
+        line === "/ltm list" ||
+        line.startsWith("/ltm ")
+      ) {
+        try {
+          if (line.startsWith("/remember ")) {
+            const body = line.slice("/remember ".length).trim();
+            const parts = body.split(/\s+/);
+            const kv = parts.filter((p) => p.includes("="));
+            const free = parts.filter((p) => !p.includes("="));
+            const argsMap = parseKvArgs(kv);
+            if (!argsMap.content && free.length) {
+              argsMap.content = free.join(" ");
+            }
+            await runLtmAction(
+              orch,
+              { kind: "remember", args: argsMap },
+              args.json
+            );
+          } else if (line.startsWith("/recall")) {
+            const body = line.slice("/recall".length).trim();
+            const parts = body ? body.split(/\s+/) : [];
+            const argsMap = parseKvArgs(parts.filter((p) => p.includes("=")));
+            const free = parts.filter((p) => !p.includes("="));
+            if (!argsMap.text && !argsMap.key && free.length) {
+              argsMap.text = free.join(" ");
+            }
+            await runLtmAction(
+              orch,
+              { kind: "recall", args: argsMap },
+              args.json
+            );
+          } else if (line.startsWith("/forget ")) {
+            const idOrKey = line.slice("/forget ".length).trim();
+            await runLtmAction(
+              orch,
+              { kind: "forget", args: {}, idOrKey },
+              args.json
+            );
+          } else if (line === "/ltm list" || line.startsWith("/ltm list")) {
+            await runLtmAction(orch, { kind: "list", args: {} }, args.json);
+          } else {
+            console.log(
+              "Usage: /remember [key=k] content | /recall [text=|key=] | /forget id|key | /ltm list"
+            );
           }
         } catch (err) {
           console.error(
@@ -532,17 +732,26 @@ async function main(): Promise<void> {
     }
     const orch = new Orchestrator(config);
 
-    if (args.toolAction) {
-      await runToolAction(orch, args.toolAction, args.json);
-      return;
-    }
+    try {
+      if (args.toolAction) {
+        await runToolAction(orch, args.toolAction, args.json);
+        return;
+      }
 
-    if (!args.prompt) {
-      await runRepl(orch, args, memory);
-      return;
-    }
+      if (args.ltmAction) {
+        await runLtmAction(orch, args.ltmAction, args.json);
+        return;
+      }
 
-    await runOnce(orch, args, memory);
+      if (!args.prompt) {
+        await runRepl(orch, args, memory);
+        return;
+      }
+
+      await runOnce(orch, args, memory);
+    } finally {
+      orch.longTerm?.close();
+    }
   } finally {
     memory?.close();
   }
