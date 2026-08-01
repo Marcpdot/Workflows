@@ -1,6 +1,6 @@
 # Package refactor plan
 
-**Status:** approved plan — execute step-by-step  
+**Status:** complete (Steps A–F landed; see `packages/` + `packages/orchestrator`)  
 **Goal:** Make the repo readable (a newcomer can find each layer) without changing runtime behavior.  
 **Trigger:** M4–M10 shells delivered; almost everything still lives under `Orchestrator/`.
 

@@ -13,7 +13,7 @@ Local Ollama CLI client + frontier/mid OpenAI-compatible (Grok) client.
 Orchestrator depends on `file:../packages/models` as `@workflows/models`.
 
 ```bash
-cd Orchestrator
+cd packages/orchestrator
 npm install
 npx tsc --noEmit
 npx tsx src/index.ts --json --route-only "Oppsummer denne teksten kort"

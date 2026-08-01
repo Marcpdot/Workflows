@@ -19,20 +19,20 @@ Platform shells also present: embeddings, integration surface, compute policy, o
 
 **Reason:** Jarvis-like personal system should be a **layer under many workflows**, not a single chatbot app. Layers let models and UIs change without losing progress.
 
-## Current package shape (pragmatic)
+## Current package shape
 
-**Status:** active (temporary)  
+**Status:** active  
 **Evidence:** confirmed  
-**Source:** repo layout under `Orchestrator/`; re-confirmed after M10  
+**Source:** `docs/PACKAGE_REFACTOR.md` Step F; `packages/*` layout  
 
-Almost all implementation lives in the **Orchestrator package** (memory, tools, eval, embeddings, integration HTTP, web UI, policy, observability, workspace, structured as subfolders). That is **not** the long-term discipline target. **Re-confirmed after M10:** stay monolith for now — see [packaging.md](packaging.md).
+Feature layers live under **`packages/<layer>`**. Runnable glue is **`packages/orchestrator`** (router, handle, CLI, UI, integration HTTP). See [packaging.md](packaging.md).
 
-**Reason:** Ship milestones end-to-end with one runnable package and one Build loop. Structure purity deferred until usage and multi-package need justify a split.
+**Reason:** Readable multi-layer layout without npm workspaces complexity; Orchestrator wires rather than owns every implementation.
 
 **Rejected alternatives:**
 
 - **One git repo per layer from day one** — more overhead than value while APIs were still moving.
-- **Full modular monorepo packages before M3** — would slow delivery of a working path.
+- **Stay forever as single `Orchestrator/src` tree** — superseded by package refactor A–F.
 
 See [packaging.md](packaging.md) and [milestones.md](milestones.md).
 
@@ -40,7 +40,7 @@ See [packaging.md](packaging.md) and [milestones.md](milestones.md).
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** `Orchestrator/src/orchestrator.ts`  
+**Source:** `packages/orchestrator/src/orchestrator.ts`  
 
 Typical `handle()` flow: resolve workspace/session (callers) → optional policy → route → retrieve/compress → complete or tool loop → optional suggestions → observability emit. Optional steps are env-gated so the core chat path stays simple. Pipeline planner can use **structured** plan JSON (M10) without changing raw chat.
 

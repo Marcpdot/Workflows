@@ -1,68 +1,39 @@
 # Packaging
 
-## Single Orchestrator package owns all layers (temporary)
+## Layer packages under `packages/` (Step F complete)
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** repo layout; decision 2026-08-01; re-confirmed after M10 (working session)  
-**Revisit when:** daily multi-project use makes boundary friction obvious, or a second consumer package is required
+**Source:** `docs/PACKAGE_REFACTOR.md` Steps A–F; layout after Step F  
 
-> **Re-confirmed after M10:** Vertical shells M0–M10 exist under `Orchestrator/`. Split into separately versioned layer packages is **still deferred** — ship usage and harden shells before packaging tax. Intended long-term shape (Orchestrator wires layers) unchanged; timeline is “not yet,” not “never.”
+Runnable glue is **`packages/orchestrator`**. Feature layers are sibling packages under `packages/` (memory, models, tools, eval, compression, embeddings, retrieval, workspace, policy, structured, observability, proactive, agents). Each layer is a folder with its own `package.json` (`@workflows/<name>`, `file:` deps). No npm workspaces required.
 
-Implementation of memory, tools, eval, embeddings, integration HTTP, web UI, compute policy, observability, workspace, and structured output currently lives **under `Orchestrator/`**. The runnable unit is one Node package. Layer *names* show up as subfolders and local `AGENTS.md` files; layer *boundaries* as separately versioned packages remain deferred.
+**Orchestrator package contains only:** routing, `Orchestrator` / `handle`, CLI `index`, UI entry, config load, and **integration HTTP** (must import the brain — kept with glue to avoid a circular package).
 
-**Reason:** One place to run, one dependency tree, one path for Grok Build. The vertical is complete as shells; splitting without real multi-package consumers would still be speculative.
+Root `Orchestrator/README.md` is a **pointer** to `packages/orchestrator` for old links.
 
-**Rejected alternatives:**
+**Reason:** Newcomers should answer “where is memory?” with `packages/memory`, not dig through a monolith `src/`. Glue stays thin; layers stay moveable.
 
-- **Split packages immediately after M10** — re-confirmed deferred: no second consumer yet, interfaces still thin, cost outweighs benefit.
-- **Stop feature/usage work to split mid-stack** — same as pre-M10: speculative boundaries.
-- **Keep forever as one package** — still rejected as the *final* state for a long-lived Jarvis-layer; only the *timing* of the split stays open.
+**Rejected / deferred:**
 
-**Intended follow-up:** When revisit triggers, split so Orchestrator primarily wires layers rather than containing all of them.
+- **npm workspaces monorepo tooling** — not required for A–F; folders + `file:` deps are enough.
+- **Separate `packages/integration`** — circular with orchestrator brain; documented in Step E and kept inside `packages/orchestrator/src/integration`.
+- **Keep forever as single `Orchestrator/src` monolith** — superseded by A–F extraction.
 
-## Package folder extraction (in progress)
+**How to run:**
 
-**Status:** active  
-**Evidence:** confirmed  
-**Source:** `docs/PACKAGE_REFACTOR.md` (approved plan); Step A executed  
+```bash
+cd packages/orchestrator
+npm install
+npm run dev
+```
 
-Refactor proceeds **step-by-step** per `docs/PACKAGE_REFACTOR.md` (behavior freeze, one layer per step). Not a big-bang monorepo rewrite.
+### Typecheck strategy
 
-| Step | Layer | Location |
-|------|--------|----------|
-| A (done) | eval | `packages/eval/` (`cases.json` + `src/`) |
-| B (done) | models | `packages/models/` (local + frontier/mid) |
-| C (done) | memory | `packages/memory/` (short-term + longterm) |
-| D (done) | tools | `packages/tools/` (registry, builtins, loop) |
-| E (done) | satellites | see below |
+- **`packages/orchestrator`**: `rootDir: "src"`, imports layers as `@workflows/*` via `node_modules` junctions.
+- **Layer packages**: own `tsconfig` (`noEmit`); `typeRoots` may point at `../orchestrator/node_modules/@types` for Node types.
+- **Eval runner** still imports Orchestrator class from `packages/orchestrator` (suite exercises real handle path).
 
-**Step E satellites** (all under `packages/` except integration):
+### Historical note
 
-| Package | Notes |
-|---------|--------|
-| `compression` | history compress + local summarizer |
-| `embeddings` | embedder + vector SQLite |
-| `retrieval` | depends on embeddings |
-| `workspace` | depends on retrieval (`resolveDefaultContextDir`) |
-| `policy` | depends on eval/cost |
-| `structured` | completeStructured + parse |
-| `observability` | JSONL observer |
-| `proactive` | suggestions |
-| `agents` | role pipeline; depends on tools |
-| *(integration)* | **stays in `Orchestrator/src/integration`** — HTTP server must import Orchestrator brain; moving it creates a circular package graph. Contract helpers live next to the entry. |
-
-Orchestrator remains the runnable package (CLI/scripts). Step F thins it further when ready.
-
-### Typecheck / compile strategy (Step A follow-up)
-
-**Status:** active  
-**Evidence:** confirmed  
-**Source:** Step A path cleanup after `rootDir: ".."` was rejected as too awkward  
-
-- **Orchestrator** `tsconfig`: `rootDir: "src"`, `include` only `src/**/*` → `dist/index.js` (normal layout).
-- **packages/eval** has its own `tsconfig` (`noEmit`) for **standalone** modules (`cost`, `assertions`, `types`). The suite `runner` still imports Orchestrator and is exercised via tsx scripts, not that isolated `tsc`.
-- Orchestrator **runtime/type imports** of extracted layers use `file:../packages/<name>` as `@workflows/<name>` so they resolve under `node_modules`, not under Orchestrator’s `rootDir`.
-- Scripts (`run-eval`, smokes) may still use **relative** paths into `packages/*` via tsx where convenient (eval suite runner still wires Orchestrator).
-
-**Rejected:** `rootDir: ".."` + compiling `../packages/eval` into Orchestrator’s program — forces `dist/Orchestrator/src/...` and broken `main`/`start` paths.
+Earlier: single package under root `Orchestrator/` until M10 shells existed; then re-confirmed monolith briefly; then `PACKAGE_REFACTOR.md` executed A–F. Older context entries about “temporary monolith” are **superseded** by this layout.

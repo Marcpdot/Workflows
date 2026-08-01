@@ -7,7 +7,7 @@ Tool registry, builtins, path safety, parseToolCalls, runToolLoop.
 Orchestrator depends on `file:../packages/tools` as `@workflows/tools`.
 
 ```bash
-cd Orchestrator
+cd packages/orchestrator
 npm install
 npx tsx scripts/smoke-tools.ts
 npx tsx scripts/smoke-tools-phase-c.ts

@@ -12,7 +12,7 @@ Short-term SQLite session history + long-term facts API (optional semantic via i
 Orchestrator depends on `file:../packages/memory` as `@workflows/memory`.
 
 ```bash
-cd Orchestrator
+cd packages/orchestrator
 npm install
 npx tsx scripts/smoke-memory.ts
 npx tsx scripts/smoke-longterm.ts

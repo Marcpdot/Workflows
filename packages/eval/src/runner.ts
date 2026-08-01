@@ -13,9 +13,9 @@ import { join } from "node:path";
 import {
   Orchestrator,
   loadConfigFromEnv,
-} from "../../../Orchestrator/src/orchestrator.js";
+} from "../../orchestrator/src/orchestrator.js";
 import { createMemory } from "../../memory/src/index.js";
-import type { ChatMessage } from "../../../Orchestrator/src/types.js";
+import type { ChatMessage } from "../../orchestrator/src/types.js";
 import { runAssertions } from "./assertions.js";
 import { buildCostBreakdown } from "./cost.js";
 import type {
@@ -272,15 +272,15 @@ export async function runEvalSuite(
 
 /**
  * Default cases live in packages/eval/cases.json.
- * resultsDir stays under the caller cwd (typically Orchestrator/data/eval-results).
- * Discover cases from Orchestrator cwd or monorepo root without import.meta.
+ * resultsDir stays under the caller cwd (typically packages/orchestrator/data/eval-results).
  */
 export function resolveEvalPaths(cwd = process.cwd()): {
   casesPath: string;
   resultsDir: string;
 } {
   const candidates = [
-    join(cwd, "..", "packages", "eval", "cases.json"),
+    join(cwd, "..", "eval", "cases.json"), // packages/orchestrator → packages/eval
+    join(cwd, "..", "packages", "eval", "cases.json"), // monorepo root → packages/eval
     join(cwd, "packages", "eval", "cases.json"),
     join(cwd, "eval", "cases.json"),
   ];

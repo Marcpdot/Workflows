@@ -2,7 +2,7 @@
 
 This project uses Keep the Why to preserve the reasoning behind its code.
 
-- Orchestrator usage: see `Orchestrator/README.md`
+- Orchestrator usage: see `packages/orchestrator/README.md`
 - High-level system shape: see `ARCHITECTURE.md`
 - Why things are the way they are: see `context/index.md`
 - If `AGENTS.local.md` exists in this repo, read that too — personal/local notes.

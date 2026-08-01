@@ -3,8 +3,8 @@
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { runAssertions } from "../../packages/eval/src/assertions.js";
-import type { EvalCase } from "../../packages/eval/src/types.js";
+import { runAssertions } from "../../eval/src/assertions.js";
+import type { EvalCase } from "../../eval/src/types.js";
 import type { OrchestratorResult } from "../src/types.js";
 
 function mockResult(
@@ -25,8 +25,8 @@ function mockResult(
   };
 }
 
-// Cases live in packages/eval after package refactor Step A
-const casesPath = resolve(process.cwd(), "../packages/eval/cases.json");
+// Cases live in packages/eval (sibling of packages/orchestrator)
+const casesPath = resolve(process.cwd(), "../eval/cases.json");
 const cases = JSON.parse(readFileSync(casesPath, "utf8")) as EvalCase[];
 if (cases.length < 8) {
   throw new Error(`Expected at least 8 cases, got ${cases.length}`);

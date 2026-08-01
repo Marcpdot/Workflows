@@ -5,16 +5,16 @@ import {
   buildCostBreakdown,
   estimateCostUsd,
   estimateTokensFromText,
-} from "../../packages/eval/src/cost.js";
+} from "../../eval/src/cost.js";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);
 }
 
 // chars/4 heuristic
-assert(estimateTokensFromText("") === 0, "empty text → 0");
-assert(estimateTokensFromText("abcd") === 1, "4 chars → 1 token");
-assert(estimateTokensFromText("a".repeat(9)) === 3, "9 chars → 3 tokens");
+assert(estimateTokensFromText("") === 0, "empty text â†’ 0");
+assert(estimateTokensFromText("abcd") === 1, "4 chars â†’ 1 token");
+assert(estimateTokensFromText("a".repeat(9)) === 3, "9 chars â†’ 3 tokens");
 console.log("OK: estimateTokensFromText");
 
 // local always $0
@@ -26,7 +26,7 @@ console.log("OK: local cost = 0");
 // frontier uses rates
 const frontier = estimateCostUsd("frontier", 1_000_000, 1_000_000);
 assert(frontier.usd > 0, "frontier cost > 0");
-console.log(`OK: frontier 1M+1M ≈ $${frontier.usd}`);
+console.log(`OK: frontier 1M+1M â‰ˆ $${frontier.usd}`);
 
 // API usage preferred over estimate
 const fromApi = buildCostBreakdown({
@@ -40,7 +40,7 @@ assert(fromApi.tokensEstimated === false, "not estimated when usage present");
 assert(fromApi.estimatedCostUsd > 0, "frontier cost from usage");
 console.log("OK: API usage path");
 
-// Local without usage → estimate from text
+// Local without usage â†’ estimate from text
 const fromText = buildCostBreakdown({
   provider: "local",
   promptText: "x".repeat(40), // 10 tokens

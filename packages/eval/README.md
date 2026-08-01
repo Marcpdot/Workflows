@@ -1,6 +1,6 @@
 # packages/eval
 
-Evaluation suite (Milestone 1) — fixed cases, runner, assertions, token/cost helpers.
+Evaluation suite (Milestone 1) â€” fixed cases, runner, assertions, token/cost helpers.
 
 **Step A** of `docs/PACKAGE_REFACTOR.md`: moved out of `Orchestrator/src/eval`.
 
@@ -13,7 +13,7 @@ Evaluation suite (Milestone 1) — fixed cases, runner, assertions, token/cost h
 **Imports:** Orchestrator depends on this package as `@workflows/eval` (`file:../packages/eval`) and imports cost via `@workflows/eval/cost` so Orchestrator `tsconfig` can keep `rootDir: "src"`. Scripts use relative paths + tsx.
 
 ```bash
-cd Orchestrator
+cd packages/orchestrator
 npm install
 npx tsx scripts/run-eval.ts
 npx tsx scripts/smoke-eval-assertions.ts

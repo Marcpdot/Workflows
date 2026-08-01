@@ -1,0 +1,41 @@
+{
+  "name": "@workflows/orchestrator",
+  "version": "0.1.0",
+  "description": "Thin orchestrator glue — local Ollama + frontier Grok, wires Workflows layer packages",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "serve": "tsx src/integration/serverMain.ts",
+    "ui": "tsx src/ui/web/main.ts",
+    "typecheck": "tsc --noEmit",
+    "eval": "tsx scripts/run-eval.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.13.10",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  },
+  "dependencies": {
+    "@workflows/agents": "file:../agents",
+    "@workflows/compression": "file:../compression",
+    "@workflows/embeddings": "file:../embeddings",
+    "@workflows/eval": "file:../eval",
+    "@workflows/memory": "file:../memory",
+    "@workflows/models": "file:../models",
+    "@workflows/observability": "file:../observability",
+    "@workflows/policy": "file:../policy",
+    "@workflows/proactive": "file:../proactive",
+    "@workflows/retrieval": "file:../retrieval",
+    "@workflows/structured": "file:../structured",
+    "@workflows/tools": "file:../tools",
+    "@workflows/workspace": "file:../workspace",
+    "better-sqlite3": "^13.0.2"
+  }
+}

@@ -8,7 +8,7 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { runEvalSuite, resolveEvalPaths } from "../../packages/eval/src/index.js";
+import { runEvalSuite, resolveEvalPaths } from "../../eval/src/index.js";
 
 function loadDotEnv(filePath = resolve(process.cwd(), ".env")): void {
   if (!existsSync(filePath)) return;
