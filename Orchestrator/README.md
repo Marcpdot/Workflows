@@ -79,6 +79,31 @@ npx tsx scripts/smoke-proactive.ts
 # PROACTIVE_ENABLED=true npm run dev -- "TypeError crash in router"
 ```
 
+## Integration (Milestone 5)
+
+Stable surface for **other projects** to call Orchestrator without importing internals.
+
+| Surface | How |
+|---------|-----|
+| CLI contract | `--json` (stdout = pure JSON), `--workspace` / `WORKSPACE_ROOT`, exit 0/1 |
+| HTTP | `npm run serve` → `GET /health`, `POST /v1/chat` on `127.0.0.1` |
+
+Full contract: [`src/integration/contract.md`](src/integration/contract.md)
+
+```bash
+# From any machine that can run this package:
+npx tsx src/index.ts --json --workspace /path/to/other/repo "What is in package.json?"
+npx tsx src/index.ts --json --route-only "Oppsummer dette"
+
+npm run serve
+# curl examples: examples/integration/curl-chat.sh
+# npx tsx examples/integration/minimal-client.ts "Hello"
+
+npx tsx scripts/smoke-integration.ts
+```
+
+**Boundaries:** tools bind to `--workspace`; Keep the Why retrieval still uses `RETRIEVAL_CONTEXT_DIR`; LTM stays env-global until M9.
+
 ## Embeddings (Milestone 4)
 
 Pluggable local embedder (Ollama) + SQLite float32 vectors (linear scan).

@@ -1,0 +1,79 @@
+# Orchestrator integration contract (Milestone 5)
+
+Other projects/scripts call **in** without knowing internal modules.
+
+```text
+external repo / script
+        ↓
+  CLI  and/or  HTTP (127.0.0.1)
+        ↓
+  Orchestrator (single brain)
+```
+
+## CLI
+
+```bash
+cd path/to/Orchestrator   # or invoke via absolute path to index
+
+npx tsx src/index.ts [options] "prompt"
+npx tsx src/index.ts --json "prompt"
+npx tsx src/index.ts --workspace /abs/path/to/project "prompt"
+npx tsx src/index.ts --json --route-only "Oppsummer dette"
+```
+
+| Flag / env | Meaning |
+|------------|---------|
+| `--workspace` / `WORKSPACE_ROOT` | Tool path root (also accepts legacy `TOOL_WORKSPACE_ROOT`) |
+| `--session` / `SESSION_ID` | Short-term history isolation |
+| `--json` | **stdout is only JSON** (logs go to stderr) |
+| `--route-only` | Routing decision only (no model call) |
+| `--no-memory` | Do not load/save session history |
+| exit `0` | Success |
+| exit `1` | Error |
+
+### JSON stdout (`--json`)
+
+Parseable object. Chat form includes at least:
+
+```json
+{
+  "reply": "…",
+  "routing": { "model": "local", "reason": "…", "taskType": "…", "complexity": "…" },
+  "model": "…",
+  "provider": "local",
+  "latencyMs": 123,
+  "workspaceRoot": "/abs/path",
+  "sessionId": "default"
+}
+```
+
+Optional fields when features run: `usage`, `compression`, `retrieval`, `toolSteps`, `suggestions`.
+
+`--route-only --json` prints the routing decision object only.
+
+## HTTP (optional)
+
+```bash
+npm run serve
+# INTEGRATION_HTTP_PORT=8787
+# INTEGRATION_HTTP_TOKEN=secret   # optional; require Authorization: Bearer …
+```
+
+| Method | Path | Body / notes |
+|--------|------|----------------|
+| `GET` | `/health` | `{ "ok": true, "service": "orchestrator", "version": "…" }` |
+| `POST` | `/v1/chat` | `{ "prompt", "sessionId?", "workspaceRoot?", "options?" }` → chat JSON |
+
+Default bind: `127.0.0.1`.
+
+## Boundaries (M5)
+
+| Concern | Binding |
+|---------|---------|
+| **Tools** (`read_file`, …) | Always `workspaceRoot` from call / `--workspace` |
+| **Retrieval `context/`** | Still `RETRIEVAL_CONTEXT_DIR` (Orchestrator/repo Keep the Why), not auto-switched per workspace |
+| **LTM** | Global/env path (`LONGTERM_DB_PATH` / `PERSONAL_CONTEXT_DIR`) — **not** per-workspace until M9 |
+
+## Examples
+
+See `examples/integration/curl-chat.sh` and `minimal-client.ts`.

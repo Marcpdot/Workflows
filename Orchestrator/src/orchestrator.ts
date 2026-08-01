@@ -105,6 +105,11 @@ export class Orchestrator {
     return this.tools;
   }
 
+  /** Tool / integration workspace root (M5). */
+  getWorkspaceRoot(): string {
+    return this.config.workspaceRoot;
+  }
+
   /** Execute a registered tool against the configured workspace root. */
   async runTool(
     name: string,
@@ -487,9 +492,12 @@ export function loadConfigFromEnv(
     env.RETRIEVAL_CONTEXT_DIR?.trim() ||
     resolveDefaultContextDir(process.cwd());
 
+  // M5: WORKSPACE_ROOT is first-class; TOOL_WORKSPACE_ROOT kept as legacy alias
   const workspaceRoot = resolve(
     process.cwd(),
-    env.TOOL_WORKSPACE_ROOT?.trim() || "."
+    env.WORKSPACE_ROOT?.trim() ||
+      env.TOOL_WORKSPACE_ROOT?.trim() ||
+      "."
   );
 
   const toolsDisabled = envFlagTrue(env.TOOLS_DISABLED);

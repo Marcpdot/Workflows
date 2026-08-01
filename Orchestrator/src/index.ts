@@ -62,7 +62,8 @@ Options:
   --ltm list [limit=N]
   --ltm forget <idOrKey>
   --pipeline <task>  Sequential planner→worker pipeline (Milestone 3C)
-  --json             Print full result as JSON
+  --workspace, -w PATH  Tool workspace root (env WORKSPACE_ROOT)
+  --json             Machine JSON on stdout only (logs → stderr)
   --help, -h         Show this help
 
 REPL commands:
@@ -90,6 +91,7 @@ Env (see .env.example):
   LONGTERM_DB_PATH, PERSONAL_CONTEXT_DIR, LONGTERM_AUTO_INJECT, LONGTERM_DISABLED
   PROACTIVE_ENABLED, PROACTIVE_MAX, PROACTIVE_USE_MODEL
   AGENTS_PIPELINE_ENABLED
+  WORKSPACE_ROOT (or TOOL_WORKSPACE_ROOT), INTEGRATION_HTTP_PORT, INTEGRATION_HTTP_TOKEN
 `);
 }
 
@@ -118,6 +120,8 @@ interface CliArgs {
   ltmAction?: LtmCliAction;
   /** When set, run sequential role pipeline instead of handle() */
   pipelineTask?: string;
+  /** Absolute/relative workspace for tools (M5) */
+  workspace?: string;
 }
 
 /** Parse key=value tokens into a plain object (values stay strings). */
@@ -141,6 +145,7 @@ function parseArgs(argv: string[]): CliArgs {
   let toolAction: ToolCliAction | undefined;
   let ltmAction: LtmCliAction | undefined;
   let pipelineTask: string | undefined;
+  let workspace: string | undefined;
   let sessionId =
     process.env.SESSION_ID?.trim() || "default";
   const rest: string[] = [];
@@ -148,6 +153,16 @@ function parseArgs(argv: string[]): CliArgs {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
     switch (arg) {
+      case "--workspace":
+      case "-w": {
+        const next = argv[++i];
+        if (!next || next.startsWith("-")) {
+          console.error("--workspace requires a path");
+          process.exit(1);
+        }
+        workspace = next;
+        break;
+      }
       case "--pipeline": {
         // Remaining non-flag args form the task (or next token)
         const parts: string[] = [];
@@ -279,6 +294,7 @@ function parseArgs(argv: string[]): CliArgs {
     toolAction,
     ltmAction,
     pipelineTask,
+    workspace,
   };
 }
 
@@ -432,6 +448,7 @@ async function runToolAction(
   const result = await orch.runTool(action.name, action.args);
   if (asJson) {
     console.log(JSON.stringify(result, null, 2));
+    if (!result.ok) process.exitCode = 1;
   } else if (result.ok) {
     console.log(result.output);
   } else {
@@ -458,15 +475,23 @@ function openMemoryFromEnv(): Memory {
 function printResult(
   result: Awaited<ReturnType<Orchestrator["handle"]>>,
   asJson: boolean,
-  meta?: { sessionId?: string; historyCount?: number }
+  meta?: {
+    sessionId?: string;
+    historyCount?: number;
+    latencyMs?: number;
+    workspaceRoot?: string;
+  }
 ): void {
   if (asJson) {
+    // M5: stdout is pure JSON only
     console.log(
       JSON.stringify(
         {
           ...result,
           sessionId: meta?.sessionId,
           historyCount: meta?.historyCount,
+          latencyMs: meta?.latencyMs,
+          workspaceRoot: meta?.workspaceRoot,
         },
         null,
         2
@@ -485,6 +510,9 @@ function printResult(
     `\n[route] ${result.routing.reason}  (type=${result.routing.taskType}, complexity=${result.routing.complexity})`
   );
   console.log(`[model] ${result.provider}/${result.model}`);
+  if (meta?.latencyMs != null) {
+    console.log(`[latency] ${meta.latencyMs}ms`);
+  }
   if (result.retrieval) {
     console.log(
       `[retrieval] chunks=${result.retrieval.chunkCount}  chars=${result.retrieval.chars}  sources=${result.retrieval.sources.join(",") || "-"}`
@@ -557,10 +585,12 @@ async function runOnce(
       ? await memory.getHistory(args.sessionId)
       : [];
 
+  const started = performance.now();
   const result = await orch.handle(args.prompt, {
     forceModel: args.forceModel,
     history,
   });
+  const latencyMs = Math.round(performance.now() - started);
 
   if (memory && args.useMemory) {
     // Do not auto-store system prompts — only the user turn + assistant reply.
@@ -574,6 +604,8 @@ async function runOnce(
   printResult(result, args.json, {
     sessionId: args.useMemory ? args.sessionId : undefined,
     historyCount: history.length,
+    latencyMs,
+    workspaceRoot: orch.getWorkspaceRoot(),
   });
 }
 
@@ -792,10 +824,18 @@ async function main(): Promise<void> {
       return;
     }
 
+    // M5: apply --workspace before config so tools bind to caller project
+    if (args.workspace?.trim()) {
+      process.env.WORKSPACE_ROOT = resolve(args.workspace.trim());
+    }
+
     const config = loadConfigFromEnv();
     // Phase C: load optional TOOL_EXTRA_MODULES into the registry.
     if (config.tools) {
       config.tools = await createRegistryFromConfig();
+    }
+    if (args.workspace?.trim()) {
+      config.workspaceRoot = resolve(args.workspace.trim());
     }
     const orch = new Orchestrator(config);
 
