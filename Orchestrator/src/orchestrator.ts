@@ -1,8 +1,8 @@
 /**
- * Main orchestrator: route → retrieve → compress → call model → return reply.
- * Routing, retrieval, compression, and model clients are intentionally separate.
+ * Main orchestrator: route → retrieve → compress → (tool loop | complete) → reply.
  */
 
+import { resolve } from "node:path";
 import { route, type RouterConfig } from "./router.js";
 import { OllamaCliClient } from "./models/local.js";
 import { GrokClient } from "./models/frontier.js";
@@ -17,6 +17,10 @@ import {
 } from "./retrieval/index.js";
 import {
   createBuiltinRegistry,
+  formatToolsForPrompt,
+  runToolLoop,
+  toModelToolSchemas,
+  TOOLS_SYSTEM_ADDENDUM,
   type ToolRegistry,
   type ToolResult,
 } from "./tools/index.js";
@@ -28,7 +32,6 @@ import type {
   OrchestratorResult,
   RoutingDecision,
 } from "./types.js";
-import { resolve } from "node:path";
 
 export class Orchestrator {
   private readonly config: OrchestratorConfig;
@@ -67,7 +70,7 @@ export class Orchestrator {
     return route(prompt, this.routerConfig);
   }
 
-  /** Optional tools registry (phase A — not used inside handle). */
+  /** Optional tools registry. */
   getTools(): ToolRegistry | undefined {
     return this.tools;
   }
@@ -90,11 +93,8 @@ export class Orchestrator {
   }
 
   /**
-   * Full pipeline: route → retrieve → compress history → call model → return.
-   * Optional `forceModel` overrides routing (useful for testing / manual pick).
-   * Compression uses the **local** model only (never frontier).
-   * Retrieval sees full history; compression only reduces chat turns sent.
-   * Callers should still persist full user/assistant messages to memory.
+   * Full pipeline: route → retrieve → compress → model (optional tool loop).
+   * Tool loop runs only when toolsEnabled && tools registry is set.
    */
   async handle(
     prompt: string,
@@ -114,7 +114,7 @@ export class Orchestrator {
     const history = options?.history ?? [];
     const originalCount = history.length;
 
-    // 1) Retrieval over full history + project context (before compression)
+    // 1) Retrieval
     let retrievalBlock: string | null = null;
     let retrievalMeta: OrchestratorResult["retrieval"];
 
@@ -134,7 +134,7 @@ export class Orchestrator {
       };
     }
 
-    // 2) Compression of chat history
+    // 2) Compression
     let recentMessages: ChatMessage[] = history;
     let summary: string | null = null;
     let compressed = false;
@@ -161,9 +161,18 @@ export class Orchestrator {
       compressed = result.compressed;
     }
 
-    // 3) Build messages: system → retrieval → summary → recent → user
+    const useToolLoop =
+      this.config.toolsEnabled && this.tools != null && this.tools.list().length > 0;
+
+    const systemParts = [this.config.systemPrompt];
+    if (useToolLoop && this.tools) {
+      systemParts.push(TOOLS_SYSTEM_ADDENDUM);
+      systemParts.push(formatToolsForPrompt(this.tools.list()));
+    }
+
+    // 3) Build messages
     const messages: ChatMessage[] = [
-      { role: "system", content: this.config.systemPrompt },
+      { role: "system", content: systemParts.join("\n\n") },
       ...(retrievalBlock
         ? [
             {
@@ -190,6 +199,42 @@ export class Orchestrator {
         ? routing.localModel ?? this.config.ollamaModel
         : routing.frontierModel ?? this.config.grokModel;
 
+    if (useToolLoop && this.tools) {
+      const loopResult = await runToolLoop(messages, {
+        maxSteps: this.config.toolsMaxSteps,
+        workspaceRoot: this.config.workspaceRoot,
+        registry: this.tools,
+        complete: async (msgs, tools) => {
+          const response = await client.complete({
+            messages: msgs,
+            model: modelName,
+            tools: toModelToolSchemas(tools),
+          });
+          return {
+            text: response.content,
+            toolCalls: response.toolCalls,
+          };
+        },
+      });
+
+      return {
+        reply: loopResult.finalText,
+        routing,
+        model: modelName,
+        provider: choice,
+        compression: {
+          compressed,
+          summary,
+          recentCount: recentMessages.length,
+          originalCount,
+        },
+        retrieval: retrievalMeta,
+        toolSteps: loopResult.steps,
+        toolsHitMaxSteps: loopResult.hitMaxSteps,
+      };
+    }
+
+    // Phase A / tools off: single completion
     const response = await client.complete({
       messages,
       model: modelName,
@@ -218,6 +263,10 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
+function envFlagTrue(value: string | undefined): boolean {
+  return value === "1" || value === "true" || value === "yes";
+}
+
 export function loadConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env
 ): OrchestratorConfig {
@@ -230,8 +279,9 @@ export function loadConfigFromEnv(
     env.TOOL_WORKSPACE_ROOT?.trim() || "."
   );
 
-  const toolsDisabled =
-    env.TOOLS_DISABLED === "1" || env.TOOLS_DISABLED === "true";
+  const toolsDisabled = envFlagTrue(env.TOOLS_DISABLED);
+  // Phase B loop is off by default until explicitly enabled.
+  const toolsEnabled = envFlagTrue(env.TOOLS_ENABLED);
 
   return {
     ollamaBin: env.OLLAMA_BIN ?? "ollama",
@@ -260,5 +310,7 @@ export function loadConfigFromEnv(
     },
     workspaceRoot,
     tools: toolsDisabled ? undefined : createBuiltinRegistry(),
+    toolsEnabled,
+    toolsMaxSteps: parsePositiveInt(env.TOOLS_MAX_STEPS, 5),
   };
 }

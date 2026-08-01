@@ -74,7 +74,8 @@ Env (see .env.example):
   SESSION_ID, MEMORY_DB_PATH, MEMORY_HISTORY_LIMIT
   COMPRESSION_THRESHOLD, COMPRESSION_KEEP_RECENT, COMPRESSION_DISABLED
   RETRIEVAL_LIMIT, RETRIEVAL_MAX_CHARS, RETRIEVAL_CONTEXT_DIR, RETRIEVAL_DISABLED
-  TOOL_WORKSPACE_ROOT, TOOL_READ_MAX_BYTES, TOOL_COMMAND_TIMEOUT_MS, TOOLS_DISABLED
+  TOOL_WORKSPACE_ROOT, TOOL_READ_MAX_BYTES, TOOL_COMMAND_TIMEOUT_MS
+  TOOLS_DISABLED, TOOLS_ENABLED, TOOLS_MAX_STEPS
 `);
 }
 
@@ -298,6 +299,19 @@ function printResult(
     console.log(
       `[retrieval] chunks=${result.retrieval.chunkCount}  chars=${result.retrieval.chars}  sources=${result.retrieval.sources.join(",") || "-"}`
     );
+  }
+  if (result.toolSteps && result.toolSteps.length > 0) {
+    for (const step of result.toolSteps) {
+      const mark = step.result.ok ? "ok" : "fail";
+      console.log(
+        `[tool] ${step.call.name} ${mark}  ${step.durationMs}ms${
+          step.result.error ? `  (${step.result.error})` : ""
+        }`
+      );
+    }
+    if (result.toolsHitMaxSteps) {
+      console.log("[tool] hit max steps");
+    }
   }
   if (result.compression) {
     if (result.compression.compressed) {

@@ -1,6 +1,6 @@
 /** Shared types for the orchestrator. */
 
-import type { ToolRegistry } from "./tools/types.js";
+import type { ToolRegistry, ToolLoopStep, ModelToolSchema } from "./tools/types.js";
 
 export type ModelChoice = "local" | "frontier";
 
@@ -32,6 +32,8 @@ export interface ModelRequest {
   messages: ChatMessage[];
   model?: string;
   temperature?: number;
+  /** Provider-agnostic tool schemas; clients may wrap for their API */
+  tools?: ModelToolSchema[];
 }
 
 export interface ModelResponse {
@@ -43,6 +45,12 @@ export interface ModelResponse {
     completionTokens?: number;
     totalTokens?: number;
   };
+  /** Structured tool calls when the provider returns them */
+  toolCalls?: Array<{
+    id: string;
+    name: string;
+    args: Record<string, unknown>;
+  }>;
 }
 
 /** Pluggable model client interface. */
@@ -83,10 +91,14 @@ export interface OrchestratorConfig {
   /** Workspace root for tools (path safety). Default: process.cwd() */
   workspaceRoot: string;
   /**
-   * Optional tool registry (Milestone 2 phase A).
-   * Not auto-invoked by handle() — use getTools()/runTool() or phase B later.
+   * Optional tool registry (Milestone 2).
+   * Phase B auto-loop only when toolsEnabled is true.
    */
   tools?: ToolRegistry;
+  /** When true and tools are configured, handle() runs the tool loop */
+  toolsEnabled: boolean;
+  /** Max model↔tool rounds in the loop. Default 5 */
+  toolsMaxSteps: number;
 }
 
 export interface OrchestratorResult {
@@ -108,4 +120,7 @@ export interface OrchestratorResult {
     sources: string[];
     chars: number;
   };
+  /** Present when phase B tool loop ran */
+  toolSteps?: ToolLoopStep[];
+  toolsHitMaxSteps?: boolean;
 }

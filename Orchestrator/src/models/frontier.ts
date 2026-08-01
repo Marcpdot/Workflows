@@ -1,13 +1,16 @@
 /**
  * Frontier model client — xAI Grok (OpenAI-compatible Chat Completions API).
+ * Optionally passes tools and returns structured tool_calls when present.
  */
 
+import { randomUUID } from "node:crypto";
 import type {
   ChatMessage,
   ModelClient,
   ModelRequest,
   ModelResponse,
 } from "../types.js";
+import type { ModelToolSchema } from "../tools/types.js";
 
 export interface GrokConfig {
   apiKey: string;
@@ -20,7 +23,15 @@ interface OpenAIChatResponse {
   id?: string;
   model?: string;
   choices?: Array<{
-    message?: { role?: string; content?: string | null };
+    message?: {
+      role?: string;
+      content?: string | null;
+      tool_calls?: Array<{
+        id?: string;
+        type?: string;
+        function?: { name?: string; arguments?: string };
+      }>;
+    };
     finish_reason?: string;
   }>;
   usage?: {
@@ -29,6 +40,33 @@ interface OpenAIChatResponse {
     total_tokens?: number;
   };
   error?: { message?: string; type?: string };
+}
+
+function toOpenAiTools(tools: ModelToolSchema[]) {
+  return tools.map((t) => {
+    const properties: Record<string, { type: string; description?: string }> =
+      {};
+    const required: string[] = [];
+    for (const p of t.parameters) {
+      properties[p.name] = {
+        type: p.type === "number" ? "number" : p.type === "boolean" ? "boolean" : "string",
+        description: p.description,
+      };
+      if (p.required) required.push(p.name);
+    }
+    return {
+      type: "function" as const,
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: {
+          type: "object",
+          properties,
+          required: required.length ? required : undefined,
+        },
+      },
+    };
+  });
 }
 
 export class GrokClient implements ModelClient {
@@ -58,6 +96,19 @@ export class GrokClient implements ModelClient {
       content: m.content,
     }));
 
+    const bodyPayload: Record<string, unknown> = {
+      model,
+      messages,
+      temperature: request.temperature ?? 0.7,
+      stream: false,
+    };
+
+    if (request.tools && request.tools.length > 0) {
+      bodyPayload.tools = toOpenAiTools(request.tools);
+      // Let the model decide when to call tools (not forced).
+      bodyPayload.tool_choice = "auto";
+    }
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
@@ -68,12 +119,7 @@ export class GrokClient implements ModelClient {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.apiKey}`,
         },
-        body: JSON.stringify({
-          model,
-          messages,
-          temperature: request.temperature ?? 0.7,
-          stream: false,
-        }),
+        body: JSON.stringify(bodyPayload),
         signal: controller.signal,
       });
 
@@ -86,13 +132,41 @@ export class GrokClient implements ModelClient {
         throw new Error(msg);
       }
 
-      const content = body.choices?.[0]?.message?.content;
-      if (content == null || content === "") {
+      const message = body.choices?.[0]?.message;
+      const content = message?.content ?? "";
+      const rawCalls = message?.tool_calls;
+
+      const toolCalls =
+        rawCalls && rawCalls.length > 0
+          ? rawCalls
+              .map((tc, i) => {
+                const name = tc.function?.name ?? "";
+                if (!name) return null;
+                let args: Record<string, unknown> = {};
+                const argStr = tc.function?.arguments;
+                if (typeof argStr === "string" && argStr.trim()) {
+                  try {
+                    args = JSON.parse(argStr) as Record<string, unknown>;
+                  } catch {
+                    args = { _raw: argStr };
+                  }
+                }
+                return {
+                  id: tc.id ?? `call_${i}_${randomUUID().slice(0, 8)}`,
+                  name,
+                  args,
+                };
+              })
+              .filter((c): c is NonNullable<typeof c> => c != null)
+          : undefined;
+
+      // Allow empty content when structured tool calls are present.
+      if ((!content || content === "") && (!toolCalls || toolCalls.length === 0)) {
         throw new Error("Grok API returned an empty completion");
       }
 
       return {
-        content,
+        content: content || "",
         model: body.model ?? model,
         provider: "frontier",
         usage: body.usage
@@ -102,6 +176,7 @@ export class GrokClient implements ModelClient {
               totalTokens: body.usage.total_tokens,
             }
           : undefined,
+        toolCalls,
       };
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {

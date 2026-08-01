@@ -108,24 +108,33 @@ Env: `RETRIEVAL_LIMIT`, `RETRIEVAL_MAX_CHARS`, `RETRIEVAL_CONTEXT_DIR`, `RETRIEV
 npx tsx scripts/smoke-retrieval.ts
 ```
 
-## Tools (Milestone 2 — phase A)
+## Tools (Milestone 2)
+
+### Phase A — interface + manual execute
 
 Pluggable tool interface + registry. Built-ins: `read_file`, `list_dir`,
 `run_command` (whitelist: node/npm/npx/tsc/git status|diff|log|branch).
-Paths cannot escape `TOOL_WORKSPACE_ROOT`. **Not** auto-called from
-`handle()` yet — phase B will add model-driven tool use.
+Paths cannot escape `TOOL_WORKSPACE_ROOT`.
 
 ```bash
 npx tsx scripts/smoke-tools.ts
 npm run dev -- --tool list
 npm run dev -- --tool run read_file path=package.json
-npm run dev -- --tool run run_command command=git status
 ```
 
-```ts
-const orch = new Orchestrator(loadConfigFromEnv());
-await orch.runTool("list_dir", { path: "." });
+### Phase B — model-driven tool loop
+
+When `TOOLS_ENABLED=true`, `handle()` runs `runToolLoop`: model may request
+tools (structured API calls or JSON text), registry executes them, results
+are appended, model continues (max `TOOLS_MAX_STEPS`, default 5). Default is
+**off** so existing chat path is unchanged.
+
+```bash
+npx tsx scripts/smoke-tool-loop.ts
+# TOOLS_ENABLED=true npm run dev -- "What is the name field in package.json?"
 ```
+
+CLI logs each step: `[tool] read_file ok  12ms`.
 
 ## Eval (Milestone 1)
 
