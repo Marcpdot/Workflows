@@ -37,6 +37,10 @@ class SqliteMemory implements Memory {
     this.store.deleteBySession(sessionId);
   }
 
+  async listSessions(prefix?: string): Promise<string[]> {
+    return this.store.listSessionIds(prefix);
+  }
+
   close(): void {
     this.store.close();
   }

@@ -22,6 +22,12 @@ export interface Memory {
   /** Delete all messages for a session. */
   clear(sessionId: string): Promise<void>;
 
+  /**
+   * Distinct session ids present in the store (Milestone 9).
+   * @param prefix when set, only ids that start with this prefix (workspace namespace)
+   */
+  listSessions(prefix?: string): Promise<string[]>;
+
   /** Close the database connection. */
   close(): void;
 }

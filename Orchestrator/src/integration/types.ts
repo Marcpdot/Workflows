@@ -19,10 +19,14 @@ export interface IntegrationChatRequest {
 
 /** Machine-readable chat response (extends handle() result). */
 export type IntegrationChatResponse = OrchestratorResult & {
+  /** Effective (namespaced) short-term session id */
   sessionId?: string;
+  /** User-facing session id before workspace namespace */
+  logicalSessionId?: string;
   historyCount?: number;
   latencyMs?: number;
   workspaceRoot?: string;
+  workspaceId?: string;
 };
 
 export interface IntegrationHealthResponse {

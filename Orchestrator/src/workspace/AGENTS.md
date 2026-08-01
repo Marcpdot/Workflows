@@ -7,33 +7,44 @@ Flere prosjekter eller workspaces uten å blande kontekst — tydelig separasjon
 - **workspace / project** (filer, project context)
 - **personal LTM** (på tvers, privat path)
 
-## Scope
-1. `WorkspaceContext`: `{ id, rootPath, contextDir?, sessionPrefix? }`
-2. Session IDs namespaces per workspace (unngå kollisjon i samme memory.db)
-3. Tools binder til workspace.rootPath (forsterker M5 `--workspace`)
-4. Retrieval project context per workspace (egen `context/` eller konfigurert dir)
-5. LTM forblir delt/personlig med mindre eksplisitt project-scoped store (valgfritt flagg)
-6. CLI: `--workspace`, `--session`, evt. `--list-sessions`
+## Implementert (shell)
+
+| Del | Hvor |
+|-----|------|
+| `resolveWorkspace` / `WorkspaceContext` | `src/workspace/` |
+| Session namespace `ws:<id>:<logical>` | default on; `SESSION_NAMESPACE=false` for legacy |
+| Tools → `rootPath` | orchestrator + pathSafety (M5 forsterket) |
+| Project context | `{workspace}/context` hvis finnes, ellers `RETRIEVAL_CONTEXT_DIR` / default |
+| LTM | fortsatt global/personal; `LONGTERM_PROJECT_SCOPED=true` → under workspace |
+| CLI | `--workspace`, `--session`, `--list-sessions`, `/workspace` i REPL |
+
+```bash
+npx tsx scripts/smoke-workspace.ts
+```
 
 ## Utenfor scope
 - Full multi-user
 - Cloud sync av workspaces
 - Automatisk oppdage alle git-repos på disk
 
-## API (skisse)
+## API
 
 ```ts
 export interface WorkspaceContext {
   id: string;
   rootPath: string;
-  contextDir?: string;
-  sessionId: string; // effective session for this invocation
+  contextDir: string;
+  sessionPrefix: string;
+  logicalSessionId: string;
+  sessionId: string; // effective (namespaced)
 }
 
 export function resolveWorkspace(input: {
   workspaceRoot?: string;
   sessionId?: string;
   cwd?: string;
+  contextDir?: string;
+  env?: NodeJS.ProcessEnv;
 }): WorkspaceContext;
 ```
 

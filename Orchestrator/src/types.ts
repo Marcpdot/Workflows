@@ -6,6 +6,7 @@ import type { ProactiveSettings, Suggestion } from "./proactive/types.js";
 import type { Embedder, VectorStore } from "./embeddings/types.js";
 import type { ComputePolicy, PolicyDecision } from "./policy/types.js";
 import type { Observer } from "./observability/types.js";
+import type { WorkspaceContext } from "./workspace/types.js";
 
 export type ModelChoice = "local" | "mid" | "frontier";
 
@@ -95,6 +96,8 @@ export interface OrchestratorConfig {
   retrieval: RetrievalSettings;
   /** Workspace root for tools (path safety). Default: process.cwd() */
   workspaceRoot: string;
+  /** Milestone 9 resolved workspace (session namespace + project context) */
+  workspace?: WorkspaceContext;
   /**
    * Optional tool registry (Milestone 2).
    * Phase B auto-loop only when toolsEnabled is true.

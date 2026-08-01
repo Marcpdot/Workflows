@@ -144,7 +144,29 @@ npm run serve
 npx tsx scripts/smoke-integration.ts
 ```
 
-**Boundaries:** tools bind to `--workspace`; Keep the Why retrieval still uses `RETRIEVAL_CONTEXT_DIR`; LTM stays env-global until M9.
+**Boundaries:** tools bind to `--workspace`; project retrieval prefers `{workspace}/context` (see M9); LTM stays personal/global unless `LONGTERM_PROJECT_SCOPED`.
+
+## Session / workspace (Milestone 9)
+
+Clear separation for multi-project use:
+
+| Layer | Isolation |
+|-------|-----------|
+| **Workspace** | Absolute `rootPath` (`--workspace` / `WORKSPACE_ROOT`); tools cannot escape |
+| **Session** | Short-term history keyed by **namespaced** id `ws:<workspaceId>:<logicalSession>` in the same `memory.db` |
+| **Project context** | Retrieval uses `{workspace}/context` when present; else `RETRIEVAL_CONTEXT_DIR` / repo default |
+| **Personal LTM** | Shared across workspaces by default; set `LONGTERM_PROJECT_SCOPED=true` for a DB under the workspace |
+
+```bash
+# Same logical session name, different projects → separate histories
+npx tsx src/index.ts --workspace /path/to/proj-a --session demo "..."
+npx tsx src/index.ts --workspace /path/to/proj-b --session demo "..."
+
+npx tsx src/index.ts --workspace /path/to/proj-a --list-sessions
+npx tsx scripts/smoke-workspace.ts
+```
+
+Legacy un-prefixed session ids: `SESSION_NAMESPACE=false`.
 
 ## Embeddings (Milestone 4)
 
@@ -313,6 +335,7 @@ Report `summary` aggregates `totalTokens`, `estimatedCostUsd`, and `tokensEstima
 | File | Role |
 |------|------|
 | `src/router.ts` | Task analysis + routing rules |
+| `src/workspace/` | Session / workspace resolve (M9) |
 | `src/models/local.ts` | Ollama CLI client (`ollama run`) |
 | `src/models/frontier.ts` | xAI Grok client (chat completions) |
 | `src/memory/` | SQLite session history |

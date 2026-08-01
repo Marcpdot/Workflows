@@ -2,7 +2,6 @@
  * Main orchestrator: route → retrieve → compress → (tool loop | complete) → reply.
  */
 
-import { resolve } from "node:path";
 import { route, type RouterConfig } from "./router.js";
 import { OllamaCliClient } from "./models/local.js";
 import { GrokClient } from "./models/frontier.js";
@@ -12,9 +11,13 @@ import {
 } from "./compression/index.js";
 import {
   formatRetrievalBlock,
-  resolveDefaultContextDir,
   retrieve,
 } from "./retrieval/index.js";
+import {
+  resolveProjectLongTermDbPath,
+  resolveWorkspace,
+  type WorkspaceContext,
+} from "./workspace/index.js";
 import {
   createBuiltinRegistry,
   formatToolsForPrompt,
@@ -147,9 +150,14 @@ export class Orchestrator {
     return this.tools;
   }
 
-  /** Tool / integration workspace root (M5). */
+  /** Tool / integration workspace root (M5 / M9). */
   getWorkspaceRoot(): string {
     return this.config.workspaceRoot;
+  }
+
+  /** Milestone 9 resolved workspace context (if configured). */
+  getWorkspace(): WorkspaceContext | undefined {
+    return this.config.workspace;
   }
 
   /** Execute a registered tool against the configured workspace root. */
@@ -692,19 +700,23 @@ function envFlagTrue(value: string | undefined): boolean {
 }
 
 export function loadConfigFromEnv(
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  options?: {
+    workspaceRoot?: string;
+    sessionId?: string;
+    cwd?: string;
+  }
 ): OrchestratorConfig {
-  const contextDir =
-    env.RETRIEVAL_CONTEXT_DIR?.trim() ||
-    resolveDefaultContextDir(process.cwd());
-
-  // M5: WORKSPACE_ROOT is first-class; TOOL_WORKSPACE_ROOT kept as legacy alias
-  const workspaceRoot = resolve(
-    process.cwd(),
-    env.WORKSPACE_ROOT?.trim() ||
-      env.TOOL_WORKSPACE_ROOT?.trim() ||
-      "."
-  );
+  const cwd = options?.cwd ?? process.cwd();
+  // M9: single resolve for tools root, session namespace, project context
+  const workspace = resolveWorkspace({
+    workspaceRoot: options?.workspaceRoot,
+    sessionId: options?.sessionId,
+    cwd,
+    env,
+  });
+  const workspaceRoot = workspace.rootPath;
+  const contextDir = workspace.contextDir;
 
   const toolsDisabled = envFlagTrue(env.TOOLS_DISABLED);
   // Phase B loop is off by default until explicitly enabled.
@@ -720,7 +732,10 @@ export function loadConfigFromEnv(
     : undefined;
 
   const longTermDisabled = envFlagTrue(env.LONGTERM_DISABLED);
-  const longTermDbPath = resolveLongTermDbPath(process.cwd(), env);
+  // LTM stays personal/global unless LONGTERM_PROJECT_SCOPED=true
+  const projectLtm = resolveProjectLongTermDbPath(workspaceRoot, env);
+  const longTermDbPath =
+    projectLtm ?? resolveLongTermDbPath(cwd, env);
   const longTerm = longTermDisabled
     ? undefined
     : createLongTermMemory({
@@ -760,6 +775,7 @@ export function loadConfigFromEnv(
         env.RETRIEVAL_DISABLED === "1" || env.RETRIEVAL_DISABLED === "true",
     },
     workspaceRoot,
+    workspace,
     tools: toolsDisabled ? undefined : createBuiltinRegistry(),
     toolsEnabled,
     toolsMaxSteps: parsePositiveInt(env.TOOLS_MAX_STEPS, 5),

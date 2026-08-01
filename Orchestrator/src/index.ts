@@ -17,6 +17,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { Orchestrator, loadConfigFromEnv } from "./orchestrator.js";
 import { createMemory, type Memory } from "./memory/index.js";
 import { createRegistryFromConfig } from "./tools/index.js";
+import { resolveWorkspace, type WorkspaceContext } from "./workspace/index.js";
 import type { ModelChoice } from "./types.js";
 
 function loadDotEnv(filePath = resolve(process.cwd(), ".env")): void {
@@ -62,7 +63,8 @@ Options:
   --ltm list [limit=N]
   --ltm forget <idOrKey>
   --pipeline <task>  Sequential planner→worker pipeline (Milestone 3C)
-  --workspace, -w PATH  Tool workspace root (env WORKSPACE_ROOT)
+  --workspace, -w PATH  Workspace root for tools + session namespace (env WORKSPACE_ROOT)
+  --list-sessions    List short-term session ids (optional filter by current workspace)
   --json             Machine JSON on stdout only (logs → stderr)
   --verbose          Mirror observability events to stderr
   --help, -h         Show this help
@@ -78,18 +80,21 @@ REPL commands:
   /forget <idOrKey>
   /ltm list
   /clear             Clear current session history
-  /session ID        Switch session id
+  /session ID        Switch logical session id (namespaced per workspace)
+  /workspace         Show active workspace id / root / context
 
 Env (see .env.example):
   OLLAMA_MODEL, OLLAMA_BIN
   XAI_API_KEY, XAI_BASE_URL, GROK_MODEL
   SYSTEM_PROMPT
   SESSION_ID, MEMORY_DB_PATH, MEMORY_HISTORY_LIMIT
+  SESSION_NAMESPACE (default on; set false for legacy un-prefixed session ids)
   COMPRESSION_THRESHOLD, COMPRESSION_KEEP_RECENT, COMPRESSION_DISABLED
   RETRIEVAL_LIMIT, RETRIEVAL_MAX_CHARS, RETRIEVAL_CONTEXT_DIR, RETRIEVAL_DISABLED
   TOOL_WORKSPACE_ROOT, TOOL_READ_MAX_BYTES, TOOL_COMMAND_TIMEOUT_MS
   TOOLS_DISABLED, TOOLS_ENABLED, TOOLS_MAX_STEPS
   LONGTERM_DB_PATH, PERSONAL_CONTEXT_DIR, LONGTERM_AUTO_INJECT, LONGTERM_DISABLED
+  LONGTERM_PROJECT_SCOPED, LONGTERM_PROJECT_DB
   PROACTIVE_ENABLED, PROACTIVE_MAX, PROACTIVE_USE_MODEL
   AGENTS_PIPELINE_ENABLED
   WORKSPACE_ROOT (or TOOL_WORKSPACE_ROOT), INTEGRATION_HTTP_PORT, INTEGRATION_HTTP_TOKEN
@@ -115,14 +120,16 @@ interface CliArgs {
   forceModel?: ModelChoice;
   json: boolean;
   help: boolean;
+  /** Logical session id (CLI/env); storage uses namespaced id from WorkspaceContext */
   sessionId: string;
   useMemory: boolean;
   clearSession: boolean;
+  listSessions: boolean;
   toolAction?: ToolCliAction;
   ltmAction?: LtmCliAction;
   /** When set, run sequential role pipeline instead of handle() */
   pipelineTask?: string;
-  /** Absolute/relative workspace for tools (M5) */
+  /** Absolute/relative workspace for tools + isolation (M5/M9) */
   workspace?: string;
 }
 
@@ -148,6 +155,7 @@ function parseArgs(argv: string[]): CliArgs {
   let ltmAction: LtmCliAction | undefined;
   let pipelineTask: string | undefined;
   let workspace: string | undefined;
+  let listSessions = false;
   let sessionId =
     process.env.SESSION_ID?.trim() || "default";
   const rest: string[] = [];
@@ -155,6 +163,9 @@ function parseArgs(argv: string[]): CliArgs {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
     switch (arg) {
+      case "--list-sessions":
+        listSessions = true;
+        break;
       case "--workspace":
       case "-w": {
         const next = argv[++i];
@@ -293,6 +304,7 @@ function parseArgs(argv: string[]): CliArgs {
     sessionId,
     useMemory,
     clearSession,
+    listSessions,
     toolAction,
     ltmAction,
     pipelineTask,
@@ -479,9 +491,11 @@ function printResult(
   asJson: boolean,
   meta?: {
     sessionId?: string;
+    logicalSessionId?: string;
     historyCount?: number;
     latencyMs?: number;
     workspaceRoot?: string;
+    workspaceId?: string;
   }
 ): void {
   if (asJson) {
@@ -491,9 +505,11 @@ function printResult(
         {
           ...result,
           sessionId: meta?.sessionId,
+          logicalSessionId: meta?.logicalSessionId,
           historyCount: meta?.historyCount,
           latencyMs: meta?.latencyMs,
           workspaceRoot: meta?.workspaceRoot,
+          workspaceId: meta?.workspaceId,
         },
         null,
         2
@@ -502,9 +518,20 @@ function printResult(
     return;
   }
   if (meta?.sessionId) {
+    const logical =
+      meta.logicalSessionId && meta.logicalSessionId !== meta.sessionId
+        ? `  logical=${meta.logicalSessionId}`
+        : "";
     console.log(
-      `[session] ${meta.sessionId}${
+      `[session] ${meta.sessionId}${logical}${
         meta.historyCount != null ? `  (history=${meta.historyCount})` : ""
+      }`
+    );
+  }
+  if (meta?.workspaceId || meta?.workspaceRoot) {
+    console.log(
+      `[workspace] ${meta.workspaceId ?? "-"}${
+        meta.workspaceRoot ? `  ${meta.workspaceRoot}` : ""
       }`
     );
   }
@@ -565,7 +592,8 @@ function printResult(
 async function runOnce(
   orch: Orchestrator,
   args: CliArgs,
-  memory: Memory | null
+  memory: Memory | null,
+  ws: WorkspaceContext
 ): Promise<void> {
   if (args.routeOnly) {
     const routing = orch.decide(args.prompt);
@@ -589,50 +617,60 @@ async function runOnce(
     return;
   }
 
+  const effectiveSessionId = ws.sessionId;
   const history =
     memory && args.useMemory
-      ? await memory.getHistory(args.sessionId)
+      ? await memory.getHistory(effectiveSessionId)
       : [];
 
   const started = performance.now();
   const result = await orch.handle(args.prompt, {
     forceModel: args.forceModel,
     history,
-    sessionId: args.sessionId,
+    sessionId: effectiveSessionId,
   });
   const latencyMs = Math.round(performance.now() - started);
 
   if (memory && args.useMemory) {
     // Do not auto-store system prompts — only the user turn + assistant reply.
-    await memory.add(args.sessionId, { role: "user", content: args.prompt });
-    await memory.add(args.sessionId, {
+    await memory.add(effectiveSessionId, {
+      role: "user",
+      content: args.prompt,
+    });
+    await memory.add(effectiveSessionId, {
       role: "assistant",
       content: result.reply,
     });
   }
 
   printResult(result, args.json, {
-    sessionId: args.useMemory ? args.sessionId : undefined,
+    sessionId: args.useMemory ? effectiveSessionId : undefined,
+    logicalSessionId: args.useMemory ? ws.logicalSessionId : undefined,
     historyCount: history.length,
     latencyMs,
     workspaceRoot: orch.getWorkspaceRoot(),
+    workspaceId: ws.id,
   });
 }
 
 async function runRepl(
   orch: Orchestrator,
   args: CliArgs,
-  memory: Memory | null
+  memory: Memory | null,
+  initialWs: WorkspaceContext
 ): Promise<void> {
   const rl = readline.createInterface({ input, output });
-  let sessionId = args.sessionId;
+  let ws = initialWs;
   console.log(
     "Orchestrator REPL (empty line or Ctrl+C to exit).\n" +
-      "Commands: /local /frontier /route /pipeline /tool /remember /recall /forget /ltm /clear /session <id>"
+      "Commands: /local /frontier /route /pipeline /tool /remember /recall /forget /ltm /clear /session <id> /workspace"
   );
   if (memory && args.useMemory) {
-    const n = (await memory.getHistory(sessionId)).length;
-    console.log(`[session] ${sessionId}  (history=${n})`);
+    const n = (await memory.getHistory(ws.sessionId)).length;
+    console.log(
+      `[session] ${ws.sessionId}  logical=${ws.logicalSessionId}  (history=${n})`
+    );
+    console.log(`[workspace] ${ws.id}  ${ws.rootPath}`);
   }
 
   try {
@@ -640,13 +678,22 @@ async function runRepl(
       const line = (await rl.question("> ")).trim();
       if (!line) break;
 
+      if (line === "/workspace") {
+        console.log(
+          `[workspace] id=${ws.id}\n  root=${ws.rootPath}\n  contextDir=${ws.contextDir}\n  sessionPrefix=${ws.sessionPrefix || "(none)"}\n  logical=${ws.logicalSessionId}\n  effective=${ws.sessionId}`
+        );
+        continue;
+      }
+
       if (line === "/clear") {
         if (!memory || !args.useMemory) {
           console.log("Memory is disabled.");
           continue;
         }
-        await memory.clear(sessionId);
-        console.log(`Cleared session "${sessionId}"`);
+        await memory.clear(ws.sessionId);
+        console.log(
+          `Cleared session "${ws.sessionId}" (logical=${ws.logicalSessionId})`
+        );
         continue;
       }
 
@@ -656,12 +703,19 @@ async function runRepl(
           console.log("Usage: /session <id>");
           continue;
         }
-        sessionId = next;
+        ws = resolveWorkspace({
+          workspaceRoot: ws.rootPath,
+          sessionId: next,
+        });
         if (memory && args.useMemory) {
-          const n = (await memory.getHistory(sessionId)).length;
-          console.log(`[session] ${sessionId}  (history=${n})`);
+          const n = (await memory.getHistory(ws.sessionId)).length;
+          console.log(
+            `[session] ${ws.sessionId}  logical=${ws.logicalSessionId}  (history=${n})`
+          );
         } else {
-          console.log(`[session] ${sessionId}`);
+          console.log(
+            `[session] ${ws.sessionId}  logical=${ws.logicalSessionId}`
+          );
         }
         continue;
       }
@@ -794,11 +848,13 @@ async function runRepl(
             forceModel,
             json: args.json,
             help: false,
-            sessionId,
+            sessionId: ws.logicalSessionId,
             useMemory: args.useMemory,
             clearSession: false,
+            listSessions: false,
           },
-          memory
+          memory,
+          ws
         );
       } catch (err) {
         console.error(
@@ -820,32 +876,75 @@ async function main(): Promise<void> {
     return;
   }
 
+  // M9: resolve workspace first (tools root, session namespace, project context)
+  const ws = resolveWorkspace({
+    workspaceRoot: args.workspace,
+    sessionId: args.sessionId,
+  });
+  process.env.WORKSPACE_ROOT = ws.rootPath;
+
   const memory =
-    args.useMemory || args.clearSession ? openMemoryFromEnv() : null;
+    args.useMemory || args.clearSession || args.listSessions
+      ? openMemoryFromEnv()
+      : null;
 
   try {
+    if (args.listSessions) {
+      if (!memory) {
+        console.error("Memory is required for --list-sessions");
+        process.exit(1);
+      }
+      const prefix = ws.sessionPrefix || undefined;
+      const ids = await memory.listSessions(prefix);
+      if (args.json) {
+        console.log(
+          JSON.stringify(
+            {
+              workspaceId: ws.id,
+              workspaceRoot: ws.rootPath,
+              sessionPrefix: ws.sessionPrefix,
+              sessions: ids,
+            },
+            null,
+            2
+          )
+        );
+      } else {
+        console.log(
+          `[workspace] ${ws.id}  ${ws.rootPath}${
+            prefix ? `  prefix=${prefix}` : ""
+          }`
+        );
+        if (ids.length === 0) {
+          console.log("(no sessions)");
+        } else {
+          for (const id of ids) {
+            console.log(id);
+          }
+        }
+      }
+      return;
+    }
+
     if (args.clearSession) {
       if (!memory) {
         console.error("Memory is required for --clear-session");
         process.exit(1);
       }
-      await memory.clear(args.sessionId);
-      console.log(`Cleared session "${args.sessionId}"`);
+      await memory.clear(ws.sessionId);
+      console.log(
+        `Cleared session "${ws.sessionId}" (logical=${ws.logicalSessionId})`
+      );
       return;
     }
 
-    // M5: apply --workspace before config so tools bind to caller project
-    if (args.workspace?.trim()) {
-      process.env.WORKSPACE_ROOT = resolve(args.workspace.trim());
-    }
-
-    const config = loadConfigFromEnv();
+    const config = loadConfigFromEnv(process.env, {
+      workspaceRoot: ws.rootPath,
+      sessionId: ws.logicalSessionId,
+    });
     // Phase C: load optional TOOL_EXTRA_MODULES into the registry.
     if (config.tools) {
       config.tools = await createRegistryFromConfig();
-    }
-    if (args.workspace?.trim()) {
-      config.workspaceRoot = resolve(args.workspace.trim());
     }
     const orch = new Orchestrator(config);
 
@@ -866,11 +965,11 @@ async function main(): Promise<void> {
       }
 
       if (!args.prompt) {
-        await runRepl(orch, args, memory);
+        await runRepl(orch, args, memory, ws);
         return;
       }
 
-      await runOnce(orch, args, memory);
+      await runOnce(orch, args, memory, ws);
     } finally {
       orch.close();
     }

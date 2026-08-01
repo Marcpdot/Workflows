@@ -8,6 +8,7 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { Orchestrator, loadConfigFromEnv } from "../orchestrator.js";
 import { createMemory } from "../memory/index.js";
 import { createRegistryFromConfig } from "../tools/index.js";
+import { resolveWorkspace } from "../workspace/index.js";
 import type {
   IntegrationChatRequest,
   IntegrationChatResponse,
@@ -186,26 +187,29 @@ export function createIntegrationServer(
 
         const started = performance.now();
 
-        // Apply workspace for this request
-        if (parsed.workspaceRoot?.trim()) {
-          process.env.WORKSPACE_ROOT = parsed.workspaceRoot.trim();
-        }
         if (parsed.options?.toolsEnabled != null) {
           process.env.TOOLS_ENABLED = parsed.options.toolsEnabled
             ? "true"
             : "false";
         }
 
-        const config = loadConfigFromEnv();
+        // M9: per-request workspace + namespaced session
+        const ws = resolveWorkspace({
+          workspaceRoot: parsed.workspaceRoot,
+          sessionId: parsed.sessionId,
+        });
+        process.env.WORKSPACE_ROOT = ws.rootPath;
+
+        const config = loadConfigFromEnv(process.env, {
+          workspaceRoot: ws.rootPath,
+          sessionId: ws.logicalSessionId,
+        });
         if (config.tools) {
           config.tools = await createRegistryFromConfig();
         }
-        if (parsed.workspaceRoot?.trim()) {
-          config.workspaceRoot = resolve(parsed.workspaceRoot.trim());
-        }
 
         const orch = new Orchestrator(config);
-        const sessionId = parsed.sessionId?.trim() || "default";
+        const sessionId = ws.sessionId;
         const useMemory = !parsed.options?.noMemory;
 
         let historyCount = 0;
@@ -247,9 +251,11 @@ export function createIntegrationServer(
             const response: IntegrationChatResponse = {
               ...result,
               sessionId,
+              logicalSessionId: ws.logicalSessionId,
               historyCount,
               latencyMs: Math.round(performance.now() - started),
               workspaceRoot: config.workspaceRoot,
+              workspaceId: ws.id,
             };
             sendJson(res, 200, response);
           } finally {

@@ -129,6 +129,39 @@ export class MessageStore {
     }
   }
 
+  /**
+   * Distinct session ids, optionally filtered by prefix (e.g. `ws:<id>:`).
+   */
+  listSessionIds(prefix?: string): string[] {
+    try {
+      if (prefix != null && prefix !== "") {
+        const rows = this.db
+          .prepare(
+            `SELECT DISTINCT session_id AS sessionId
+             FROM messages
+             WHERE session_id LIKE ?
+             ORDER BY session_id ASC`
+          )
+          .all(`${prefix}%`) as Array<{ sessionId: string }>;
+        return rows.map((r) => r.sessionId);
+      }
+      const rows = this.db
+        .prepare(
+          `SELECT DISTINCT session_id AS sessionId
+           FROM messages
+           ORDER BY session_id ASC`
+        )
+        .all() as Array<{ sessionId: string }>;
+      return rows.map((r) => r.sessionId);
+    } catch (err) {
+      throw new Error(
+        `Failed to list sessions: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
+    }
+  }
+
   close(): void {
     try {
       this.db.close();

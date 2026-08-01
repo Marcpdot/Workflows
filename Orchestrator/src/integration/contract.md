@@ -71,8 +71,9 @@ Default bind: `127.0.0.1`.
 | Concern | Binding |
 |---------|---------|
 | **Tools** (`read_file`, …) | Always `workspaceRoot` from call / `--workspace` |
-| **Retrieval `context/`** | Still `RETRIEVAL_CONTEXT_DIR` (Orchestrator/repo Keep the Why), not auto-switched per workspace |
-| **LTM** | Global/env path (`LONGTERM_DB_PATH` / `PERSONAL_CONTEXT_DIR`) — **not** per-workspace until M9 |
+| **Short-term session** | Namespaced `ws:<workspaceId>:<logical>` in shared `memory.db` (M9); `SESSION_NAMESPACE=false` for legacy |
+| **Retrieval `context/`** | Prefers `{workspace}/context` when present; else `RETRIEVAL_CONTEXT_DIR` / default (M9) |
+| **LTM** | Global/env path by default; `LONGTERM_PROJECT_SCOPED=true` for DB under workspace (M9) |
 
 ## Examples
 
