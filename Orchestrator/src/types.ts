@@ -49,6 +49,17 @@ export interface ModelClient {
   complete(request: ModelRequest): Promise<ModelResponse>;
 }
 
+export interface CompressionSettings {
+  /** Compress when history.length > threshold. Default: 20 */
+  threshold: number;
+  /** Number of newest messages always kept raw. Default: 8 */
+  keepRecent: number;
+  /** Soft max characters for summary. Default: 1500 */
+  maxSummaryChars: number;
+  /** Disable compression entirely. Default: false */
+  disabled?: boolean;
+}
+
 export interface OrchestratorConfig {
   ollamaBin: string;
   ollamaModel: string;
@@ -56,6 +67,7 @@ export interface OrchestratorConfig {
   xaiBaseUrl: string;
   grokModel: string;
   systemPrompt: string;
+  compression: CompressionSettings;
 }
 
 export interface OrchestratorResult {
@@ -64,4 +76,11 @@ export interface OrchestratorResult {
   model: string;
   provider: ModelChoice;
   usage?: ModelResponse["usage"];
+  /** Present when history was considered for compression */
+  compression?: {
+    compressed: boolean;
+    summary: string | null;
+    recentCount: number;
+    originalCount: number;
+  };
 }

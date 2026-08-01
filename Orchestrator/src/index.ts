@@ -69,6 +69,7 @@ Env (see .env.example):
   XAI_API_KEY, XAI_BASE_URL, GROK_MODEL
   SYSTEM_PROMPT
   SESSION_ID, MEMORY_DB_PATH, MEMORY_HISTORY_LIMIT
+  COMPRESSION_THRESHOLD, COMPRESSION_KEEP_RECENT, COMPRESSION_DISABLED
 `);
 }
 
@@ -197,6 +198,17 @@ function printResult(
     `\n[route] ${result.routing.reason}  (type=${result.routing.taskType}, complexity=${result.routing.complexity})`
   );
   console.log(`[model] ${result.provider}/${result.model}`);
+  if (result.compression) {
+    if (result.compression.compressed) {
+      console.log(
+        `[compression] yes  original=${result.compression.originalCount}  recent=${result.compression.recentCount}  summaryChars=${result.compression.summary?.length ?? 0}`
+      );
+    } else {
+      console.log(
+        `[compression] no  history=${result.compression.originalCount}`
+      );
+    }
+  }
   if (result.usage?.totalTokens != null) {
     console.log(`[tokens] ${result.usage.totalTokens}`);
   }

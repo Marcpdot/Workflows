@@ -1,11 +1,15 @@
 /**
- * Main orchestrator: route → call model → return reply.
- * Routing and model clients are intentionally separate.
+ * Main orchestrator: route → compress history → call model → return reply.
+ * Routing, compression, and model clients are intentionally separate.
  */
 
 import { route, type RouterConfig } from "./router.js";
 import { OllamaCliClient } from "./models/local.js";
 import { GrokClient } from "./models/frontier.js";
+import {
+  compressHistory,
+  LocalModelSummarizer,
+} from "./compression/index.js";
 import type {
   ChatMessage,
   ModelClient,
@@ -51,8 +55,10 @@ export class Orchestrator {
   }
 
   /**
-   * Full pipeline: route user prompt, call selected model, return result.
+   * Full pipeline: route → compress history → call selected model → return.
    * Optional `forceModel` overrides routing (useful for testing / manual pick).
+   * Compression uses the **local** model only (never frontier).
+   * Callers should still persist full user/assistant messages to memory.
    */
   async handle(
     prompt: string,
@@ -69,9 +75,46 @@ export class Orchestrator {
       routing.reason = `forced → ${options.forceModel}`;
     }
 
+    const history = options?.history ?? [];
+    const originalCount = history.length;
+
+    let recentMessages: ChatMessage[] = history;
+    let summary: string | null = null;
+    let compressed = false;
+
+    if (!this.config.compression.disabled && history.length > 0) {
+      const summarizer = new LocalModelSummarizer(
+        this.local,
+        this.config.ollamaModel,
+        this.config.compression.maxSummaryChars
+      );
+
+      const result = await compressHistory(
+        history,
+        {
+          threshold: this.config.compression.threshold,
+          keepRecent: this.config.compression.keepRecent,
+          maxSummaryChars: this.config.compression.maxSummaryChars,
+        },
+        summarizer
+      );
+
+      recentMessages = result.recentMessages;
+      summary = result.summary;
+      compressed = result.compressed;
+    }
+
     const messages: ChatMessage[] = [
       { role: "system", content: this.config.systemPrompt },
-      ...(options?.history ?? []),
+      ...(summary
+        ? [
+            {
+              role: "system" as const,
+              content: `Earlier in this session:\n${summary}`,
+            },
+          ]
+        : []),
+      ...recentMessages,
       { role: "user", content: prompt },
     ];
 
@@ -92,8 +135,20 @@ export class Orchestrator {
       model: response.model,
       provider: response.provider,
       usage: response.usage,
+      compression: {
+        compressed,
+        summary,
+        recentCount: recentMessages.length,
+        originalCount,
+      },
     };
   }
+}
+
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  if (value === undefined || value === "") return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
 export function loadConfigFromEnv(
@@ -108,5 +163,13 @@ export function loadConfigFromEnv(
     systemPrompt:
       env.SYSTEM_PROMPT ??
       "You are a helpful assistant. Be concise and accurate.",
+    compression: {
+      threshold: parsePositiveInt(env.COMPRESSION_THRESHOLD, 20),
+      keepRecent: parsePositiveInt(env.COMPRESSION_KEEP_RECENT, 8),
+      maxSummaryChars: parsePositiveInt(env.COMPRESSION_MAX_SUMMARY_CHARS, 1500),
+      disabled:
+        env.COMPRESSION_DISABLED === "1" ||
+        env.COMPRESSION_DISABLED === "true",
+    },
   };
 }

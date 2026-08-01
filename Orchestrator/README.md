@@ -14,7 +14,7 @@ Minimal modular TypeScript orchestrator:
 cd Orchestrator
 npm install
 cp .env.example .env
-# Set XAI_API_KEY (local default: gemma4:12b)
+# Set XAI_API_KEY (local default: llama3.2:3b)
 ```
 
 Requires:
@@ -63,6 +63,28 @@ await memory.add("default", { role: "assistant", content: result.reply });
 
 Env: `SESSION_ID`, `MEMORY_DB_PATH` (default `./data/memory.db`), `MEMORY_HISTORY_LIMIT`.
 
+## Compression (Milestone 1)
+
+When history grows past a threshold, older turns are summarized with the **local** model; the last `keepRecent` messages stay raw. Full history is still stored in SQLite — compression only affects what is sent to the model.
+
+```ts
+import { compressHistory, LocalModelSummarizer } from "./compression/index.js";
+
+const { summary, recentMessages, compressed } = await compressHistory(
+  history,
+  { threshold: 20, keepRecent: 8 },
+  summarizer
+);
+```
+
+Env: `COMPRESSION_THRESHOLD` (20), `COMPRESSION_KEEP_RECENT` (8), `COMPRESSION_DISABLED`.
+
+Smoke test:
+
+```bash
+npx tsx scripts/smoke-compression.ts
+```
+
 ## Layout
 
 | File | Role |
@@ -71,7 +93,8 @@ Env: `SESSION_ID`, `MEMORY_DB_PATH` (default `./data/memory.db`), `MEMORY_HISTOR
 | `src/models/local.ts` | Ollama CLI client (`ollama run`) |
 | `src/models/frontier.ts` | xAI Grok client (chat completions) |
 | `src/memory/` | SQLite session history |
-| `src/orchestrator.ts` | Wire routing + models |
+| `src/compression/` | Realtime history compression |
+| `src/orchestrator.ts` | Wire routing + compression + models |
 | `src/types.ts` | Shared types |
 | `src/index.ts` | CLI entry |
 
