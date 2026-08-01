@@ -1,4 +1,4 @@
-import type { ToolLoopStep } from "../tools/types.js";
+import type { ToolLoopStep } from "@workflows/tools";
 import type { ModelChoice } from "../types.js";
 
 export interface AgentRole {

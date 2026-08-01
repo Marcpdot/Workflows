@@ -14,7 +14,7 @@ import {
   createBuiltinRegistry,
   createRegistryFromConfig,
   loadExtraTools,
-} from "../src/tools/index.js";
+} from "@workflows/tools";
 
 async function main(): Promise<void> {
   const workspaceRoot = resolve(process.cwd());

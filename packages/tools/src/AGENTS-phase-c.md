@@ -44,7 +44,7 @@ Fase C er «bredde + modularitet», ikke ny arkitektur.
 
 ## Filer
 ```
-src/tools/
+packages/tools/src/
   builtin/
     writeFile.ts
     searchFiles.ts
@@ -105,7 +105,7 @@ scripts/
 
 ```ts
 // examples/extra-tools/myTool.ts
-import type { Tool } from "../../src/tools/types.js";
+import type { Tool } from "@workflows/tools";
 export const tools: Tool[] = [ /* ... */ ];
 ```
 

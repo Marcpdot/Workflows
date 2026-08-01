@@ -1,3 +1,9 @@
+/** Compatible with Orchestrator / models ChatMessage shape. */
+export interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
 export type ToolParamType = "string" | "number" | "boolean";
 
 export interface ToolParameter {
@@ -75,7 +81,7 @@ export interface ToolLoopOptions {
   registry: ToolRegistry;
   /** Each model turn; return assistant text + optional structured tool calls */
   complete: (
-    messages: import("../types.js").ChatMessage[],
+    messages: ChatMessage[],
     tools: Tool[]
   ) => Promise<ToolLoopCompleteResult>;
 }

@@ -1,4 +1,5 @@
 export type {
+  ChatMessage,
   Tool,
   ToolCall,
   ToolContext,
@@ -12,6 +13,10 @@ export type {
   ToolResult,
   ModelToolSchema,
 } from "./types.js";
+export {
+  extractJsonCandidates,
+  lenientJsonRepair,
+} from "./jsonExtract.js";
 export { MapToolRegistry } from "./registry.js";
 export { resolveSafePath, isInsideWorkspace } from "./pathSafety.js";
 export { createBuiltinRegistry } from "./createBuiltinRegistry.js";

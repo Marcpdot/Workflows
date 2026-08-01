@@ -1,7 +1,7 @@
 /**
  * Example plugin tool — register via TOOL_EXTRA_MODULES=./examples/extra-tools/echoTool.ts
  */
-import type { Tool } from "../../src/tools/types.js";
+import type { Tool } from "@workflows/tools";
 
 export const tools: Tool[] = [
   {

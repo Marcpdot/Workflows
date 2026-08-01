@@ -16,7 +16,7 @@ import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { Orchestrator, loadConfigFromEnv } from "./orchestrator.js";
 import { createMemory, type Memory } from "@workflows/memory";
-import { createRegistryFromConfig } from "./tools/index.js";
+import { createRegistryFromConfig } from "@workflows/tools";
 import { resolveWorkspace, type WorkspaceContext } from "./workspace/index.js";
 import type { ModelChoice } from "./types.js";
 

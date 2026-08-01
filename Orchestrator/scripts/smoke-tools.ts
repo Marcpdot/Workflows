@@ -12,7 +12,7 @@ import { resolve } from "node:path";
 import {
   createBuiltinRegistry,
   resolveSafePath,
-} from "../src/tools/index.js";
+} from "@workflows/tools";
 
 async function main(): Promise<void> {
   // Workspace for tools: Orchestrator package root (has package.json)

@@ -26,6 +26,7 @@
     "@workflows/eval": "file:../packages/eval",
     "@workflows/memory": "file:../packages/memory",
     "@workflows/models": "file:../packages/models",
+    "@workflows/tools": "file:../packages/tools",
     "better-sqlite3": "^13.0.2"
   }
 }

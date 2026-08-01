@@ -2,9 +2,9 @@
  * Controlled tool loop: model → tool_calls → execute → append → model …
  */
 
-import type { ChatMessage } from "../types.js";
 import { parseToolCalls } from "./parseToolCalls.js";
 import type {
+  ChatMessage,
   ToolLoopOptions,
   ToolLoopResult,
   ToolLoopStep,

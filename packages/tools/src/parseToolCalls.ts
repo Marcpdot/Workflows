@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import {
   extractJsonCandidates,
   lenientJsonRepair,
-} from "../structured/extractJson.js";
+} from "./jsonExtract.js";
 import type { ToolCall } from "./types.js";
 
 function asArgs(value: unknown): Record<string, unknown> {

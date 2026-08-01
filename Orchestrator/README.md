@@ -325,7 +325,7 @@ npx tsx scripts/smoke-tools-phase-c.ts
 
 ```ts
 // examples/extra-tools/myTool.ts
-import type { Tool } from "../../src/tools/types.js";
+import type { Tool } from "@workflows/tools";
 export const tools: Tool[] = [{ name: "my_tool", description: "...", parameters: [], execute: async () => ({ ok: true, output: "hi" }) }];
 ```
 
@@ -373,7 +373,7 @@ Report `summary` aggregates `totalTokens`, `estimatedCostUsd`, and `tokensEstima
 | `../packages/memory/` | Short-term + long-term SQLite memory (Step C) |
 | `src/compression/` | Realtime history compression |
 | `src/retrieval/` | Keyword retrieval (session + context/) |
-| `src/tools/` | Tool interface, registry, builtins |
+| `../packages/tools/` | Tool interface, registry, builtins (Step D) |
 | `src/embeddings/` | Embedder, vector store, semantic search |
 | `../packages/eval/` | Eval types, assertions, runner, cases.json |
 | `src/orchestrator.ts` | Wire routing + compression + models |

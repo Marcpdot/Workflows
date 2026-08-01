@@ -2,8 +2,8 @@
  * Build a registry view limited to toolsAllowed for a role.
  */
 
-import { MapToolRegistry } from "../tools/registry.js";
-import type { ToolRegistry } from "../tools/types.js";
+import { MapToolRegistry } from "@workflows/tools";
+import type { ToolRegistry } from "@workflows/tools";
 
 /**
  * undefined toolsAllowed → full registry

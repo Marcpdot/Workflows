@@ -1,6 +1,6 @@
 # Tools Spec (Milestone 2 — phase B)
 
-**Avhenger av fase A.** Ikke implementer denne før `src/tools/` fase A er merget og smoke-tools passerer.
+**Avhenger av fase A.** Ikke implementer denne før tools fase A er merget og smoke-tools passerer.
 
 ## Mål
 Koble modeller til tool-registry via en **styrt tool-loop**:
@@ -32,7 +32,7 @@ Fase A ga `Tool` + `execute`. Fase B gir orchestratoren evne til å *bruke* dem 
 
 ## Filer (fase B)
 ```
-src/tools/
+packages/tools/src/
   loop.ts           # runToolLoop
   schema.ts         # tools → model-facing schema
   parseToolCalls.ts # extract calls from model output

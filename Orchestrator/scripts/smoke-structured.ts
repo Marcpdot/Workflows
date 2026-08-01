@@ -16,7 +16,7 @@ import {
   tryParseStructured,
   type PlanValue,
 } from "../src/structured/index.js";
-import { parseToolCalls } from "../src/tools/parseToolCalls.js";
+import { parseToolCalls } from "@workflows/tools";
 import type { ChatMessage } from "../src/types.js";
 
 function assert(cond: boolean, msg: string): void {

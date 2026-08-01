@@ -32,7 +32,7 @@ import {
   TOOLS_SYSTEM_ADDENDUM,
   type ToolRegistry,
   type ToolResult,
-} from "./tools/index.js";
+} from "@workflows/tools";
 import {
   createLongTermMemory,
   resolveLongTermDbPath,

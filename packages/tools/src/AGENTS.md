@@ -26,7 +26,7 @@ Uten stabilt interface blir «modell kaller tools» rotete. Først:
 
 ## Filer
 ```
-src/tools/
+packages/tools/src/
   types.ts          # Tool, ToolResult, ToolParameterSchema
   registry.ts       # ToolRegistry
   pathSafety.ts     # resolveSafePath(workspaceRoot, relative)
@@ -192,7 +192,7 @@ TOOL_COMMAND_TIMEOUT_MS=15000
 - Alle file tools går via `resolveSafePath`
 - `execute` kaster ikke for «business»-feil — returner `ok: false`
 - Kast kun ved programmeringsfeil (ugyldig registry-state)
-- Eksporter fra `src/tools/index.ts`
+- Eksporter fra `packages/tools/src/index.ts`
 
 ## Ikke gjør dette ennå (fase B+)
 - LLM tool-calling loop / function calling JSON

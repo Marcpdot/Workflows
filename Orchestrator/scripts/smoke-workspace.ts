@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { createMemory } from "@workflows/memory";
-import { resolveSafePath } from "../src/tools/pathSafety.js";
+import { resolveSafePath } from "@workflows/tools";
 import {
   resolveProjectContextDir,
   resolveProjectLongTermDbPath,

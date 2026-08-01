@@ -14,7 +14,7 @@ import {
   parseToolCalls,
   runToolLoop,
   type ToolCall,
-} from "../src/tools/index.js";
+} from "@workflows/tools";
 import type { ChatMessage } from "../src/types.js";
 
 function assert(cond: boolean, msg: string): void {
