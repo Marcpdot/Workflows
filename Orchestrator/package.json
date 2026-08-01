@@ -9,6 +9,7 @@
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "serve": "tsx src/integration/serverMain.ts",
+    "ui": "tsx src/ui/web/main.ts",
     "typecheck": "tsc --noEmit",
     "eval": "tsx scripts/run-eval.ts"
   },

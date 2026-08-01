@@ -79,6 +79,19 @@ npx tsx scripts/smoke-proactive.ts
 # PROACTIVE_ENABLED=true npm run dev -- "TypeError crash in router"
 ```
 
+## Web UI (Milestone 6)
+
+**Choice: simple localhost web shell** (not TUI). Same brain via `POST /v1/chat`.
+
+```bash
+npm run ui
+# open http://127.0.0.1:8787/
+# UI_PORT / UI_HOST optional
+npx tsx scripts/smoke-ui.ts
+```
+
+Shows chat, session/workspace controls, and metadata (route, model, latency, tools, suggestions). CLI remains default for scripts/CI.
+
 ## Integration (Milestone 5)
 
 Stable surface for **other projects** to call Orchestrator without importing internals.
