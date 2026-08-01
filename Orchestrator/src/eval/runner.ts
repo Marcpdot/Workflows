@@ -131,10 +131,16 @@ async function runOneCase(
       );
     }
 
+    // Prefer API usage; for local (no usage), estimate from history+prompt+reply.
+    const promptForEstimate = [
+      ...history.map((m) => m.content),
+      evalCase.prompt,
+    ].join("\n");
+
     const cost = buildCostBreakdown({
       provider,
       usage,
-      promptText: evalCase.prompt,
+      promptText: promptForEstimate,
       replyText,
     });
 

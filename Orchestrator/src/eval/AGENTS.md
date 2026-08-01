@@ -20,7 +20,7 @@ Ikke et stort test-framework. Bare:
 - LLM-judge / rubric scoring
 - Statistisk signifikans / mange runs
 - UI for resultater
-- Kostnadsberegning i NOK (tokens er nok)
+- Kostnadsberegning i NOK (USD-estimat + tokens er nok; ikke faktura-grade)
 
 ## Filer
 ```

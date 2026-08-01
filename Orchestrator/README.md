@@ -120,6 +120,13 @@ npx tsx scripts/run-eval.ts --json
 
 Reports land in `data/eval-results/`. Exit code `1` if any case fails.
 
+Each result includes tokens and a rough USD cost estimate:
+
+- **Frontier:** uses API `usage` when present; cost from `EVAL_COST_INPUT_PER_M` / `EVAL_COST_OUTPUT_PER_M` (defaults 1.25 / 2.5 per 1M tokens).
+- **Local:** cost `0`; tokens estimated as `ceil(chars/4)` when Ollama does not return usage (`tokensEstimated: true`, shown as `tok~` in the CLI).
+
+Report `summary` aggregates `totalTokens`, `estimatedCostUsd`, and `tokensEstimatedCases`.
+
 ## Layout
 
 | File | Role |
