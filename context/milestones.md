@@ -44,21 +44,24 @@ Most optional brain features start **off** until explicitly enabled (`TOOLS_ENAB
 | M9 | Workspace/session | Multi-project without mixing context |
 | M10 | Structured output | Stabilize tools/pipeline parsing |
 
-**After M10:** package refactor so layers are not all owned by the Orchestrator folder (see [packaging.md](packaging.md)).
+**After M10:** package refactor remains the *intended* follow-up, but was **re-confirmed deferred** after M10 delivery (stay one Orchestrator package until multi-package friction is real). See [packaging.md](packaging.md).
 
 ## Implementation status (shells)
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** git history through `fe3dfee` (M8); context refresh 2026-08-01  
+**Source:** git history through `74cd7f2` (M10); commits `6dfb2a3` (M9), `fe3dfee` (M8)  
 
 | Range | State |
 |-------|--------|
 | M0–M3 | Delivered (chat path, compression/retrieval/eval, tools A–C, LTM API, proactive suggestions, sequential multi-role pipeline) |
 | M4–M8 | Delivered as shells (embeddings, CLI+thin HTTP, localhost web UI, compute policy, JSONL observability) |
-| M9–M10 | Specced / stubs may exist; not the current delivery focus |
+| M9 | Delivered as shell — session/workspace namespace, project context, list-sessions (see [workspace.md](workspace.md)) |
+| M10 | Delivered as shell — completeStructured, planner plan JSON, shared tool JSON extract (see [structured.md](structured.md)) |
 
-Thin spots accepted under shell-first (e.g. heuristic score fusion, static UI, linear vector scan) are documented per topic, not treated as blockers for the next milestone.
+Vertical M0–M10 shells are in place. Packaging split is deferred (re-confirmed post-M10). Near-term focus is usage and deepening any shell that daily use shows is thin.
+
+Thin spots accepted under shell-first (e.g. heuristic score fusion, static UI, linear vector scan, repair-not-constrained-decoding) are documented per topic.
 
 ## Milestone 3 privacy cut
 

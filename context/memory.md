@@ -9,6 +9,8 @@
 
 Short-term conversation memory is SQLite (`better-sqlite3`) keyed by `sessionId`. Continuity across restart and model switch was the M0 goal. System prompts are not auto-persisted—only explicit user/assistant turns.
 
+From **M9**, effective session ids are **namespaced per workspace** (`ws:<id>:<logical>`) so the same logical name does not mix projects in one DB. See [workspace.md](workspace.md).
+
 **Reason:** Relational short-term history is enough for thread continuity. Embeddings were deferred.
 
 **Rejected alternatives:**
@@ -25,7 +27,9 @@ Short-term conversation memory is SQLite (`better-sqlite3`) keyed by `sessionId`
 
 Durable facts with `remember` / `recall` / `list` / `forget`, optional keys and tags. Keyword recall first. Storage path is local/gitignored or `PERSONAL_CONTEXT_DIR`.
 
-**Reason:** Need durable facts without putting personal content in git. API first, personal content policy separate (see [privacy.md](privacy.md)).
+**Default remains shared/personal across workspaces.** Optional `LONGTERM_PROJECT_SCOPED=true` stores LTM under the active workspace (M9). See [workspace.md](workspace.md) and [privacy.md](privacy.md).
+
+**Reason:** Need durable facts without putting personal content in git. API first, personal content policy separate.
 
 ## Embeddings / semantic memory (Milestone 4)
 

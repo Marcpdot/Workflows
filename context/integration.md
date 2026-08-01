@@ -8,6 +8,8 @@
 
 Other projects call Workflows through a **documented CLI contract** and optional **thin HTTP** (`GET /health`, `POST /v1/chat`). Tools bind to the caller’s workspace; orchestration logic stays inside Orchestrator.
 
+**M9 boundaries (after shell delivery):** short-term sessions are namespaced per workspace; retrieval prefers `{workspace}/context` when present; LTM stays personal/global unless `LONGTERM_PROJECT_SCOPED`. See [workspace.md](workspace.md).
+
 **Reason:** External repos must use the stack without living in Orchestrator’s cwd or reimplementing routing/memory. A thin adapter layer is enough; a second orchestrator in the API would drift.
 
 **Rejected alternatives:**

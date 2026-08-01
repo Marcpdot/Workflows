@@ -6,11 +6,11 @@
 **Evidence:** confirmed  
 **Source:** M5/M6 specs and README; commit `86c49f6`  
 
-Scripts, eval, and CI use CLI (`tsx src/index.ts`, pure `--json` stdout, `--workspace`). The web UI is optional human shell.
+Scripts, eval, and CI use CLI (`tsx src/index.ts`, pure `--json` stdout, `--workspace`, `--session`, `--list-sessions`). The web UI is optional human shell.
 
 **Reason:** Automation and agents need stable stdout/exit codes. UI can change without breaking pipelines.
 
-See [integration.md](integration.md) for the external call-in contract.
+See [integration.md](integration.md) for the external call-in contract and [workspace.md](workspace.md) for session/workspace isolation.
 
 ## Milestone 6 chose simple localhost web over TUI
 

@@ -2,14 +2,16 @@
 
 Lean index of why-knowledge. Load a topic file only when relevant.
 
-- [architecture.md](architecture.md) — layered intent vs current package shape; handle pipeline
-- [milestones.md](milestones.md) — shell-first delivery, defaults-off, M0–M8 status, M9–M10 next
-- [packaging.md](packaging.md) — everything under Orchestrator/ for now; split after M10
+- [architecture.md](architecture.md) — layered intent vs package shape; handle pipeline
+- [milestones.md](milestones.md) — shell-first delivery; **M0–M10 shells delivered**
+- [packaging.md](packaging.md) — monolith under Orchestrator/ (re-confirmed post-M10; split deferred)
 - [routing.md](routing.md) — rule-based local vs frontier selection
 - [policy.md](policy.md) — budget/tier compute policy over the router (M7)
-- [memory.md](memory.md) — short-term SQLite; LTM + embeddings as later layers
+- [memory.md](memory.md) — short-term SQLite; LTM + embeddings; session keys vs workspace
+- [workspace.md](workspace.md) — multi-project session/workspace isolation (M9)
+- [structured.md](structured.md) — parseable JSON + repair, not constrained decoding (M10)
 - [models.md](models.md) — default small local model, Ollama CLI, Grok frontier
 - [privacy.md](privacy.md) — personal model outside public repo
 - [interface.md](interface.md) — CLI first; M6 localhost web shell not TUI
-- [integration.md](integration.md) — CLI contract + thin HTTP, same brain (M5)
+- [integration.md](integration.md) — CLI contract + thin HTTP, same brain (M5; M9 boundaries)
 - [observability.md](observability.md) — local JSONL events, prompts off (M8)

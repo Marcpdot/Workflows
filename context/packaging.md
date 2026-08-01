@@ -4,16 +4,19 @@
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** repo layout; decision 2026-08-01  
-**Revisit when:** M10 done — then refactor into clearer packages/folders per layer
+**Source:** repo layout; decision 2026-08-01; re-confirmed after M10 (working session)  
+**Revisit when:** daily multi-project use makes boundary friction obvious, or a second consumer package is required
 
-Implementation of memory, tools, eval, embeddings, integration HTTP, web UI, compute policy, and observability currently lives **under `Orchestrator/`**. The runnable unit is one Node package. Layer *names* show up as subfolders and local `AGENTS.md` files; layer *boundaries* as separately versioned packages are deferred.
+> **Re-confirmed after M10:** Vertical shells M0–M10 exist under `Orchestrator/`. Split into separately versioned layer packages is **still deferred** — ship usage and harden shells before packaging tax. Intended long-term shape (Orchestrator wires layers) unchanged; timeline is “not yet,” not “never.”
 
-**Reason:** One place to run, one dependency tree, one path for Grok Build. Ship the vertical (M0–M8 shells, then M9–M10) before paying packaging tax.
+Implementation of memory, tools, eval, embeddings, integration HTTP, web UI, compute policy, observability, workspace, and structured output currently lives **under `Orchestrator/`**. The runnable unit is one Node package. Layer *names* show up as subfolders and local `AGENTS.md` files; layer *boundaries* as separately versioned packages remain deferred.
+
+**Reason:** One place to run, one dependency tree, one path for Grok Build. The vertical is complete as shells; splitting without real multi-package consumers would still be speculative.
 
 **Rejected alternatives:**
 
-- **Stop feature work to split packages mid-stack** — refactor before M9–M10 surfaces would still be speculative.
-- **Keep forever as one package** — acknowledged as not disciplined enough for a long-lived Jarvis-layer under many projects.
+- **Split packages immediately after M10** — re-confirmed deferred: no second consumer yet, interfaces still thin, cost outweighs benefit.
+- **Stop feature/usage work to split mid-stack** — same as pre-M10: speculative boundaries.
+- **Keep forever as one package** — still rejected as the *final* state for a long-lived Jarvis-layer; only the *timing* of the split stays open.
 
-**Intended follow-up:** After M10, split so Orchestrator primarily wires layers rather than containing all of them.
+**Intended follow-up:** When revisit triggers, split so Orchestrator primarily wires layers rather than containing all of them.
