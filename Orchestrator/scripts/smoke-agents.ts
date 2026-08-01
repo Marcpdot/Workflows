@@ -109,7 +109,10 @@ async function main(): Promise<void> {
   console.log("OK: three custom roles");
 
   // 6. Built-in roles shape
-  assert(plannerRole.toolsAllowed?.includes("read_file"), "planner read tools");
+  assert(
+    plannerRole.toolsAllowed?.includes("read_file") === true,
+    "planner read tools"
+  );
   assert(workerRole.toolsAllowed === undefined, "worker all tools");
   console.log("OK: built-in role defaults");
 
