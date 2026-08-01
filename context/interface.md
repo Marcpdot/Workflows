@@ -1,0 +1,26 @@
+# Interface
+
+## CLI remains the default automation surface
+
+**Status:** active  
+**Evidence:** confirmed  
+**Source:** M5/M6 specs and README  
+
+Scripts, eval, and CI use CLI (`tsx src/index.ts`, `--json`). The web UI is optional human shell.
+
+**Reason:** Automation and agents need stable stdout/exit codes. UI can change without breaking pipelines.
+
+## Milestone 6 chose simple localhost web over TUI
+
+**Status:** active  
+**Evidence:** confirmed  
+**Source:** M6 implementation `b695dd8`; `npm run ui`  
+
+Primary human shell is a **minimal static web UI** on the same origin as M5 `POST /v1/chat` (not a separate SPA framework, not a terminal TUI).
+
+**Reason:** One HTTP server already existed from integration surface; web shell reuses it with low dependency cost and shows route/model/latency metadata. TUI would be a second interaction stack.
+
+**Rejected alternatives:**
+
+- **TUI as M6 primary** — fine for terminal-native users, but weaker reuse of M5 HTTP and harder smoke without extra harness.
+- **Full product web app (React, auth, design system)** — noise before the brain and workflows are proven; UI is a shell, not the product.
