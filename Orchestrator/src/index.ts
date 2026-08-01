@@ -510,6 +510,13 @@ function printResult(
     `\n[route] ${result.routing.reason}  (type=${result.routing.taskType}, complexity=${result.routing.complexity})`
   );
   console.log(`[model] ${result.provider}/${result.model}`);
+  if (result.policy) {
+    console.log(
+      `[policy] ${result.policy.tier}  ${result.policy.reason}${
+        result.policy.budgetCapped ? "  (budget-capped)" : ""
+      }`
+    );
+  }
   if (meta?.latencyMs != null) {
     console.log(`[latency] ${meta.latencyMs}ms`);
   }

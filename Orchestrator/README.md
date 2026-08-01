@@ -79,6 +79,20 @@ npx tsx scripts/smoke-proactive.ts
 # PROACTIVE_ENABLED=true npm run dev -- "TypeError crash in router"
 ```
 
+## Compute policy (Milestone 7)
+
+Optional budget-aware tier selection (`local` | `mid` | `frontier`) wrapping
+the rule router. **Default off** (`POLICY_ENABLED=false`) → same as today.
+
+When on: session token / daily USD caps can force **local**; optional
+`POLICY_MID_MODEL` (OpenAI-compatible mid endpoint via `MID_BASE_URL`).
+Policy reason is logged and returned on results for observability (M8).
+
+```bash
+npx tsx scripts/smoke-policy.ts
+# POLICY_ENABLED=true POLICY_SESSION_TOKEN_CAP=5000 npm run dev -- "..."
+```
+
 ## Web UI (Milestone 6)
 
 **Choice: simple localhost web shell** (not TUI). Same brain via `POST /v1/chat`.

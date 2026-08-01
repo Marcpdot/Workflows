@@ -17,6 +17,8 @@ export interface GrokConfig {
   baseUrl?: string;
   defaultModel: string;
   timeoutMs?: number;
+  /** Default frontier; use "mid" for mid-tier OpenAI-compatible endpoints */
+  provider?: "frontier" | "mid";
 }
 
 interface OpenAIChatResponse {
@@ -70,13 +72,14 @@ function toOpenAiTools(tools: ModelToolSchema[]) {
 }
 
 export class GrokClient implements ModelClient {
-  readonly provider = "frontier" as const;
+  readonly provider: "frontier" | "mid";
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly defaultModel: string;
   private readonly timeoutMs: number;
 
   constructor(config: GrokConfig) {
+    this.provider = config.provider ?? "frontier";
     this.apiKey = config.apiKey;
     this.baseUrl = (config.baseUrl ?? "https://api.x.ai/v1").replace(/\/$/, "");
     this.defaultModel = config.defaultModel;
@@ -86,7 +89,9 @@ export class GrokClient implements ModelClient {
   async complete(request: ModelRequest): Promise<ModelResponse> {
     if (!this.apiKey) {
       throw new Error(
-        "XAI_API_KEY is missing. Set it in the environment or .env file."
+        this.provider === "mid"
+          ? "Mid-tier API key missing (set MID_API_KEY or XAI_API_KEY)."
+          : "XAI_API_KEY is missing. Set it in the environment or .env file."
       );
     }
 

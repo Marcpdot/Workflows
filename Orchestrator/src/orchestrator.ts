@@ -32,6 +32,13 @@ import {
 import { createEmbeddingsFromEnv } from "./embeddings/index.js";
 import { suggestNextSteps } from "./proactive/index.js";
 import {
+  DefaultComputePolicy,
+  loadPolicyConfig,
+  type ComputePolicy,
+  type PolicyDecision,
+} from "./policy/index.js";
+import { estimateTokensFromText } from "./eval/cost.js";
+import {
   defaultPipelineRoles,
   registryForRole,
   runRolePipeline,
@@ -51,17 +58,26 @@ export class Orchestrator {
   private readonly config: OrchestratorConfig;
   private readonly local: ModelClient;
   private readonly frontier: ModelClient;
+  private readonly mid?: ModelClient;
   private readonly routerConfig: RouterConfig;
   private readonly tools?: ToolRegistry;
+  private readonly policy: ComputePolicy;
   /** Milestone 3A long-term memory (facts/preferences). Optional. */
   readonly longTerm?: LongTermMemory;
   constructor(
     config: OrchestratorConfig,
-    clients?: { local?: ModelClient; frontier?: ModelClient }
+    clients?: {
+      local?: ModelClient;
+      frontier?: ModelClient;
+      mid?: ModelClient;
+    }
   ) {
     this.config = config;
     this.tools = config.tools;
     this.longTerm = config.longTerm;
+    this.policy =
+      config.policy ??
+      new DefaultComputePolicy(loadPolicyConfig(process.env));
     this.local =
       clients?.local ??
       new OllamaCliClient({
@@ -74,7 +90,22 @@ export class Orchestrator {
         apiKey: config.xaiApiKey,
         baseUrl: config.xaiBaseUrl,
         defaultModel: config.grokModel,
+        provider: "frontier",
       });
+    this.mid =
+      clients?.mid ??
+      (config.midModel
+        ? new GrokClient({
+            apiKey:
+              process.env.MID_API_KEY?.trim() ||
+              config.xaiApiKey,
+            baseUrl:
+              process.env.MID_BASE_URL?.trim() ||
+              config.xaiBaseUrl,
+            defaultModel: config.midModel,
+            provider: "mid",
+          })
+        : undefined);
     this.routerConfig = {
       localModel: config.ollamaModel,
       frontierModel: config.grokModel,
@@ -220,11 +251,32 @@ export class Orchestrator {
     }
   ): Promise<OrchestratorResult> {
     const routing = this.decide(prompt);
-    const choice = options?.forceModel ?? routing.model;
 
+    // M7: policy wraps router (when off, decide mirrors router)
+    const forceTier =
+      options?.forceModel === "local" ||
+      options?.forceModel === "mid" ||
+      options?.forceModel === "frontier"
+        ? options.forceModel
+        : undefined;
+    const policyDecision: PolicyDecision = this.policy.decide({
+      prompt,
+      taskType: routing.taskType,
+      complexity: routing.complexity,
+      estimatedTokens: estimateTokensFromText(prompt) * 2,
+      forceTier,
+      routerTier:
+        routing.model === "frontier" ? "frontier" : "local",
+    });
+
+    const choice: ModelChoice = policyDecision.tier;
     if (options?.forceModel) {
-      routing.model = options.forceModel;
+      routing.model =
+        options.forceModel === "mid" ? "frontier" : options.forceModel;
       routing.reason = `forced → ${options.forceModel}`;
+    } else {
+      // Keep routing.model as router/local|frontier; policy is separate field
+      routing.reason = `${routing.reason} · policy: ${policyDecision.reason}`;
     }
 
     const history = options?.history ?? [];
@@ -347,11 +399,10 @@ export class Orchestrator {
       { role: "user", content: prompt },
     ];
 
-    const client = choice === "local" ? this.local : this.frontier;
-    const modelName =
-      choice === "local"
-        ? routing.localModel ?? this.config.ollamaModel
-        : routing.frontierModel ?? this.config.grokModel;
+    const { client, modelName, provider } = this.resolveClient(
+      choice,
+      routing
+    );
 
     if (useToolLoop && this.tools) {
       const loopResult = await runToolLoop(messages, {
@@ -372,11 +423,18 @@ export class Orchestrator {
       });
 
       const reply = loopResult.finalText;
+      // Tool-loop usage often missing — estimate from prompt+reply
+      this.policy.recordUsage(policyDecision.tier, {
+        tokens:
+          estimateTokensFromText(prompt) + estimateTokensFromText(reply),
+      });
+
       return {
         reply,
         routing,
         model: modelName,
-        provider: choice,
+        provider,
+        policy: policyDecision,
         compression: {
           compressed,
           summary,
@@ -401,12 +459,21 @@ export class Orchestrator {
       model: modelName,
     });
 
+    const tokens =
+      response.usage?.totalTokens ??
+      estimateTokensFromText(prompt) +
+        estimateTokensFromText(response.content);
+    this.policy.recordUsage(policyDecision.tier, {
+      tokens,
+    });
+
     return {
       reply: response.content,
       routing,
       model: response.model,
       provider: response.provider,
       usage: response.usage,
+      policy: policyDecision,
       compression: {
         compressed,
         summary,
@@ -420,6 +487,39 @@ export class Orchestrator {
         retrievalBlock,
         longTermBlock
       ),
+    };
+  }
+
+  private resolveClient(
+    choice: ModelChoice,
+    routing: RoutingDecision
+  ): { client: ModelClient; modelName: string; provider: ModelChoice } {
+    if (choice === "local") {
+      return {
+        client: this.local,
+        modelName: routing.localModel ?? this.config.ollamaModel,
+        provider: "local",
+      };
+    }
+    if (choice === "mid") {
+      if (this.mid && this.config.midModel) {
+        return {
+          client: this.mid,
+          modelName: this.config.midModel,
+          provider: "mid",
+        };
+      }
+      // Fallback local if mid not configured at runtime
+      return {
+        client: this.local,
+        modelName: this.config.ollamaModel,
+        provider: "local",
+      };
+    }
+    return {
+      client: this.frontier,
+      modelName: routing.frontierModel ?? this.config.grokModel,
+      provider: "frontier",
     };
   }
 
@@ -575,5 +675,7 @@ export function loadConfigFromEnv(
       locale: env.PROACTIVE_LOCALE === "en" ? "en" : env.PROACTIVE_LOCALE === "nb" ? "nb" : "nb",
     },
     embeddings,
+    policy: new DefaultComputePolicy(loadPolicyConfig(env)),
+    midModel: env.POLICY_MID_MODEL?.trim() || undefined,
   };
 }

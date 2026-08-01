@@ -4,8 +4,9 @@ import type { ToolRegistry, ToolLoopStep, ModelToolSchema } from "./tools/types.
 import type { LongTermMemory, LongTermSettings } from "./memory/longterm/types.js";
 import type { ProactiveSettings, Suggestion } from "./proactive/types.js";
 import type { Embedder, VectorStore } from "./embeddings/types.js";
+import type { ComputePolicy, PolicyDecision } from "./policy/types.js";
 
-export type ModelChoice = "local" | "frontier";
+export type ModelChoice = "local" | "mid" | "frontier";
 
 export type TaskType =
   | "summarize"
@@ -119,6 +120,9 @@ export interface OrchestratorConfig {
     store: VectorStore;
     minScore: number;
   };
+  /** Milestone 7 compute policy (budget + tier) */
+  policy?: ComputePolicy;
+  midModel?: string;
 }
 
 export interface OrchestratorResult {
@@ -127,6 +131,8 @@ export interface OrchestratorResult {
   model: string;
   provider: ModelChoice;
   usage?: ModelResponse["usage"];
+  /** Milestone 7 policy decision (reason + budget) */
+  policy?: PolicyDecision;
   /** Present when history was considered for compression */
   compression?: {
     compressed: boolean;
