@@ -27,6 +27,7 @@
     "@workflows/compression": "file:../compression",
     "@workflows/embeddings": "file:../embeddings",
     "@workflows/eval": "file:../eval",
+    "@workflows/knowledge": "file:../knowledge",
     "@workflows/memory": "file:../memory",
     "@workflows/models": "file:../models",
     "@workflows/observability": "file:../observability",

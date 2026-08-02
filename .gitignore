@@ -6,6 +6,6 @@ AGENTS.local.md
 Thumbs.db
 *.log
 
-# Pre-Step-F path; package is packages/orchestrator (delete local leftovers if present)
-Orchestrator/
+# Pre-Step-F root path only (not packages/orchestrator — Windows ignorecase)
+/Orchestrator/
 

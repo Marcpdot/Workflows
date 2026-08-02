@@ -18,6 +18,13 @@ import { Orchestrator, loadConfigFromEnv } from "./orchestrator.js";
 import { createMemory, type Memory } from "@workflows/memory";
 import { createRegistryFromConfig } from "@workflows/tools";
 import { resolveWorkspace, type WorkspaceContext } from "@workflows/workspace";
+import {
+  applyExtractionResult,
+  createKnowledgeStore,
+  resolveKnowledgeDbPath,
+  type ExtractionResult,
+  type KnowledgeStore,
+} from "@workflows/knowledge";
 import type { ModelChoice } from "./types.js";
 
 function loadDotEnv(filePath = resolve(process.cwd(), ".env")): void {
@@ -62,6 +69,12 @@ Options:
   --ltm recall [key=...|text=...] [limit=N]
   --ltm list [limit=N]
   --ltm forget <idOrKey>
+  --knowledge proposals [pending|accepted|rejected]
+  --knowledge accept <proposalId>
+  --knowledge reject <proposalId>
+  --knowledge find [label=...] [type=concept|claim|...]
+  --knowledge neighborhood <nodeId> [hops=1|2]
+  --knowledge extract --text "..."   # fixture-free extract via local model if available
   --pipeline <task>  Sequential planner→worker pipeline (Milestone 3C)
   --workspace, -w PATH  Workspace root for tools + session namespace (env WORKSPACE_ROOT)
   --list-sessions    List short-term session ids (optional filter by current workspace)
@@ -95,11 +108,20 @@ Env (see .env.example):
   TOOLS_DISABLED, TOOLS_ENABLED, TOOLS_MAX_STEPS
   LONGTERM_DB_PATH, PERSONAL_CONTEXT_DIR, LONGTERM_AUTO_INJECT, LONGTERM_DISABLED
   LONGTERM_PROJECT_SCOPED, LONGTERM_PROJECT_DB
+  KNOWLEDGE_DB_PATH, PERSONAL_CONTEXT_DIR (knowledge.db)
   PROACTIVE_ENABLED, PROACTIVE_MAX, PROACTIVE_USE_MODEL
   AGENTS_PIPELINE_ENABLED
   WORKSPACE_ROOT (or TOOL_WORKSPACE_ROOT), INTEGRATION_HTTP_PORT, INTEGRATION_HTTP_TOKEN
   OBS_ENABLED, OBS_LOG_PATH, OBS_LOG_PROMPTS, OBS_STDERR
 `);
+}
+
+interface KnowledgeCliAction {
+  kind: "proposals" | "accept" | "reject" | "find" | "neighborhood" | "extract";
+  id?: string;
+  filter?: string;
+  args: Record<string, unknown>;
+  text?: string;
 }
 
 interface ToolCliAction {
@@ -127,6 +149,7 @@ interface CliArgs {
   listSessions: boolean;
   toolAction?: ToolCliAction;
   ltmAction?: LtmCliAction;
+  knowledgeAction?: KnowledgeCliAction;
   /** When set, run sequential role pipeline instead of handle() */
   pipelineTask?: string;
   /** Absolute/relative workspace for tools + isolation (M5/M9) */
@@ -153,6 +176,7 @@ function parseArgs(argv: string[]): CliArgs {
   let clearSession = false;
   let toolAction: ToolCliAction | undefined;
   let ltmAction: LtmCliAction | undefined;
+  let knowledgeAction: KnowledgeCliAction | undefined;
   let pipelineTask: string | undefined;
   let workspace: string | undefined;
   let listSessions = false;
@@ -273,6 +297,88 @@ function parseArgs(argv: string[]): CliArgs {
         }
         break;
       }
+      case "--knowledge": {
+        const sub = argv[++i];
+        if (
+          !sub ||
+          ![
+            "proposals",
+            "accept",
+            "reject",
+            "find",
+            "neighborhood",
+            "extract",
+          ].includes(sub)
+        ) {
+          console.error(
+            "--knowledge requires proposals|accept|reject|find|neighborhood|extract"
+          );
+          process.exit(1);
+        }
+        if (sub === "accept" || sub === "reject" || sub === "neighborhood") {
+          const id = argv[++i];
+          if (!id || id.startsWith("-")) {
+            console.error(`--knowledge ${sub} requires an id`);
+            process.exit(1);
+          }
+          const kv: string[] = [];
+          while (i + 1 < argv.length && argv[i + 1]!.includes("=")) {
+            kv.push(argv[++i]!);
+          }
+          knowledgeAction = {
+            kind: sub,
+            id,
+            args: parseKvArgs(kv),
+          };
+        } else if (sub === "proposals") {
+          const filter = argv[i + 1] && !argv[i + 1]!.startsWith("-")
+            ? argv[++i]
+            : undefined;
+          knowledgeAction = {
+            kind: "proposals",
+            filter,
+            args: {},
+          };
+        } else if (sub === "find") {
+          const kv: string[] = [];
+          while (i + 1 < argv.length && argv[i + 1]!.includes("=")) {
+            kv.push(argv[++i]!);
+          }
+          knowledgeAction = { kind: "find", args: parseKvArgs(kv) };
+        } else if (sub === "extract") {
+          let text: string | undefined;
+          const kv: string[] = [];
+          while (i + 1 < argv.length) {
+            const next = argv[i + 1]!;
+            if (next === "--text") {
+              i++;
+              text = argv[++i];
+            } else if (next.includes("=")) {
+              kv.push(argv[++i]!);
+            } else if (!next.startsWith("-")) {
+              // remaining free text as extract body
+              const parts: string[] = [];
+              while (i + 1 < argv.length && !argv[i + 1]!.startsWith("-")) {
+                parts.push(argv[++i]!);
+              }
+              text = parts.join(" ");
+              break;
+            } else {
+              break;
+            }
+          }
+          const argsMap = parseKvArgs(kv);
+          if (!text && typeof argsMap.text === "string") {
+            text = String(argsMap.text);
+          }
+          knowledgeAction = {
+            kind: "extract",
+            text,
+            args: argsMap,
+          };
+        }
+        break;
+      }
       case "--no-memory":
         useMemory = false;
         break;
@@ -307,9 +413,174 @@ function parseArgs(argv: string[]): CliArgs {
     listSessions,
     toolAction,
     ltmAction,
+    knowledgeAction,
     pipelineTask,
     workspace,
   };
+}
+
+function openKnowledgeFromEnv(): KnowledgeStore {
+  return createKnowledgeStore({
+    dbPath: resolveKnowledgeDbPath(process.cwd(), process.env),
+  });
+}
+
+async function runKnowledgeAction(
+  action: KnowledgeCliAction,
+  asJson: boolean
+): Promise<void> {
+  const store = openKnowledgeFromEnv();
+  try {
+    if (action.kind === "proposals") {
+      const status =
+        action.filter === "pending" ||
+        action.filter === "accepted" ||
+        action.filter === "rejected"
+          ? action.filter
+          : "pending";
+      const list = await store.listProposals({ status });
+      if (asJson) {
+        console.log(JSON.stringify(list, null, 2));
+      } else {
+        console.log(`[knowledge] proposals status=${status} count=${list.length}`);
+        for (const p of list) {
+          console.log(
+            `  ${p.id}  ${p.kind}  ${JSON.stringify(p.payload).slice(0, 120)}`
+          );
+        }
+      }
+      return;
+    }
+    if (action.kind === "accept") {
+      await store.acceptProposal(action.id!, action.args);
+      if (asJson) console.log(JSON.stringify({ accepted: action.id }));
+      else console.log(`[knowledge] accepted ${action.id}`);
+      return;
+    }
+    if (action.kind === "reject") {
+      await store.rejectProposal(action.id!);
+      if (asJson) console.log(JSON.stringify({ rejected: action.id }));
+      else console.log(`[knowledge] rejected ${action.id}`);
+      return;
+    }
+    if (action.kind === "find") {
+      const nodes = await store.findNodes({
+        type: action.args.type
+          ? (String(action.args.type) as
+              | "concept"
+              | "claim"
+              | "event"
+              | "source"
+              | "project"
+              | "artifact")
+          : undefined,
+        label: action.args.label
+          ? String(action.args.label)
+          : undefined,
+        status: action.args.status
+          ? (String(action.args.status) as
+              | "proposed"
+              | "accepted"
+              | "disputed"
+              | "rejected")
+          : "accepted",
+        limit: action.args.limit
+          ? Number(action.args.limit)
+          : 20,
+      });
+      if (asJson) console.log(JSON.stringify(nodes, null, 2));
+      else {
+        console.log(`[knowledge] find count=${nodes.length}`);
+        for (const n of nodes) {
+          console.log(`  ${n.id}  ${n.type}  ${n.label}  (${n.status})`);
+        }
+      }
+      return;
+    }
+    if (action.kind === "neighborhood") {
+      const hops = action.args.hops === "2" || action.args.hops === 2 ? 2 : 1;
+      const neigh = await store.getNeighborhood(action.id!, {
+        hops: hops as 1 | 2,
+        status: "accepted",
+      });
+      if (asJson) console.log(JSON.stringify(neigh, null, 2));
+      else {
+        console.log(
+          `[knowledge] neighborhood root=${action.id} hops=${hops} nodes=${neigh.nodes.length} edges=${neigh.edges.length}`
+        );
+        for (const n of neigh.nodes) {
+          console.log(`  node ${n.id}  ${n.type}  ${n.label}`);
+        }
+        for (const e of neigh.edges) {
+          console.log(
+            `  edge ${e.fromNodeId} -[${e.relation}]-> ${e.toNodeId}`
+          );
+        }
+      }
+      return;
+    }
+    if (action.kind === "extract") {
+      const text = action.text?.trim();
+      if (!text) {
+        console.error(
+          '--knowledge extract requires --text "..." or free text'
+        );
+        process.exit(1);
+      }
+      // M11 default path: heuristic fixture-style extract without live model
+      // (simple regex-free split into concepts from capitalized phrases is weak —
+      // use a fixed structure from text sentences for offline shell).
+      const sentences = text
+        .split(/[.!?\n]+/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 3);
+      const words = text
+        .split(/[^a-zA-ZæøåÆØÅ0-9-]+/)
+        .map((w) => w.trim())
+        .filter((w) => w.length > 3);
+      const unique = [...new Set(words.map((w) => w.toLowerCase()))].slice(
+        0,
+        8
+      );
+      const fixture: ExtractionResult = {
+        concepts: unique.map((label) => ({ label })),
+        claims: sentences.slice(0, 5).map((label) => ({ label })),
+        relations:
+          unique.length >= 2
+            ? [
+                {
+                  from: unique[0]!,
+                  relation: "about",
+                  to: unique[1]!,
+                },
+              ]
+            : [],
+      };
+      const { eventId, proposals } = await applyExtractionResult(
+        store,
+        fixture,
+        {
+          sourceType: "manual",
+          sourceRef: "cli-extract",
+          model: "heuristic-m11",
+          rawText: text,
+        }
+      );
+      if (asJson) {
+        console.log(JSON.stringify({ eventId, proposals }, null, 2));
+      } else {
+        console.log(
+          `[knowledge] extract event=${eventId} proposals=${proposals.length} (heuristic offline shell)`
+        );
+        for (const p of proposals) {
+          console.log(`  ${p.id}  ${p.kind}`);
+        }
+      }
+      return;
+    }
+  } finally {
+    store.close();
+  }
 }
 
 async function runPipelineTask(
@@ -965,6 +1236,11 @@ async function main(): Promise<void> {
 
       if (args.ltmAction) {
         await runLtmAction(orch, args.ltmAction, args.json);
+        return;
+      }
+
+      if (args.knowledgeAction) {
+        await runKnowledgeAction(args.knowledgeAction, args.json);
         return;
       }
 

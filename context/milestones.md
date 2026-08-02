@@ -85,10 +85,10 @@ Details, invariants, and M11 done-when: [knowledge.md](knowledge.md).
 | M9 | Delivered as shell — session/workspace namespace, project context, list-sessions (see [workspace.md](workspace.md)) |
 | M10 | Delivered as shell — completeStructured, planner plan JSON, shared tool JSON extract (see [structured.md](structured.md)) |
 | Packaging | **Done** — layers under `packages/*`, glue at `packages/orchestrator` (see [packaging.md](packaging.md)) |
-| **M11** | **Planned** — semantic knowledge shell; see [knowledge.md](knowledge.md) |
+| **M11** | **Delivered as shell** — `packages/knowledge`; extract→propose→approve→neighborhood; smoke + CLI |
 | **M12–M18** | **Planned** (roadmap only) — tools, project bind, ingest, identity, FP workflow, read surface, optional voice |
 
-Vertical M0–M10 shells are in place and the package map is readable. Next implementation target on the knowledge track is **M11** when ready.
+Vertical M0–M11 shells are in place. Next knowledge target is **M12** (tools + orchestrator wire) when ready.
 
 Thin spots accepted under shell-first (e.g. heuristic score fusion, static UI, linear vector scan, repair-not-constrained-decoding) are documented per topic.
 

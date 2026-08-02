@@ -45,8 +45,8 @@ work and “what is the status of actuator-v2?” need that structure.
 
 ## Core objects (M11 minimum)
 
-**Status:** active (proposed schema)  
-**Evidence:** inferred from vision; not yet implemented  
+**Status:** active  
+**Evidence:** confirmed (implemented shell in `packages/knowledge`)  
 
 | Object | Role |
 |--------|------|
@@ -100,13 +100,12 @@ output is the right engine for the extraction step.
 Not everything said in chat belongs in the world model. LTM remains useful
 for “user prefers X”. Knowledge is for *structure of understanding*.
 
-Suggested package shape when implemented:
+Package shape (M11 shell):
 
 ```
 packages/
   memory/       # unchanged role
-  knowledge/    # store + query + commit API
-  extraction/   # optional; or live under knowledge at first
+  knowledge/    # store + query + commit API (+ extract helpers)
 ```
 
 Tools (from M12): `knowledge.findConcept`, `knowledge.getNeighborhood`,
@@ -193,9 +192,10 @@ and still use. Do not collapse these into one “build the full world model” d
 
 **Done when**
 
-- One vertical path works: excerpt → proposals → approve → store → neighborhood query
-- Provenance fields populated for committed claims
-- No personal secrets in public repo; DB path gitignored / `PERSONAL_CONTEXT_DIR` pattern as for LTM
+- [x] One vertical path works: excerpt/fixture → proposals → approve → store → neighborhood query
+- [x] Provenance fields populated for committed claims (`sourceEventId` on edges; event + inputHash)
+- [x] No personal secrets in public repo; DB path gitignored / `PERSONAL_CONTEXT_DIR` pattern as for LTM
+- [x] Smoke: `packages/orchestrator` → `npx tsx scripts/smoke-knowledge.ts`
 
 Later milestones get their own AGENTS.md / context notes when implementation starts; this file remains the roadmap and invariants source.
 

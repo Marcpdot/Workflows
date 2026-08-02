@@ -358,12 +358,12 @@ Optional second smoke path: live model extraction behind env flag (default off).
 
 ## Ferdig når
 
-- [ ] `packages/knowledge` eksisterer med types, store, API
-- [ ] Smoke passerer uten live model
-- [ ] Én dokumentert vertical: text/fixture → proposals → accept → neighborhood
-- [ ] Ingen ekte persondata i repo; DB under gitignore
-- [ ] Short-term + LTM uendret
-- [ ] `context/knowledge.md` / milestones forblir source of truth for roadmap
+- [x] `packages/knowledge` eksisterer med types, store, API
+- [x] Smoke passerer uten live model
+- [x] Én dokumentert vertical: text/fixture → proposals → accept → neighborhood
+- [x] Ingen ekte persondata i repo; DB under gitignore
+- [x] Short-term + LTM uendret
+- [x] `context/knowledge.md` / milestones forblir source of truth for roadmap
 
 ## Avhengigheter
 
