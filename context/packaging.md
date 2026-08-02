@@ -27,7 +27,9 @@ Runnable glue is **`packages/orchestrator`**. Feature layers are sibling folders
 | `knowledge` | Semantic graph shell (M11–M17): graph + ingest + identity + FP + read surface |
 | `voice` | Optional STT/TTS I/O adapters (M18) — same handle path as text |
 
-**Integration HTTP** lives under `packages/orchestrator/src/integration` (not a separate package) so the HTTP adapter can import the Orchestrator class without a circular package graph.
+**Why knowledge vs voice split:** Graph propose/accept and domain types stay in `knowledge`. Voice never owns permanent writes — only string I/O into orchestrator. That keeps privacy/env gates for mic/remote audio out of the knowledge package.
+
+**Integration HTTP** lives under `packages/orchestrator/src/integration` (not a separate package) so the HTTP adapter can import the Orchestrator class without a circular package graph. Knowledge read (M17) reuses that server when `KNOWLEDGE_HTTP_READ=true` (same token gate) — not a separate knowledge service.
 
 **How to run:**
 

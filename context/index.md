@@ -2,17 +2,17 @@
 
 Lean index of why-knowledge. Load a topic file only when relevant.
 
-- [architecture.md](architecture.md) — layered intent; handle pipeline; package shape
-- [milestones.md](milestones.md) — shell-first; **M0–M18 delivered** (M18 optional voice I/O); packaging done
-- [packaging.md](packaging.md) — **packages/* + packages/orchestrator** (refactor A–F why)
+- [architecture.md](architecture.md) — layered intent; handle pipeline; package shape (knowledge + voice wired)
+- [milestones.md](milestones.md) — shell-first; **M0–M18 delivered** (M18 optional voice); packaging done
+- [packaging.md](packaging.md) — **packages/* + packages/orchestrator**; knowledge vs voice split
 - [routing.md](routing.md) — rule-based local vs frontier selection
 - [policy.md](policy.md) — budget/tier compute policy over the router (M7)
 - [memory.md](memory.md) — short-term SQLite; LTM + embeddings; session keys vs workspace
-- [knowledge.md](knowledge.md) — **semantic world model**; **M11–M18 shells delivered** (M18 voice I/O optional)
+- [knowledge.md](knowledge.md) — **semantic world model**; M11–M18 shells + **decision log**
 - [workspace.md](workspace.md) — multi-project session/workspace isolation (M9)
 - [structured.md](structured.md) — parseable JSON + repair, not constrained decoding (M10)
 - [models.md](models.md) — default small local model, Ollama CLI, Grok frontier
-- [privacy.md](privacy.md) — personal model outside public repo
-- [interface.md](interface.md) — CLI first; M6 localhost web shell not TUI
-- [integration.md](integration.md) — CLI contract + thin HTTP, same brain (M5; M9 boundaries)
+- [privacy.md](privacy.md) — personal model out of public repo; knowledge DB + voice remote gates
+- [interface.md](interface.md) — CLI first; M6 web shell; M18 voice I/O optional
+- [integration.md](integration.md) — CLI + thin HTTP same brain (M5; M9; M17 knowledge read)
 - [observability.md](observability.md) — local JSONL events, prompts off (M8)

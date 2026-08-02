@@ -4,8 +4,8 @@
 
 **Status:** active (direction)  
 **Evidence:** confirmed  
-**Source:** design conversation 2026-08-02 (first-principles graphs + voice use)  
-**Revisit when:** first extraction→commit loop is used daily
+**Source:** design conversation 2026-08-02 (first-principles graphs + voice use); M11–M18 shells delivered through `6f11d1f`  
+**Revisit when:** daily use shows representation or approval-loop gaps
 
 Workflows already has short-term session memory and long-term `MemoryFact`
 (content + tags + optional key). That is necessary but not sufficient for
@@ -116,25 +116,32 @@ for “user prefers X”. Knowledge is for *structure of understanding*.
 
 ## Voice / natural-language use (intent)
 
-**Status:** active (product intent; interface milestone M18)  
-**Evidence:** confirmed
+**Status:** active (product intent; M18 shell delivered optional)  
+**Evidence:** confirmed  
+**Source:** M18 `@workflows/voice`  
 
-Speech I/O is **not** required for M11–M17. Voice is an interface on top of
-the same query + extraction tools once the graph and tools exist (M18).
+Speech I/O was deferred until the graph and tools existed (M11–M17). M18 is
+**interface only**: STT → same `handle()` / knowledge tools → optional TTS.
+See decision log below and [interface.md](interface.md).
 
 ## Storage choice for first shell
 
 **Status:** active  
-**Evidence:** confirmed
+**Evidence:** confirmed  
+**Source:** M11 AGENTS + delivery  
 
 SQLite tables alongside existing DBs. No new infrastructure required for M11–M18 shells.
 
+**Reason:** Zero ops tax for a personal machine; schema can migrate later. Graph *objects* matter more than graph *engine* early.
+
+**Rejected:** Neo4j/Graphiti as hard dependency for M11; one DB file per project as default (see M13 decision on workspaceId filters).
+
 ## Knowledge milestone roadmap (M11–M18)
 
-**Status:** active  
+**Status:** active (shell track complete; deepen with use)  
 **Evidence:** confirmed  
-**Source:** design conversation 2026-08-02  
-**Revisit when:** M11 is in daily use or priorities shift
+**Source:** design conversation 2026-08-02; delivery commits through M18 `6f11d1f`  
+**Revisit when:** daily use shows a shell is too thin, or a band needs hardening before the next
 
 | # | Focus | Delivers | Status |
 |---|--------|----------|--------|
@@ -147,25 +154,151 @@ SQLite tables alongside existing DBs. No new infrastructure required for M11–M
 | **M17** | Read surface | Reader helpers, renderers, CLI `--json`, optional HTTP + minimal HTML | **shell delivered** |
 | **M18** | Voice / multimodal I/O (optional) | STT/TTS adapters → same `handle()` / tools; default off | **shell delivered (optional)** |
 
-**M13 shell notes:** Project is a graph node (`type: "project"`), not a separate table. Binding uses edges (`used_in` | `about` | `part_of`). One knowledge.db with `workspaceId` filters (same idea as M9 session namespace). Accept applies `defaultWorkspaceId` when payload omits workspace. Tools: `knowledge_ensure_project`, `knowledge_link_project`, `knowledge_unlink_project`, `knowledge_project_status`. Inject prefers project status when the prompt matches a project label.
-
-**M14 shell notes:** Graph grows via **proposals only** — `ingestText` / `ingestFile` / `knowledge_ingest` never accept. Light dedupe skips node proposals whose type+label is already accepted. CLI: `--knowledge ingest --text| --file`. Auto chat segment (`KNOWLEDGE_INGEST_AUTO_ON_CHAT`) default off and still proposals-only.
-
-**M15 shell notes:** `knowledge_aliases` table + `normalizeLabel` (trim/case/diacritics). `mergeNodes` rewires edges/evidence, aliases the from-label, marks from **rejected** (history kept). `findContradictions` / `markContradiction` are explicit flags — no auto truth. `supersedeClaim` uses edge `supersedes` and can mark old disputed. Tools: `knowledge_add_alias`, `knowledge_merge`, `knowledge_find_contradictions`, `knowledge_mark_contradiction`, `knowledge_supersede`.
-
-**M16 shell notes:** First-principles is **one workflow** on the general graph (`runFirstPrinciplesAnalysis` → pending proposals). Template steps: goal, laws, absolute/contingent limits, bottlenecks, scaling, next experiment. Offline heuristic + optional model `complete` + fixture for smoke. Optional `projectLabel` ensures M13 project and proposes `used_in` edges. Tool `knowledge_first_principles`; CLI `--knowledge fp --topic "..."`.
-
-**M17 shell notes:** Read-only surface over M11–M16 — `createKnowledgeReader` (search, node, neighborhood, project status, contradictions, proposals) + compact renderers (table/list/subgraph/report/HTML). CLI uses stable `--json` envelopes. Optional `KNOWLEDGE_HTTP_READ=true` exposes `GET /v1/knowledge/*` behind the same integration token; `GET /knowledge` is a no-framework browse page. No write UI.
-
-**M18 shell notes:** Voice is **I/O only** (`@workflows/voice`): mock/local/cloud STT + off/mock/local/cloud TTS → `Orchestrator.handle` (same tools/knowledge). Default off (`VOICE_ENABLED=false`, TTS off). Cloud requires `VOICE_ALLOW_REMOTE_AUDIO`. CLI: `--voice-once --transcript "..."`, REPL `/voice ...`. Local path: `VOICE_STT_COMMAND` / `VOICE_TTS_COMMAND`. No second brain; propose/accept unchanged.
-
 **Capability bands**
 
 - **M11–M13** — make structured use *possible*
 - **M14–M16** — make growth and analysis *robust*
 - **M17–M18** — improve *interface*
 
-**Explicitly out of early roadmap:** Neo4j-as-required, fully autonomous permanent writes, 3D UI, complete self-model of Workflows on day one.
+**Explicitly out of early roadmap (still rejected):** Neo4j-as-required, fully autonomous permanent writes, 3D UI, complete self-model of Workflows on day one.
+
+## Decisions delivered with M11–M18 shells
+
+**Status:** active  
+**Evidence:** confirmed  
+**Source:** milestone AGENTS specs + implementation sessions 2026-08-02–03; commits `430ce65`…`6f11d1f` (knowledge track)  
+**Revisit when:** a shell is replaced by a hardened path or an invariant is deliberately broken
+
+Cross-cutting choices that apply across the whole track:
+
+### Propose → accept is the only permanent write path
+
+**Decision:** Extraction, tools, ingest, FP workflow, and chat auto-ingest create **pending proposals** only. Permanent graph nodes/edges require explicit `accept` (CLI/tool). Rejected alternatives stay out of the accepted graph.
+
+**Reason:** Weak local models and noisy chat would rot a permanent world model if every turn wrote facts. Approval is the reliability gate.
+
+**Rejected:** Auto-accept on high confidence; silent permanent write from chat; separate “shadow graph” without a human path.
+
+### Shell-first verticals, not production-hardening per row
+
+**Decision:** Each M11–M18 row is a stoppable vertical (types + API + wire + smoke + env gates). Deep calibration (entity resolution NLP, full cloud STT SDK, rich SPA) is deferred.
+
+**Reason:** Same as overall milestones policy — complete surface compounds better than polishing one layer without use.
+
+**Rejected:** Production-harden M11 before M12; skip rows that need a strong model.
+
+### Defaults-off for costly / side-effecting knowledge paths
+
+**Decision:** Tools, inject, auto-chat-ingest, knowledge HTTP read, and voice are **off** until env flags are set. Chat + routing remain usable without them.
+
+**Reason:** Personal stack must not burn tokens, open a mic, or inject graph noise by surprise.
+
+**Rejected:** Knowledge tools always registered; inject always on; ambient voice always listening.
+
+### One knowledge.db + metadata filters (not multi-DB per project)
+
+**Decision:** Single SQLite knowledge DB; isolation via `workspaceId` on nodes and project edges — same *idea* as M9 session namespace in one memory.db.
+
+**Reason:** Cheap filter, one backup story, no circular “which DB?” for early shells.
+
+**Rejected:** One SQLite file per project/workspace as the default; Neo4j as hard dependency for M11.
+
+### Knowledge is a package; orchestrator only wires
+
+**Decision:** `@workflows/knowledge` owns store, extract, tools, ingest, identity, FP, read. Orchestrator registers tools, CLI, optional HTTP, inject. Voice is a **separate** `@workflows/voice` package (I/O only).
+
+**Reason:** Same packaging rule as other layers; voice is interface, not graph truth — keep it out of knowledge’s domain model.
+
+**Rejected:** All knowledge code inside orchestrator; voice package owning propose/accept; second HTTP “knowledge brain”.
+
+### Tools over bespoke handle branches
+
+**Decision:** Models and future UIs use the shared tool registry (`knowledge_*`). Handle gains optional inject and optional auto-ingest hooks, not a parallel knowledge API for the model.
+
+**Reason:** One extension mechanism; CLI, tool loop, HTTP, and voice all converge on the same store + tools.
+
+**Rejected:** Model-only hidden knowledge path; separate REST write API for agents.
+
+---
+
+### M11 — representation + approval loop first
+
+**Decision:** Ship concepts/claims/edges/events/proposals/neighborhood in SQLite with fixture/heuristic extract before rich model extraction.
+
+**Reason:** Proves the objects and the propose→accept loop exist offline; live extract can improve without redoing storage.
+
+**Rejected:** Wait for perfect extraction quality; start with only embeddings over free text.
+
+### M12 — tools + optional inject, not auto-brain
+
+**Decision:** Register `knowledge_*` when `KNOWLEDGE_TOOLS_ENABLED`; optional neighborhood inject when `KNOWLEDGE_INJECT_ENABLED`. Propose never accepts.
+
+**Reason:** Models should *use* the graph when tools are on; inject is a separate, cheaper, noisier path and stays gated.
+
+**Rejected:** Always inject full graph; force tools on by default.
+
+### M13 — project is a node; status is a query
+
+**Decision:** `type: "project"` node + binding edges (`used_in` | `about` | `part_of`); `getProjectStatus` summarizes linked accepted subgraph. `defaultWorkspaceId` stamps accept materialize when payload omits workspace. Inject prefers project-status when the prompt matches a project label.
+
+**Reason:** Project-state questions (“status on aktuator-v2?”) need a stable anchor without a second membership system. Edges reuse neighborhood machinery.
+
+**Rejected:** Separate project membership table; multi-DB per project; auto-bind every node in a workspace to a git repo project without an explicit project node.
+
+### M14 — grow the graph from work without silent commit
+
+**Decision:** `ingestText` / `ingestFile` / `knowledge_ingest` → proposals; light dedupe skips node proposals that already exist accepted (type+label / resolve). Auto chat segment only if `KNOWLEDGE_INGEST_AUTO_ON_CHAT` (still proposals only).
+
+**Reason:** Daily markdown/chat should feed the model, but permanent pollution stays blocked. Dedupe at propose time reduces M15 work load.
+
+**Rejected:** Continuous every-turn silent extract as default; auto-accept after ingest.
+
+### M15 — identity and contradiction as explicit maintenance
+
+**Decision:** Alias table + `normalizeLabel` (trim/case/diacritics); `mergeNodes` rewires edges/evidence, aliases from-label, marks from **rejected** (no hard delete); `contradicts` and `supersedes` are explicit flags — no auto truth arbitration.
+
+**Reason:** Volume without identity explodes labels; merge must keep provenance. Systems flag conflicts; humans/policy resolve.
+
+**Rejected:** Embedding-only identity as sole engine; silent delete on merge; auto-pick winning claim on contradiction.
+
+### M16 — first-principles is a workflow, not the whole layer
+
+**Decision:** Fixed template (goal, laws, absolute/contingent limits, bottlenecks, scaling, next action) → structured `FirstPrinciplesResult` → same proposal machinery. Optional `projectLabel` ensures project + `used_in` proposals. Offline heuristic + fixture for smoke; live `complete` optional.
+
+**Reason:** FP analysis is a primary *usage pattern* for this personal stack, but the graph must stay domain-general. Encoding FP only as free text loses typed limits/relations.
+
+**Rejected:** Restrict knowledge package to FP-only types; require live frontier model for the shell.
+
+### M17 — read without a second frontend product
+
+**Decision:** `createKnowledgeReader` stable JSON envelopes + text/table/markdown renderers; CLI `--json` / `--table`; optional `KNOWLEDGE_HTTP_READ` on **existing** integration server (`GET /v1/knowledge/*`, minimal `/knowledge` HTML). No write UI.
+
+**Reason:** Navigability for CLI, agents, and a thin browser — without React graph editors or 3D. Same token gate as M5 HTTP.
+
+**Rejected:** Full SPA graph editor; 3D “Stark” viz as M17; separate knowledge HTTP service.
+
+### M18 — voice is I/O only, default off
+
+**Decision:** `@workflows/voice` STT/TTS adapters → string → existing `handle()` / tools. Mock path for offline smoke; local command templates for real Whisper-class CLI; cloud stubs refuse unless `VOICE_ALLOW_REMOTE_AUDIO`. TTS default **off**. CLI `--voice-once --transcript`; REPL `/voice`.
+
+**Reason:** Speech must not fork a second brain or surprise the mic. Prefer local STT for privacy; document when audio leaves the machine.
+
+**Rejected:** Always-on ambient agent without wake policy; voice-owned knowledge store; cloud STT default; bundling heavy cloud SDKs in the shell.
+
+## Implementation notes (shell how, not why)
+
+Compact pointers to what exists in code (detail lives in AGENTS-M* specs):
+
+| Milestone | Code anchors |
+|-----------|----------------|
+| **M11** | `packages/knowledge` store + extract + CLI smoke |
+| **M12** | `createKnowledgeTools`, inject, `KNOWLEDGE_*` flags |
+| **M13** | `ensureProject` / `linkToProject` / `getProjectStatus`, workspace defaults |
+| **M14** | `ingest.ts`, auto-chat opt-in |
+| **M15** | `identity.ts`, aliases, merge, contradictions, supersede |
+| **M16** | `firstPrinciples.ts`, `knowledge_first_principles`, `--knowledge fp` |
+| **M17** | `read.ts`, `render.ts`, `/v1/knowledge/*` |
+| **M18** | `packages/voice`, `--voice-once`, `smoke-voice` |
 
 ## First-principles root question (kept)
 

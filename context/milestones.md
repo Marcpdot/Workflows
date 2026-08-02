@@ -48,12 +48,12 @@ Most optional brain features start **off** until explicitly enabled (`TOOLS_ENAB
 
 ## Knowledge track (M11–M18)
 
-**Status:** active  
+**Status:** active (shell track complete; deepen with use)  
 **Evidence:** confirmed  
-**Source:** design conversation 2026-08-02; [knowledge.md](knowledge.md)  
-**Revisit when:** M11 is in daily use
+**Source:** design conversation 2026-08-02; delivery through M18 `6f11d1f`; [knowledge.md](knowledge.md)  
+**Revisit when:** daily use shows which shell to harden next; or a cross-cutting invariant (propose→accept, defaults-off) is challenged
 
-Semantic world model beyond `MemoryFact` text. Same shell-first rule: each row is a stoppable vertical.
+Semantic world model beyond `MemoryFact` text. Same shell-first rule: each row is a stoppable vertical. **All eight rows have working shells** (M18 optional I/O, default off).
 
 | # | Focus | Delivers | Why this order |
 |---|--------|----------|----------------|
@@ -68,15 +68,15 @@ Semantic world model beyond `MemoryFact` text. Same shell-first rule: each row i
 
 **Bands:** M11–M13 make FP/project use *possible*; M14–M16 make growth *robust*; M17–M18 improve *interface*.
 
-**Out of early roadmap:** Neo4j as hard dependency, fully autonomous permanent writes, 3D Stark UI, full Workflows self-model on day one.
+**Out of early roadmap (unchanged):** Neo4j as hard dependency, fully autonomous permanent writes, 3D Stark UI, full Workflows self-model on day one.
 
-Details, invariants, and M11 done-when: [knowledge.md](knowledge.md).
+**Decision log (why of delivery):** [knowledge.md](knowledge.md) § “Decisions delivered with M11–M18 shells”.
 
 ## Implementation status (shells)
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** git through M10 (`74cd7f2`) and package refactor A–F (`e07dc0f` Step F, later cleanup); knowledge roadmap 2026-08-02  
+**Source:** git through M10 + packaging A–F; knowledge M11–M18 shells through `6f11d1f` (voice)  
 
 | Range | State |
 |-------|--------|

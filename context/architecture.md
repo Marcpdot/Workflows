@@ -28,7 +28,7 @@ Platform shells also present: embeddings, integration surface, compute policy, o
 
 Feature layers live under **`packages/<layer>`**. Runnable glue is **`packages/orchestrator`** (router, handle, CLI, UI, integration HTTP). See [packaging.md](packaging.md).
 
-When M11 lands, expect **`packages/knowledge`** (and possibly extraction helpers) wired the same way — orchestrator as lim, not owner of every implementation. M12 adds knowledge tools through the existing tools interface.
+**`packages/knowledge`** (M11–M17) owns graph truth, extract, tools, ingest, identity, FP, read. **`packages/voice`** (M18) is optional STT/TTS only. Orchestrator wires tools, CLI, inject, optional knowledge HTTP, and voice turns into the same `handle()` — not a second brain.
 
 **Reason:** Readable multi-layer layout without npm workspaces complexity; Orchestrator wires rather than owns every implementation.
 
@@ -45,8 +45,8 @@ See [packaging.md](packaging.md) and [milestones.md](milestones.md).
 **Evidence:** confirmed  
 **Source:** `packages/orchestrator/src/orchestrator.ts`  
 
-Typical `handle()` flow: resolve workspace/session (callers) → optional policy → route → retrieve/compress → complete or tool loop → optional suggestions → observability emit. Optional steps are env-gated so the core chat path stays simple. Pipeline planner can use **structured** plan JSON (M10) without changing raw chat.
+Typical `handle()` flow: resolve workspace/session (callers) → optional policy → route → retrieve/compress → optional knowledge inject → complete or tool loop (optional `knowledge_*` tools) → optional suggestions / optional chat-ingest proposals → observability emit. Optional steps are env-gated so the core chat path stays simple. Pipeline planner can use **structured** plan JSON (M10) without changing raw chat.
 
-Future knowledge path (from M12): optional knowledge tools in the tool loop; neighborhood retrieval into context; extract proposals from a turn or file → review/commit. Same brain; no second orchestrator in UI. Voice (M18) is another client of the same tools.
+Knowledge path (M12+): tools in the loop; optional neighborhood/project-status inject; ingest/FP produce **proposals** only; accept remains explicit. Voice (M18) is STT→string→same `handle()`; TTS optional and default off. Same brain; no second orchestrator in UI or HTTP.
 
 **Reason:** One pipeline owns the vertical; features plug in without forking a second brain in UI or HTTP layers.

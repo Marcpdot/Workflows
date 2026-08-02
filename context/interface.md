@@ -26,3 +26,20 @@ Primary human shell is a **minimal static web UI** on the same origin as M5 `POS
 
 - **TUI as M6 primary** — fine for terminal-native users, but weaker reuse of M5 HTTP and harder smoke without extra harness.
 - **Full product web app (React, auth, design system)** — noise before the brain and workflows are proven; UI is a shell, not the product.
+
+## Voice is optional I/O (M18), not a second UI product
+
+**Status:** active  
+**Evidence:** confirmed  
+**Source:** M18 shell `6f11d1f`; `@workflows/voice`; CLI `--voice-once`, REPL `/voice`  
+**Revisit when:** local STT is daily-driven or ambient wake is required
+
+Speech enters as **transcript string** into the same orchestrator path as typed chat. TTS is default **off**. Mic/cloud paths are env-gated; mock STT supports offline smoke without a device.
+
+**Reason:** Interface layer only — same tools, knowledge propose/accept, and session memory as text. Avoids a voice-specific product stack.
+
+**Rejected alternatives:**
+
+- **Always-on ambient listening without wake policy** — privacy and noise risk for a personal machine.
+- **Voice-owned knowledge or tool loop** — forks the brain; violates “one handle path”.
+- **Cloud STT/TTS as default** — audio/text leave the machine unless explicitly allowed.

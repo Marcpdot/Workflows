@@ -10,6 +10,8 @@ Other projects call Workflows through a **documented CLI contract** and optional
 
 **M9 boundaries (after shell delivery):** short-term sessions are namespaced per workspace; retrieval prefers `{workspace}/context` when present; LTM stays personal/global unless `LONGTERM_PROJECT_SCOPED`. See [workspace.md](workspace.md).
 
+**M17 knowledge read (optional):** when `KNOWLEDGE_HTTP_READ=true`, the same integration server exposes `GET /v1/knowledge/*` and a minimal `/knowledge` HTML page behind the same bearer token. Read-only; writes stay CLI/tools + accept gate. See [knowledge.md](knowledge.md).
+
 **Reason:** External repos must use the stack without living in Orchestrator’s cwd or reimplementing routing/memory. A thin adapter layer is enough; a second orchestrator in the API would drift.
 
 **Rejected alternatives:**
@@ -17,3 +19,4 @@ Other projects call Workflows through a **documented CLI contract** and optional
 - **HTTP-only platform API first** — automation and CI already need stable CLI stdout/exit codes; HTTP reuses the same handle path.
 - **Auth, multi-tenant SaaS, gRPC streaming in M5** — out of scope until the local integration story is proven.
 - **Duplicate chat logic in the HTTP layer** — violates “same brain”; UI (M6) and clients must not become a second product core.
+- **Separate knowledge HTTP service (M17)** — would fork read path and auth; reusing integration host keeps one token gate and one process.
