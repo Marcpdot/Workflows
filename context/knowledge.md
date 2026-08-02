@@ -108,9 +108,7 @@ packages/
   knowledge/    # store + query + commit API (+ extract helpers)
 ```
 
-Tools (from M12): `knowledge.findConcept`, `knowledge.getNeighborhood`,
-`knowledge.proposeClaims`, `knowledge.commitProposal`,
-`knowledge.traceProvenance`, `knowledge.findContradictions`.
+Tools (M12): see [`packages/knowledge/src/AGENTS-M12.md`](../packages/knowledge/src/AGENTS-M12.md) — `knowledge_find`, `knowledge_neighborhood`, `knowledge_list_proposals`, `knowledge_propose`, `knowledge_accept`, `knowledge_reject`.
 
 ## Voice / natural-language use (intent)
 
@@ -154,7 +152,7 @@ and still use. Do not collapse these into one “build the full world model” d
 | # | Focus | Delivers | Why this order |
 |---|--------|----------|----------------|
 | **M11** | Semantic knowledge shell | Types + SQLite; extract → propose → approve → commit; neighborhood query; smoke | Proves representation and the approval loop |
-| **M12** | Knowledge tools + orchestrator wire | `knowledge.*` tools; optional neighborhood into model context | Models can *use* the graph, not only CLI |
+| **M12** | Knowledge tools + orchestrator wire | `knowledge_*` tools; optional neighborhood into model context | Models can *use* the graph, not only CLI |
 | **M13** | Project & workspace binding | Claims/events linked to workspace/project; status queries | “Status on aktuator-v2?” becomes real |
 | **M14** | Continuous / batch ingest | New chat segment or markdown → proposals (still not blind commit) | Graph grows from daily work |
 | **M15** | Identity, merge & contradiction | Aliases, duplicate merge, supports/contradicts, revision | Prevents semantic chaos as volume grows |
@@ -179,25 +177,15 @@ and still use. Do not collapse these into one “build the full world model” d
 
 **Implementation spec:** [`packages/knowledge/src/AGENTS.md`](../packages/knowledge/src/AGENTS.md) (types, schema, API, extraction, smoke, done-when).
 
-**In scope**
+**Status:** delivered as shell (`430ce65` and follow-ups).
 
-1. Types + SQLite store for nodes, edges, evidence, events, proposals
-2. Extraction via structured output from one conversation excerpt or markdown
-3. Terminal review: list proposals → accept / edit / reject → commit
-4. Query: fetch local neighborhood (1–2 hops) and print
-5. Smoke test on temp DB
-6. Optional workspace scoping consistent with M9
+### M12 detail (tools + wire)
 
-**Out of scope for M11** — everything listed under M12–M18 and the explicit out-of-roadmap items above.
+**Implementation spec:** [`packages/knowledge/src/AGENTS-M12.md`](../packages/knowledge/src/AGENTS-M12.md).
 
-**Done when**
+**In scope:** register `knowledge_*` tools; propose vs accept still gated; optional inject default off; smoke offline.
 
-- [x] One vertical path works: excerpt/fixture → proposals → approve → store → neighborhood query
-- [x] Provenance fields populated for committed claims (`sourceEventId` on edges; event + inputHash)
-- [x] No personal secrets in public repo; DB path gitignored / `PERSONAL_CONTEXT_DIR` pattern as for LTM
-- [x] Smoke: `packages/orchestrator` → `npx tsx scripts/smoke-knowledge.ts`
-
-Later milestones get their own AGENTS.md / context notes when implementation starts; this file remains the roadmap and invariants source.
+**Out of scope:** M13–M18 items; auto-accept; always-on full-graph inject.
 
 ## First-principles root question (kept)
 
