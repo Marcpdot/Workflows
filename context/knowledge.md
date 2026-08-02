@@ -31,7 +31,8 @@ Goal in one sentence:
 **Reason:** Text memory can recall a sentence. It cannot represent
 `strøm → øker → kobbertap → produserer → varme → begrenser → kontinuerlig moment`
 with provenance, hypothesis status, and project linkage. First-principles
-work and “what is the status of actuator-v2?” need that structure.
+work and “what is the status of actuator-v2?” need that structure. Those are
+**usage patterns**, not a limit on the model’s domain.
 
 **Rejected alternatives:**
 
@@ -100,30 +101,23 @@ output is the right engine for the extraction step.
 Not everything said in chat belongs in the world model. LTM remains useful
 for “user prefers X”. Knowledge is for *structure of understanding*.
 
-Package shape (M11 shell):
+## Implementation specs (per milestone)
 
-```
-packages/
-  memory/       # unchanged role
-  knowledge/    # store + query + commit API (+ extract helpers)
-```
-
-- **M12 tools:** [`AGENTS-M12.md`](../packages/knowledge/src/AGENTS-M12.md)
-- **M13 project binding:** [`AGENTS-M13.md`](../packages/knowledge/src/AGENTS-M13.md)
+| # | Spec |
+|---|------|
+| M11 | [`AGENTS.md`](../packages/knowledge/src/AGENTS.md) |
+| M12 | [`AGENTS-M12.md`](../packages/knowledge/src/AGENTS-M12.md) |
+| M13 | [`AGENTS-M13.md`](../packages/knowledge/src/AGENTS-M13.md) |
+| M14 | [`AGENTS-M14.md`](../packages/knowledge/src/AGENTS-M14.md) |
+| M15 | [`AGENTS-M15.md`](../packages/knowledge/src/AGENTS-M15.md) |
+| M16 | [`AGENTS-M16.md`](../packages/knowledge/src/AGENTS-M16.md) |
+| M17 | [`AGENTS-M17.md`](../packages/knowledge/src/AGENTS-M17.md) |
+| M18 | [`AGENTS-M18.md`](../packages/knowledge/src/AGENTS-M18.md) |
 
 ## Voice / natural-language use (intent)
 
 **Status:** active (product intent; interface milestone M18)  
 **Evidence:** confirmed
-
-Example interaction the model is meant to support:
-
-> “Do a first-principles analysis on why thermal management becomes the
-> bottleneck when we scale actuators 10×.”
-
-System loads neighborhood of actuator / torque density / copper loss / heat,
-reasons with stored claims, proposes new claims, offers to attach to project
-`aktuator-v2`, then answers project status from the same graph.
 
 Speech I/O is **not** required for M11–M17. Voice is an interface on top of
 the same query + extraction tools once the graph and tools exist (M18).
@@ -133,12 +127,7 @@ the same query + extraction tools once the graph and tools exist (M18).
 **Status:** active  
 **Evidence:** confirmed
 
-SQLite tables (`knowledge_nodes`, `knowledge_edges`, `knowledge_evidence`,
-`knowledge_events`, `knowledge_proposals`, optional `knowledge_aliases`)
-alongside existing DBs. No new infrastructure. Migrate to a graph engine only
-if query patterns demand it.
-
-**Reason:** Personal scale; matches M0/M3 patterns; easy backup and tests.
+SQLite tables alongside existing DBs. No new infrastructure required for M11–M18 shells.
 
 ## Knowledge milestone roadmap (M11–M18)
 
@@ -147,50 +136,24 @@ if query patterns demand it.
 **Source:** design conversation 2026-08-02  
 **Revisit when:** M11 is in daily use or priorities shift
 
-Shell-first sequence. Each milestone is a complete vertical you can stop after
-and still use. Do not collapse these into one “build the full world model” drop.
-
-| # | Focus | Delivers | Why this order |
-|---|--------|----------|----------------|
-| **M11** | Semantic knowledge shell | Types + SQLite; extract → propose → approve → commit; neighborhood query; smoke | Proves representation and the approval loop |
-| **M12** | Knowledge tools + orchestrator wire | `knowledge_*` tools; optional neighborhood into model context | Models can *use* the graph, not only CLI |
-| **M13** | Project & workspace binding | Project nodes, links, `getProjectStatus`, workspaceId defaults | “Status on aktuator-v2?” becomes real |
-| **M14** | Continuous / batch ingest | New chat segment or markdown → proposals (still not blind commit) | Graph grows from daily work |
-| **M15** | Identity, merge & contradiction | Aliases, duplicate merge, supports/contradicts, revision | Prevents semantic chaos as volume grows |
-| **M16** | First-principles workflow | Fixed analysis template stored as events/claims (goal → laws → limits → scale → next bottleneck) | Direct support for the analysis style that motivated this layer |
-| **M17** | Read surface | Simple subgraph view and/or structured CLI/HTTP read API | Navigation without requiring 3D |
-| **M18** | Voice / multimodal I/O (optional) | Speech → same knowledge tools | Interface only; same brain |
-
-**Explicitly out of early roadmap**
-
-- Neo4j / Graphiti as a hard dependency
-- Fully autonomous agent that writes the permanent graph without approval
-- 3D “Stark” UI
-- Complete self-model of Workflows inside the graph on day one
+| # | Focus | Delivers |
+|---|--------|----------|
+| **M11** | Semantic knowledge shell | Store, proposals, neighborhood |
+| **M12** | Knowledge tools + wire | Models use graph via tools |
+| **M13** | Project & workspace binding | Project status queries |
+| **M14** | Continuous / batch ingest | Graph grows from work (proposals only) |
+| **M15** | Identity, merge & contradiction | Prevents semantic chaos |
+| **M16** | First-principles workflow | One analysis template on the general graph |
+| **M17** | Read surface | Navigate without 3D |
+| **M18** | Voice / multimodal I/O (optional) | Same brain, speech interface |
 
 **Capability bands**
 
-- **M11–M13** — make first-principles and project-status use *possible*
+- **M11–M13** — make structured use *possible*
 - **M14–M16** — make growth and analysis *robust*
 - **M17–M18** — improve *interface*
 
-### M11 detail (first shell)
-
-**Implementation spec:** [`packages/knowledge/src/AGENTS.md`](../packages/knowledge/src/AGENTS.md).
-
-**Status:** delivered as shell.
-
-### M12 detail (tools + wire)
-
-**Implementation spec:** [`packages/knowledge/src/AGENTS-M12.md`](../packages/knowledge/src/AGENTS-M12.md).
-
-### M13 detail (project & workspace)
-
-**Implementation spec:** [`packages/knowledge/src/AGENTS-M13.md`](../packages/knowledge/src/AGENTS-M13.md).
-
-**In scope:** `ensureProject`, `linkToProject`, `getProjectStatus`, workspaceId defaults, tools/CLI, smoke.
-
-**Out of scope:** auto-ingest, separate DB per workspace, path-safety changes.
+**Explicitly out of early roadmap:** Neo4j-as-required, fully autonomous permanent writes, 3D UI, complete self-model of Workflows on day one.
 
 ## First-principles root question (kept)
 
@@ -200,5 +163,3 @@ and still use. Do not collapse these into one “build the full world model” d
 > and error?
 
 Branches: Information → Representation → Transformation → Use.
-Recursive questions under each node: requires / must preserve / can fail /
-limits / detect / correct / next bottleneck.
