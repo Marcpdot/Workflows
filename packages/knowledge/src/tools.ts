@@ -83,6 +83,11 @@ export function createKnowledgeTools(store: KnowledgeStore): Tool[] {
         type: "number",
         description: "Max results (default 20)",
       },
+      {
+        name: "workspaceId",
+        type: "string",
+        description: "Optional workspace filter (M13)",
+      },
     ],
     async execute(args): Promise<ToolResult> {
       try {
@@ -91,12 +96,16 @@ export function createKnowledgeTools(store: KnowledgeStore): Tool[] {
           type: str(args.type) as KnowledgeNodeType | undefined,
           status: (str(args.status) as KnowledgeStatus | undefined) ?? "accepted",
           limit: num(args.limit) ?? 20,
+          workspaceId: str(args.workspaceId),
         });
         if (nodes.length === 0) {
           return fail("knowledge_find: no matching nodes", "No nodes found.");
         }
         const lines = nodes.map(
-          (n) => `${n.id}  ${n.type}  ${n.label}  (${n.status})`
+          (n) =>
+            `${n.id}  ${n.type}  ${n.label}  (${n.status})${
+              n.workspaceId ? ` ws=${n.workspaceId}` : ""
+            }`
         );
         return ok(`Found ${nodes.length} node(s):\n${lines.join("\n")}`, {
           nodes,
@@ -396,6 +405,187 @@ export function createKnowledgeTools(store: KnowledgeStore): Tool[] {
     },
   };
 
+  const knowledge_ensure_project: Tool = {
+    name: "knowledge_ensure_project",
+    description:
+      "Find or create an accepted project node by label. Use ensure_project then link_project after accepting relevant claims; use project_status for status questions.",
+    parameters: [
+      {
+        name: "label",
+        type: "string",
+        description: "Project label (e.g. aktuator-v2)",
+        required: true,
+      },
+      {
+        name: "description",
+        type: "string",
+        description: "Optional project description",
+      },
+      {
+        name: "workspaceId",
+        type: "string",
+        description: "Optional workspace id; else store default",
+      },
+    ],
+    async execute(args): Promise<ToolResult> {
+      const label = str(args.label);
+      if (!label) return fail("knowledge_ensure_project: label is required");
+      try {
+        const project = await store.ensureProject({
+          label,
+          description: str(args.description),
+          workspaceId: str(args.workspaceId),
+          createAccepted: true,
+        });
+        return ok(
+          `project ${project.label} id=${project.id} status=${project.status} workspace=${project.workspaceId ?? "none"}`,
+          { project }
+        );
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    },
+  };
+
+  const knowledge_link_project: Tool = {
+    name: "knowledge_link_project",
+    description:
+      "Link a claim/concept/artifact node to a project (relation used_in|about|part_of, default used_in).",
+    parameters: [
+      {
+        name: "nodeId",
+        type: "string",
+        description: "Source node UUID",
+        required: true,
+      },
+      {
+        name: "projectId",
+        type: "string",
+        description: "Project node UUID",
+        required: true,
+      },
+      {
+        name: "relation",
+        type: "string",
+        description: "used_in | about | part_of (default used_in)",
+      },
+    ],
+    async execute(args): Promise<ToolResult> {
+      const nodeId = str(args.nodeId);
+      const projectId = str(args.projectId);
+      if (!nodeId || !projectId) {
+        return fail("knowledge_link_project: nodeId and projectId are required");
+      }
+      const rel = str(args.relation);
+      const relation =
+        rel === "about" || rel === "part_of" || rel === "used_in"
+          ? rel
+          : "used_in";
+      try {
+        const edge = await store.linkToProject({
+          nodeId,
+          projectId,
+          relation,
+        });
+        return ok(
+          `linked ${nodeId.slice(0, 8)}… -[${edge.relation}]-> ${projectId.slice(0, 8)}…`,
+          { edge }
+        );
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    },
+  };
+
+  const knowledge_unlink_project: Tool = {
+    name: "knowledge_unlink_project",
+    description: "Remove project-binding edges (used_in|about|part_of) between node and project.",
+    parameters: [
+      {
+        name: "nodeId",
+        type: "string",
+        description: "Source node UUID",
+        required: true,
+      },
+      {
+        name: "projectId",
+        type: "string",
+        description: "Project node UUID",
+        required: true,
+      },
+    ],
+    async execute(args): Promise<ToolResult> {
+      const nodeId = str(args.nodeId);
+      const projectId = str(args.projectId);
+      if (!nodeId || !projectId) {
+        return fail(
+          "knowledge_unlink_project: nodeId and projectId are required"
+        );
+      }
+      try {
+        const removed = await store.unlinkFromProject({ nodeId, projectId });
+        return ok(
+          removed
+            ? `unlinked ${nodeId.slice(0, 8)}… from project ${projectId.slice(0, 8)}…`
+            : "no project-link edges found",
+          { removed }
+        );
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    },
+  };
+
+  const knowledge_project_status: Tool = {
+    name: "knowledge_project_status",
+    description:
+      "Summarize a project: linked claims/concepts/artifacts and edges. Prefer this for “what is status on <project>?” questions.",
+    parameters: [
+      {
+        name: "label",
+        type: "string",
+        description: "Project label (if projectId omitted)",
+      },
+      {
+        name: "projectId",
+        type: "string",
+        description: "Project node UUID (if label omitted)",
+      },
+      {
+        name: "hops",
+        type: "number",
+        description: "1 or 2 (default 1)",
+      },
+      {
+        name: "workspaceId",
+        type: "string",
+        description: "Optional workspace check",
+      },
+    ],
+    async execute(args): Promise<ToolResult> {
+      const label = str(args.label);
+      const projectId = str(args.projectId);
+      if (!label && !projectId) {
+        return fail(
+          "knowledge_project_status: provide label or projectId"
+        );
+      }
+      const hopsRaw = num(args.hops) ?? 1;
+      const hops = hopsRaw >= 2 ? 2 : 1;
+      try {
+        const status = await store.getProjectStatus({
+          label,
+          projectId,
+          hops: hops as 1 | 2,
+          workspaceId: str(args.workspaceId),
+        });
+        return ok(status.summaryLines.join("\n"), { status });
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    },
+  };
+
   return [
     knowledge_find,
     knowledge_get,
@@ -404,5 +594,9 @@ export function createKnowledgeTools(store: KnowledgeStore): Tool[] {
     knowledge_propose,
     knowledge_accept,
     knowledge_reject,
+    knowledge_ensure_project,
+    knowledge_link_project,
+    knowledge_unlink_project,
+    knowledge_project_status,
   ];
 }

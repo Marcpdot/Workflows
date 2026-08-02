@@ -849,13 +849,18 @@ export function loadConfigFromEnv(
           : undefined,
       });
 
-  // M12: knowledge store + optional tools (requires TOOLS_ENABLED path for loop)
+  // M12/M13: knowledge store + optional tools (requires TOOLS_ENABLED path for loop)
   const knowledgeToolsEnabled = envFlagTrue(env.KNOWLEDGE_TOOLS_ENABLED);
   const knowledgeInjectEnabled = envFlagTrue(env.KNOWLEDGE_INJECT_ENABLED);
   const knowledgeDbPath = resolveKnowledgeDbPath(cwd, env);
+  const defaultWorkspaceId =
+    env.KNOWLEDGE_DEFAULT_WORKSPACE_ID?.trim() || workspace.id;
   const knowledge =
     knowledgeToolsEnabled || knowledgeInjectEnabled
-      ? createKnowledgeStore({ dbPath: knowledgeDbPath })
+      ? createKnowledgeStore({
+          dbPath: knowledgeDbPath,
+          defaultWorkspaceId,
+        })
       : undefined;
 
   let tools = toolsDisabled ? undefined : createBuiltinRegistry();

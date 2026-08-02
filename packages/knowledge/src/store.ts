@@ -390,6 +390,31 @@ export class KnowledgeSqliteStore {
       });
   }
 
+  deleteEdgeBetween(
+    fromNodeId: string,
+    toNodeId: string,
+    relations?: string[]
+  ): number {
+    if (relations && relations.length > 0) {
+      const ph = relations.map(() => "?").join(",");
+      const r = this.db
+        .prepare(
+          `DELETE FROM knowledge_edges
+           WHERE from_node_id = ? AND to_node_id = ?
+             AND relation IN (${ph})`
+        )
+        .run(fromNodeId, toNodeId, ...relations);
+      return r.changes;
+    }
+    const r = this.db
+      .prepare(
+        `DELETE FROM knowledge_edges
+         WHERE from_node_id = ? AND to_node_id = ?`
+      )
+      .run(fromNodeId, toNodeId);
+    return r.changes;
+  }
+
   getEdgesFromOrTo(
     nodeIds: string[],
     status?: KnowledgeStatus

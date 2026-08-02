@@ -196,13 +196,13 @@ Uendret: ingen ekte prosjektinnhold i public repo; smoke bruker fake labels.
 
 ## Ferdig når
 
-- [ ] `ensureProject` / `linkToProject` / `getProjectStatus` implementert
-- [ ] `workspaceId` settes fornuftig ved accept når default er konfigurert
-- [ ] CLI project-status fungerer
-- [ ] Tools registrert når knowledge tools enabled (eller dokumentert defer til umiddelbar M12 follow-up)
-- [ ] Smoke passerer offline
-- [ ] M11 vertical uendret for ikke-prosjekt bruk
-- [ ] Context/milestones oppdatert ved leveranse
+- [x] `ensureProject` / `linkToProject` / `getProjectStatus` implementert
+- [x] `workspaceId` settes fornuftig ved accept når default er konfigurert
+- [x] CLI project-status fungerer
+- [x] Tools registrert når knowledge tools enabled (eller dokumentert defer til umiddelbar M12 follow-up)
+- [x] Smoke passerer offline
+- [x] M11 vertical uendret for ikke-prosjekt bruk
+- [x] Context/milestones oppdatert ved leveranse
 
 ## Design notes
 

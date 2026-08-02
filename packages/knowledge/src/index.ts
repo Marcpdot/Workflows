@@ -10,6 +10,8 @@ export type {
   KnowledgeStatus,
   KnowledgeStore,
   KnowledgeStoreConfig,
+  ProjectLinkRelation,
+  ProjectStatus,
 } from "./types.js";
 export {
   createKnowledgeStore,

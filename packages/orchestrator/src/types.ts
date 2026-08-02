@@ -137,8 +137,9 @@ export interface OrchestratorConfig {
   /** When true, include truncated prompt in request events */
   obsLogPrompts?: boolean;
   /**
-   * Milestone 12 knowledge store (optional).
+   * Milestone 12/13 knowledge store (optional).
    * Tools registered when KNOWLEDGE_TOOLS_ENABLED; inject when KNOWLEDGE_INJECT_ENABLED.
+   * Store is opened with defaultWorkspaceId from workspace / KNOWLEDGE_DEFAULT_WORKSPACE_ID.
    */
   knowledge?: KnowledgeStore;
   knowledgeSettings?: {

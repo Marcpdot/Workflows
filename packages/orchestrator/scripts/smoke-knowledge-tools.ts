@@ -35,10 +35,14 @@ async function main(): Promise<void> {
     "knowledge_propose",
     "knowledge_accept",
     "knowledge_reject",
+    "knowledge_ensure_project",
+    "knowledge_link_project",
+    "knowledge_unlink_project",
+    "knowledge_project_status",
   ]) {
     assert(names.has(n), `missing tool ${n}`);
   }
-  console.log("OK: knowledge tools registered");
+  console.log("OK: knowledge tools registered (M12+M13)");
 
   const ctx = { workspaceRoot: process.cwd() };
 

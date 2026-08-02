@@ -72,9 +72,12 @@ Options:
   --knowledge proposals [pending|accepted|rejected]
   --knowledge accept <proposalId>
   --knowledge reject <proposalId>
-  --knowledge find [label=...] [type=concept|claim|...]
+  --knowledge find [label=...] [type=concept|claim|...] [workspaceId=...]
   --knowledge neighborhood <nodeId> [hops=1|2]
   --knowledge extract --text "..."   # fixture-free extract via local model if available
+  --knowledge ensure-project label=NAME [description=...] [workspaceId=...]
+  --knowledge link nodeId=... projectId=... [relation=used_in|about|part_of]
+  --knowledge project-status [label=NAME|projectId=...] [hops=1|2]
   --pipeline <task>  Sequential planner→worker pipeline (Milestone 3C)
   --workspace, -w PATH  Workspace root for tools + session namespace (env WORKSPACE_ROOT)
   --list-sessions    List short-term session ids (optional filter by current workspace)
@@ -109,6 +112,8 @@ Env (see .env.example):
   LONGTERM_DB_PATH, PERSONAL_CONTEXT_DIR, LONGTERM_AUTO_INJECT, LONGTERM_DISABLED
   LONGTERM_PROJECT_SCOPED, LONGTERM_PROJECT_DB
   KNOWLEDGE_DB_PATH, PERSONAL_CONTEXT_DIR (knowledge.db)
+  KNOWLEDGE_DEFAULT_WORKSPACE_ID (else from --workspace / WORKSPACE_ROOT id)
+  KNOWLEDGE_TOOLS_ENABLED, KNOWLEDGE_INJECT_ENABLED
   PROACTIVE_ENABLED, PROACTIVE_MAX, PROACTIVE_USE_MODEL
   AGENTS_PIPELINE_ENABLED
   WORKSPACE_ROOT (or TOOL_WORKSPACE_ROOT), INTEGRATION_HTTP_PORT, INTEGRATION_HTTP_TOKEN
@@ -117,7 +122,16 @@ Env (see .env.example):
 }
 
 interface KnowledgeCliAction {
-  kind: "proposals" | "accept" | "reject" | "find" | "neighborhood" | "extract";
+  kind:
+    | "proposals"
+    | "accept"
+    | "reject"
+    | "find"
+    | "neighborhood"
+    | "extract"
+    | "ensure-project"
+    | "link"
+    | "project-status";
   id?: string;
   filter?: string;
   args: Record<string, unknown>;
@@ -308,10 +322,13 @@ function parseArgs(argv: string[]): CliArgs {
             "find",
             "neighborhood",
             "extract",
+            "ensure-project",
+            "link",
+            "project-status",
           ].includes(sub)
         ) {
           console.error(
-            "--knowledge requires proposals|accept|reject|find|neighborhood|extract"
+            "--knowledge requires proposals|accept|reject|find|neighborhood|extract|ensure-project|link|project-status"
           );
           process.exit(1);
         }
@@ -339,12 +356,17 @@ function parseArgs(argv: string[]): CliArgs {
             filter,
             args: {},
           };
-        } else if (sub === "find") {
+        } else if (
+          sub === "find" ||
+          sub === "ensure-project" ||
+          sub === "link" ||
+          sub === "project-status"
+        ) {
           const kv: string[] = [];
           while (i + 1 < argv.length && argv[i + 1]!.includes("=")) {
             kv.push(argv[++i]!);
           }
-          knowledgeAction = { kind: "find", args: parseKvArgs(kv) };
+          knowledgeAction = { kind: sub, args: parseKvArgs(kv) };
         } else if (sub === "extract") {
           let text: string | undefined;
           const kv: string[] = [];
@@ -419,17 +441,41 @@ function parseArgs(argv: string[]): CliArgs {
   };
 }
 
-function openKnowledgeFromEnv(): KnowledgeStore {
+function resolveDefaultKnowledgeWorkspaceId(
+  env: NodeJS.ProcessEnv = process.env,
+  options?: { workspaceRoot?: string; cwd?: string }
+): string | null {
+  if (env.KNOWLEDGE_DEFAULT_WORKSPACE_ID?.trim()) {
+    return env.KNOWLEDGE_DEFAULT_WORKSPACE_ID.trim();
+  }
+  const ws = resolveWorkspace({
+    workspaceRoot: options?.workspaceRoot,
+    cwd: options?.cwd ?? process.cwd(),
+    env,
+  });
+  return ws.id;
+}
+
+function openKnowledgeFromEnv(options?: {
+  workspaceRoot?: string;
+}): KnowledgeStore {
+  const env = process.env;
   return createKnowledgeStore({
-    dbPath: resolveKnowledgeDbPath(process.cwd(), process.env),
+    dbPath: resolveKnowledgeDbPath(process.cwd(), env),
+    defaultWorkspaceId: resolveDefaultKnowledgeWorkspaceId(env, {
+      workspaceRoot: options?.workspaceRoot,
+    }),
   });
 }
 
 async function runKnowledgeAction(
   action: KnowledgeCliAction,
-  asJson: boolean
+  asJson: boolean,
+  options?: { workspaceRoot?: string }
 ): Promise<void> {
-  const store = openKnowledgeFromEnv();
+  const store = openKnowledgeFromEnv({
+    workspaceRoot: options?.workspaceRoot,
+  });
   try {
     if (action.kind === "proposals") {
       const status =
@@ -487,12 +533,19 @@ async function runKnowledgeAction(
         limit: action.args.limit
           ? Number(action.args.limit)
           : 20,
+        workspaceId: action.args.workspaceId
+          ? String(action.args.workspaceId)
+          : undefined,
       });
       if (asJson) console.log(JSON.stringify(nodes, null, 2));
       else {
         console.log(`[knowledge] find count=${nodes.length}`);
         for (const n of nodes) {
-          console.log(`  ${n.id}  ${n.type}  ${n.label}  (${n.status})`);
+          console.log(
+            `  ${n.id}  ${n.type}  ${n.label}  (${n.status})${
+              n.workspaceId ? ` ws=${n.workspaceId}` : ""
+            }`
+          );
         }
       }
       return;
@@ -515,6 +568,97 @@ async function runKnowledgeAction(
           console.log(
             `  edge ${e.fromNodeId} -[${e.relation}]-> ${e.toNodeId}`
           );
+        }
+      }
+      return;
+    }
+    if (action.kind === "ensure-project") {
+      const label = action.args.label
+        ? String(action.args.label).trim()
+        : "";
+      if (!label) {
+        console.error("--knowledge ensure-project requires label=...");
+        process.exit(1);
+      }
+      const project = await store.ensureProject({
+        label,
+        description: action.args.description
+          ? String(action.args.description)
+          : undefined,
+        workspaceId: action.args.workspaceId
+          ? String(action.args.workspaceId)
+          : undefined,
+        createAccepted: true,
+      });
+      if (asJson) console.log(JSON.stringify(project, null, 2));
+      else {
+        console.log(
+          `[knowledge] ensure-project ${project.label} id=${project.id} status=${project.status} workspace=${project.workspaceId ?? "none"}`
+        );
+      }
+      return;
+    }
+    if (action.kind === "link") {
+      const nodeId = action.args.nodeId
+        ? String(action.args.nodeId).trim()
+        : "";
+      const projectId = action.args.projectId
+        ? String(action.args.projectId).trim()
+        : "";
+      if (!nodeId || !projectId) {
+        console.error(
+          "--knowledge link requires nodeId=... projectId=..."
+        );
+        process.exit(1);
+      }
+      const relRaw = action.args.relation
+        ? String(action.args.relation)
+        : "used_in";
+      const relation =
+        relRaw === "about" || relRaw === "part_of" || relRaw === "used_in"
+          ? relRaw
+          : "used_in";
+      const edge = await store.linkToProject({
+        nodeId,
+        projectId,
+        relation,
+      });
+      if (asJson) console.log(JSON.stringify(edge, null, 2));
+      else {
+        console.log(
+          `[knowledge] link ${edge.fromNodeId} -[${edge.relation}]-> ${edge.toNodeId}`
+        );
+      }
+      return;
+    }
+    if (action.kind === "project-status") {
+      const label = action.args.label
+        ? String(action.args.label).trim()
+        : undefined;
+      const projectId = action.args.projectId
+        ? String(action.args.projectId).trim()
+        : undefined;
+      if (!label && !projectId) {
+        console.error(
+          "--knowledge project-status requires label=... or projectId=..."
+        );
+        process.exit(1);
+      }
+      const hops =
+        action.args.hops === "2" || action.args.hops === 2 ? 2 : 1;
+      const status = await store.getProjectStatus({
+        label,
+        projectId,
+        hops: hops as 1 | 2,
+        workspaceId: action.args.workspaceId
+          ? String(action.args.workspaceId)
+          : undefined,
+      });
+      if (asJson) console.log(JSON.stringify(status, null, 2));
+      else {
+        console.log(`[knowledge] project-status`);
+        for (const line of status.summaryLines) {
+          console.log(`  ${line}`);
         }
       }
       return;
@@ -1240,7 +1384,9 @@ async function main(): Promise<void> {
       }
 
       if (args.knowledgeAction) {
-        await runKnowledgeAction(args.knowledgeAction, args.json);
+        await runKnowledgeAction(args.knowledgeAction, args.json, {
+          workspaceRoot: args.workspace,
+        });
         return;
       }
 

@@ -1,10 +1,29 @@
 /**
  * Optional knowledge neighborhood inject into model context (M12).
+ * M13: prefer project status when prompt matches a project label.
  * Default off — orchestrator only calls when KNOWLEDGE_INJECT_ENABLED.
  */
 
 import { formatNeighborhood, simpleQueryTokens } from "./formatNeighborhood.js";
 import type { KnowledgeStore } from "./types.js";
+
+/**
+ * Exact-ish project label match: whole label as substring with non-alnum
+ * boundaries, or single-token equality against query tokens.
+ */
+function promptMatchesProjectLabel(
+  promptLower: string,
+  tokens: string[],
+  label: string
+): boolean {
+  const lab = label.trim().toLowerCase();
+  if (!lab) return false;
+  if (tokens.includes(lab)) return true;
+  // Multi-word / hyphenated labels: bounded substring match
+  const escaped = lab.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`(^|[^a-z0-9æøå])${escaped}([^a-z0-9æøå]|$)`, "i");
+  return re.test(promptLower);
+}
 
 /**
  * Build a compact context block from accepted graph hits for a user prompt.
@@ -23,6 +42,36 @@ export async function buildKnowledgeInjectBlock(
   const hops = options?.hops === 2 ? 2 : 1;
   const maxSeeds = options?.maxSeeds ?? 3;
   const tokens = simpleQueryTokens(userPrompt, 10);
+  const promptLower = userPrompt.toLowerCase();
+
+  // M13: project-status first when a project label is mentioned
+  try {
+    const projects = await store.findNodes({
+      type: "project",
+      status: "accepted",
+      limit: 40,
+    });
+    for (const p of projects) {
+      if (!promptMatchesProjectLabel(promptLower, tokens, p.label)) continue;
+      const status = await store.getProjectStatus({
+        projectId: p.id,
+        hops: hops as 1 | 2,
+      });
+      let text = [
+        "Project status (accepted graph only):",
+        ...status.summaryLines,
+      ].join("\n");
+      if (text.length > maxChars) {
+        text =
+          text.slice(0, Math.max(0, maxChars - 20)) +
+          `\n…[truncated ${text.length} chars]`;
+      }
+      return text;
+    }
+  } catch {
+    // fall through to neighborhood inject
+  }
+
   if (tokens.length === 0) return null;
 
   const seedIds: string[] = [];

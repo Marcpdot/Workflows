@@ -84,7 +84,24 @@ export interface KnowledgeProposal {
 
 export interface KnowledgeStoreConfig {
   dbPath: string;
+  /** Applied to new nodes on accept when payload omits workspaceId (M13) */
+  defaultWorkspaceId?: string | null;
 }
+
+/** Project status summary for tools/CLI (M13) */
+export interface ProjectStatus {
+  project: KnowledgeNode;
+  workspaceId?: string | null;
+  linkedNodes: KnowledgeNode[];
+  edges: KnowledgeEdge[];
+  claims: KnowledgeNode[];
+  concepts: KnowledgeNode[];
+  artifacts: KnowledgeNode[];
+  pendingProposalCount: number;
+  summaryLines: string[];
+}
+
+export type ProjectLinkRelation = "used_in" | "about" | "part_of";
 
 export interface KnowledgeStore {
   createEvent(input: {
@@ -128,6 +145,35 @@ export interface KnowledgeStore {
     nodeId: string,
     options?: { hops?: 1 | 2; status?: KnowledgeStatus }
   ): Promise<{ nodes: KnowledgeNode[]; edges: KnowledgeEdge[] }>;
+
+  /** M13: find or create accepted project node */
+  ensureProject(input: {
+    label: string;
+    description?: string;
+    workspaceId?: string | null;
+    /** default true for CLI/tools; false only returns existing or throws if missing */
+    createAccepted?: boolean;
+  }): Promise<KnowledgeNode>;
+
+  /** M13: edge node → project (used_in | about | part_of) */
+  linkToProject(input: {
+    nodeId: string;
+    projectId: string;
+    relation?: ProjectLinkRelation;
+    sourceEventId?: string;
+  }): Promise<KnowledgeEdge>;
+
+  unlinkFromProject(input: {
+    nodeId: string;
+    projectId: string;
+  }): Promise<boolean>;
+
+  getProjectStatus(input: {
+    projectId?: string;
+    label?: string;
+    workspaceId?: string | null;
+    hops?: 1 | 2;
+  }): Promise<ProjectStatus>;
 
   close(): void;
 }
