@@ -19,11 +19,22 @@ Dette er det viktigste laget for å ikke miste progresjon når du bytter modell.
 
 Personlig innhold (profil, private preferanser) lagres utenfor public repo (f.eks. `PERSONAL_CONTEXT_DIR` / gitignored DB).
 
-## Knowledge (planlagt)
+## Knowledge (planlagt, M11–M18)
 Semantisk verdensmodell over plain facts: konsepter, påstander (claims), relasjoner, hendelser, proveniens og usikkerhet.  
-Rå samtaler/analyser → structured extraction → forslag → godkjenning → graf/store.  
-Støtter first-principles-resonnering og prosjektstatus uten å erstatte short-term/LTM.  
-Se `context/knowledge.md` og Milestone 11.
+Rå samtaler/analyser → structured extraction → forslag → godkjenning → store.  
+Støtter first-principles-resonnering og prosjektstatus uten å erstatte short-term/LTM.
+
+Roadmap (shell-first):
+- **M11** Semantic knowledge shell (SQLite + extract → approve → neighborhood)
+- **M12** Knowledge tools + orchestrator wire
+- **M13** Project & workspace binding
+- **M14** Continuous / batch ingest (proposals, not blind write)
+- **M15** Identity, merge & contradiction
+- **M16** First-principles workflow template
+- **M17** Read surface (subgraph / structured read)
+- **M18** Voice / multimodal I/O (optional)
+
+Detaljer og invariants: `context/knowledge.md`.
 
 ## Tool
 Alle eksterne evner (kodekjøring, filsystem, web, kalkulator, dine egne quant-modeller, hardware-grensesnitt senere) går gjennom et felles tool-interface. Modellene snakker bare med tools, ikke direkte med verden.
@@ -86,8 +97,31 @@ CLI + eventuelt enkel web/UI. Jarvis-følelsen kommer via tekst/stemme + proakti
 - Påliteligere strukturerte svar (JSON/planer) fra modeller
 - Støtte for tools, pipeline og evaluering som er avhengig av parsebar output
 
-## Milestone 11 - Semantic knowledge model
-- Eksplisitte konsepter, påstander, relasjoner, hendelser og proveniens (SQLite-shell)
+## Milestone 11 - Semantic knowledge model (shell)
+- Eksplisitte konsepter, påstander, relasjoner, hendelser og proveniens (SQLite)
 - Extraction via structured output → forslag → godkjenning → lagring
-- Hent lokal undergraf (neighborhood); ingen krav om Neo4j/UI/stemme i første shell
+- Hent lokal undergraf (neighborhood)
 - Detaljer: `context/knowledge.md`
+
+## Milestone 12 - Knowledge tools + orchestrator wire
+- `knowledge.*` tools for modeller
+- Valgfri undergraf inn i kontekst
+
+## Milestone 13 - Project & workspace binding
+- Kobling claims/events ↔ prosjekt/workspace
+- Prosjektstatus-spørringer
+
+## Milestone 14 - Continuous / batch ingest
+- Samtaleutdrag eller markdown → proposals (ikke blind permanent skriv)
+
+## Milestone 15 - Identity, merge & contradiction
+- Alias, duplikatfletting, supports/contradicts, revisjon
+
+## Milestone 16 - First-principles workflow
+- Fast analysetemplate lagret som events/claims
+
+## Milestone 17 - Read surface
+- Enkel undergraf-visning og/eller strukturert read-API
+
+## Milestone 18 - Voice / multimodal I/O (valgfritt)
+- Tale → samme knowledge-tools (interface, ikke ny hjerne)

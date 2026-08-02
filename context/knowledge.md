@@ -109,13 +109,13 @@ packages/
   extraction/   # optional; or live under knowledge at first
 ```
 
-Tools later: `knowledge.findConcept`, `knowledge.getNeighborhood`,
+Tools (from M12): `knowledge.findConcept`, `knowledge.getNeighborhood`,
 `knowledge.proposeClaims`, `knowledge.commitProposal`,
 `knowledge.traceProvenance`, `knowledge.findContradictions`.
 
 ## Voice / natural-language use (intent)
 
-**Status:** active (product intent, not M11 scope)  
+**Status:** active (product intent; interface milestone M18)  
 **Evidence:** confirmed
 
 Example interaction the model is meant to support:
@@ -127,8 +127,8 @@ System loads neighborhood of actuator / torque density / copper loss / heat,
 reasons with stored claims, proposes new claims, offers to attach to project
 `aktuator-v2`, then answers project status from the same graph.
 
-M11 does **not** require speech I/O. Voice is an interface on top of the same
-query + extraction tools once the graph exists.
+Speech I/O is **not** required for M11–M17. Voice is an interface on top of
+the same query + extraction tools once the graph and tools exist (M18).
 
 ## Storage choice for first shell
 
@@ -142,11 +142,41 @@ if query patterns demand it.
 
 **Reason:** Personal scale; matches M0/M3 patterns; easy backup and tests.
 
-## Milestone 11 — Semantic knowledge model (shell)
+## Knowledge milestone roadmap (M11–M18)
 
-**Status:** planned  
-**Evidence:** confirmed direction  
-**Source:** this file; 2026-08-02
+**Status:** active  
+**Evidence:** confirmed  
+**Source:** design conversation 2026-08-02  
+**Revisit when:** M11 is in daily use or priorities shift
+
+Shell-first sequence. Each milestone is a complete vertical you can stop after
+and still use. Do not collapse these into one “build the full world model” drop.
+
+| # | Focus | Delivers | Why this order |
+|---|--------|----------|----------------|
+| **M11** | Semantic knowledge shell | Types + SQLite; extract → propose → approve → commit; neighborhood query; smoke | Proves representation and the approval loop |
+| **M12** | Knowledge tools + orchestrator wire | `knowledge.*` tools; optional neighborhood into model context | Models can *use* the graph, not only CLI |
+| **M13** | Project & workspace binding | Claims/events linked to workspace/project; status queries | “Status on aktuator-v2?” becomes real |
+| **M14** | Continuous / batch ingest | New chat segment or markdown → proposals (still not blind commit) | Graph grows from daily work |
+| **M15** | Identity, merge & contradiction | Aliases, duplicate merge, supports/contradicts, revision | Prevents semantic chaos as volume grows |
+| **M16** | First-principles workflow | Fixed analysis template stored as events/claims (goal → laws → limits → scale → next bottleneck) | Direct support for the analysis style that motivated this layer |
+| **M17** | Read surface | Simple subgraph view and/or structured CLI/HTTP read API | Navigation without requiring 3D |
+| **M18** | Voice / multimodal I/O (optional) | Speech → same knowledge tools | Interface only; same brain |
+
+**Explicitly out of early roadmap**
+
+- Neo4j / Graphiti as a hard dependency
+- Fully autonomous agent that writes the permanent graph without approval
+- 3D “Stark” UI
+- Complete self-model of Workflows inside the graph on day one
+
+**Capability bands**
+
+- **M11–M13** — make first-principles and project-status use *possible*
+- **M14–M16** — make growth and analysis *robust*
+- **M17–M18** — improve *interface*
+
+### M11 detail (first shell)
 
 **In scope**
 
@@ -157,19 +187,15 @@ if query patterns demand it.
 5. Smoke test on temp DB
 6. Optional workspace scoping consistent with M9
 
-**Out of scope for M11**
-
-- Neo4j / Graphiti as required dependency
-- 2D/3D graph UI
-- Fully autonomous continuous ingest of every turn
-- Full self-model of Workflows inside the graph
-- Voice pipeline
+**Out of scope for M11** — everything listed under M12–M18 and the explicit out-of-roadmap items above.
 
 **Done when**
 
 - One vertical path works: excerpt → proposals → approve → store → neighborhood query
 - Provenance fields populated for committed claims
-- No personal secrets in public repo; DB path gitignored / PERSONAL_CONTEXT_DIR pattern as for LTM
+- No personal secrets in public repo; DB path gitignored / `PERSONAL_CONTEXT_DIR` pattern as for LTM
+
+Later milestones get their own AGENTS.md / context notes when implementation starts; this file remains the roadmap and invariants source.
 
 ## First-principles root question (kept)
 
