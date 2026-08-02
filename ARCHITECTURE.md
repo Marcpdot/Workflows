@@ -19,6 +19,12 @@ Dette er det viktigste laget for å ikke miste progresjon når du bytter modell.
 
 Personlig innhold (profil, private preferanser) lagres utenfor public repo (f.eks. `PERSONAL_CONTEXT_DIR` / gitignored DB).
 
+## Knowledge (planlagt)
+Semantisk verdensmodell over plain facts: konsepter, påstander (claims), relasjoner, hendelser, proveniens og usikkerhet.  
+Rå samtaler/analyser → structured extraction → forslag → godkjenning → graf/store.  
+Støtter first-principles-resonnering og prosjektstatus uten å erstatte short-term/LTM.  
+Se `context/knowledge.md` og Milestone 11.
+
 ## Tool
 Alle eksterne evner (kodekjøring, filsystem, web, kalkulator, dine egne quant-modeller, hardware-grensesnitt senere) går gjennom et felles tool-interface. Modellene snakker bare med tools, ikke direkte med verden.
 
@@ -79,3 +85,9 @@ CLI + eventuelt enkel web/UI. Jarvis-følelsen kommer via tekst/stemme + proakti
 ## Milestone 10 - Structured output
 - Påliteligere strukturerte svar (JSON/planer) fra modeller
 - Støtte for tools, pipeline og evaluering som er avhengig av parsebar output
+
+## Milestone 11 - Semantic knowledge model
+- Eksplisitte konsepter, påstander, relasjoner, hendelser og proveniens (SQLite-shell)
+- Extraction via structured output → forslag → godkjenning → lagring
+- Hent lokal undergraf (neighborhood); ingen krav om Neo4j/UI/stemme i første shell
+- Detaljer: `context/knowledge.md`

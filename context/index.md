@@ -3,11 +3,12 @@
 Lean index of why-knowledge. Load a topic file only when relevant.
 
 - [architecture.md](architecture.md) — layered intent; handle pipeline; package shape
-- [milestones.md](milestones.md) — shell-first delivery; **M0–M10 delivered**; packaging done
+- [milestones.md](milestones.md) — shell-first delivery; **M0–M10 delivered**; **M11 planned** (knowledge); packaging done
 - [packaging.md](packaging.md) — **packages/* + packages/orchestrator** (refactor A–F why)
 - [routing.md](routing.md) — rule-based local vs frontier selection
 - [policy.md](policy.md) — budget/tier compute policy over the router (M7)
 - [memory.md](memory.md) — short-term SQLite; LTM + embeddings; session keys vs workspace
+- [knowledge.md](knowledge.md) — **semantic world model** (concepts, claims, relations, provenance); M11 shell direction
 - [workspace.md](workspace.md) — multi-project session/workspace isolation (M9)
 - [structured.md](structured.md) — parseable JSON + repair, not constrained decoding (M10)
 - [models.md](models.md) — default small local model, Ollama CLI, Grok frontier
