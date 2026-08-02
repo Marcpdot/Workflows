@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@workflows/structured": "file:../structured",
+    "@workflows/tools": "file:../tools",
     "better-sqlite3": "^13.0.2"
   },
   "devDependencies": {

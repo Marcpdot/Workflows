@@ -11,6 +11,7 @@ import type { Embedder, VectorStore } from "@workflows/embeddings";
 import type { ComputePolicy, PolicyDecision } from "@workflows/policy";
 import type { Observer } from "@workflows/observability";
 import type { WorkspaceContext } from "@workflows/workspace";
+import type { KnowledgeStore } from "@workflows/knowledge";
 
 export type ModelChoice = "local" | "mid" | "frontier";
 
@@ -135,6 +136,17 @@ export interface OrchestratorConfig {
   observer?: Observer;
   /** When true, include truncated prompt in request events */
   obsLogPrompts?: boolean;
+  /**
+   * Milestone 12 knowledge store (optional).
+   * Tools registered when KNOWLEDGE_TOOLS_ENABLED; inject when KNOWLEDGE_INJECT_ENABLED.
+   */
+  knowledge?: KnowledgeStore;
+  knowledgeSettings?: {
+    toolsEnabled: boolean;
+    injectEnabled: boolean;
+    injectMaxChars: number;
+    injectHops: 1 | 2;
+  };
 }
 
 export interface OrchestratorResult {

@@ -193,14 +193,14 @@ Same as M11: no real personal graph data in repo; smoke uses fake labels; db und
 
 ## Ferdig når
 
-- [ ] Knowledge tools implementert og registrerbare via orchestrator when enabled
-- [ ] Tool loop can call find / neighborhood / propose / accept / reject
-- [ ] Propose never auto-accepts
-- [ ] Optional inject behind flag, default off, max chars enforced
-- [ ] `smoke-knowledge-tools.ts` passes offline
-- [ ] Default chat path unchanged when flags off
-- [ ] M11 CLI `--knowledge` still works
-- [ ] `context/milestones.md` / knowledge status updated when delivered
+- [x] Knowledge tools implementert og registrerbare via orchestrator when enabled
+- [x] Tool loop can call find / neighborhood / propose / accept / reject
+- [x] Propose never auto-accepts
+- [x] Optional inject behind flag, default off, max chars enforced
+- [x] `smoke-knowledge-tools.ts` passes offline
+- [x] Default chat path unchanged when flags off
+- [x] M11 CLI `--knowledge` still works
+- [x] `context/milestones.md` / knowledge status updated when delivered
 
 ## Design notes (why this shape)
 

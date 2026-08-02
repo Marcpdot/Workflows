@@ -38,6 +38,13 @@ import {
   resolveLongTermDbPath,
   type LongTermMemory,
 } from "@workflows/memory";
+import {
+  buildKnowledgeInjectBlock,
+  createKnowledgeStore,
+  createKnowledgeTools,
+  resolveKnowledgeDbPath,
+  type KnowledgeStore,
+} from "@workflows/knowledge";
 import { createEmbeddingsFromEnv } from "@workflows/embeddings";
 import { suggestNextSteps } from "@workflows/proactive";
 import {
@@ -80,6 +87,8 @@ export class Orchestrator {
   private readonly obsLogPrompts: boolean;
   /** Milestone 3A long-term memory (facts/preferences). Optional. */
   readonly longTerm?: LongTermMemory;
+  /** Milestone 12 knowledge store (optional). */
+  readonly knowledge?: KnowledgeStore;
   constructor(
     config: OrchestratorConfig,
     clients?: {
@@ -91,6 +100,7 @@ export class Orchestrator {
     this.config = config;
     this.tools = config.tools;
     this.longTerm = config.longTerm;
+    this.knowledge = config.knowledge;
     this.policy =
       config.policy ??
       new DefaultComputePolicy(loadPolicyConfig(process.env));
@@ -137,10 +147,15 @@ export class Orchestrator {
     return route(prompt, this.routerConfig);
   }
 
-  /** Close optional LTM + vector store (idempotent). */
+  /** Close optional LTM + knowledge + vector store (idempotent). */
   close(): void {
     try {
       this.longTerm?.close();
+    } catch {
+      /* ignore */
+    }
+    try {
+      this.knowledge?.close();
     } catch {
       /* ignore */
     }
@@ -459,6 +474,26 @@ export class Orchestrator {
     if (useToolLoop && this.tools) {
       systemParts.push(TOOLS_SYSTEM_ADDENDUM);
       systemParts.push(formatToolsForPrompt(this.tools.list()));
+    }
+
+    // M12: optional accepted knowledge neighborhood (default off)
+    const kSettings = this.config.knowledgeSettings;
+    if (this.knowledge && kSettings?.injectEnabled) {
+      try {
+        const kBlock = await buildKnowledgeInjectBlock(
+          this.knowledge,
+          prompt,
+          {
+            maxChars: kSettings.injectMaxChars,
+            hops: kSettings.injectHops,
+          }
+        );
+        if (kBlock) {
+          systemParts.push(kBlock);
+        }
+      } catch {
+        // knowledge inject is best-effort
+      }
     }
 
     // Optional LTM auto-inject (3A flag; default off — full proactivity is 3B)
@@ -814,6 +849,22 @@ export function loadConfigFromEnv(
           : undefined,
       });
 
+  // M12: knowledge store + optional tools (requires TOOLS_ENABLED path for loop)
+  const knowledgeToolsEnabled = envFlagTrue(env.KNOWLEDGE_TOOLS_ENABLED);
+  const knowledgeInjectEnabled = envFlagTrue(env.KNOWLEDGE_INJECT_ENABLED);
+  const knowledgeDbPath = resolveKnowledgeDbPath(cwd, env);
+  const knowledge =
+    knowledgeToolsEnabled || knowledgeInjectEnabled
+      ? createKnowledgeStore({ dbPath: knowledgeDbPath })
+      : undefined;
+
+  let tools = toolsDisabled ? undefined : createBuiltinRegistry();
+  if (tools && knowledge && knowledgeToolsEnabled) {
+    for (const t of createKnowledgeTools(knowledge)) {
+      tools.register(t);
+    }
+  }
+
   return {
     ollamaBin: env.OLLAMA_BIN ?? "ollama",
     ollamaModel: env.OLLAMA_MODEL ?? "llama3.2:3b",
@@ -841,10 +892,19 @@ export function loadConfigFromEnv(
     },
     workspaceRoot,
     workspace,
-    tools: toolsDisabled ? undefined : createBuiltinRegistry(),
+    tools,
     toolsEnabled,
     toolsMaxSteps: parsePositiveInt(env.TOOLS_MAX_STEPS, 5),
     longTerm,
+    knowledge,
+    knowledgeSettings: {
+      toolsEnabled: knowledgeToolsEnabled,
+      injectEnabled: knowledgeInjectEnabled,
+      injectMaxChars: parsePositiveInt(env.KNOWLEDGE_INJECT_MAX_CHARS, 2000),
+      injectHops: (parsePositiveInt(env.KNOWLEDGE_INJECT_HOPS, 1) >= 2
+        ? 2
+        : 1) as 1 | 2,
+    },
     longTermSettings: {
       dbPath: longTermDbPath,
       autoInject: envFlagTrue(env.LONGTERM_AUTO_INJECT),

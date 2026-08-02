@@ -22,3 +22,9 @@ export {
   applyExtractionResult,
   runExtraction,
 } from "./extract.js";
+export {
+  formatNeighborhood,
+  simpleQueryTokens,
+} from "./formatNeighborhood.js";
+export { createKnowledgeTools } from "./tools.js";
+export { buildKnowledgeInjectBlock } from "./inject.js";

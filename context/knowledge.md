@@ -183,9 +183,9 @@ and still use. Do not collapse these into one “build the full world model” d
 
 **Implementation spec:** [`packages/knowledge/src/AGENTS-M12.md`](../packages/knowledge/src/AGENTS-M12.md).
 
-**In scope:** register `knowledge_*` tools; propose vs accept still gated; optional inject default off; smoke offline.
+**Status:** delivered as shell — `createKnowledgeTools(store)`, orchestrator registers when `KNOWLEDGE_TOOLS_ENABLED=true` (with tools path), inject when `KNOWLEDGE_INJECT_ENABLED=true` (default off). Smoke: `scripts/smoke-knowledge-tools.ts`.
 
-**Out of scope:** M13–M18 items; auto-accept; always-on full-graph inject.
+**Out of scope still:** M13–M18 items; auto-accept; always-on full-graph inject.
 
 ## First-principles root question (kept)
 

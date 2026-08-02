@@ -31,14 +31,20 @@ npm run ui      # localhost web shell
 
 See repo root [README.md](../../README.md) for the full folder map (`packages/memory`, `packages/tools`, …).
 
-## Knowledge (M11 shell)
+## Knowledge (M11–M12 shell)
 
 ```bash
 npx tsx scripts/smoke-knowledge.ts
+npx tsx scripts/smoke-knowledge-tools.ts
 npx tsx src/index.ts --knowledge extract --text "..."
 npx tsx src/index.ts --knowledge proposals
 npx tsx src/index.ts --knowledge accept <id>
 npx tsx src/index.ts --knowledge neighborhood <nodeId>
+
+# Tool loop (models can call knowledge_* tools):
+# TOOLS_ENABLED=true KNOWLEDGE_TOOLS_ENABLED=true npm run dev -- "..."
+# Optional context inject (default off):
+# KNOWLEDGE_INJECT_ENABLED=true
 ```
 
 See `packages/knowledge` and `context/knowledge.md`.
