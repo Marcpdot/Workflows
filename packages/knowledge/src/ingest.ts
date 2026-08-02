@@ -10,6 +10,7 @@ import {
 } from "@workflows/structured";
 import { resolveSafePath } from "@workflows/tools";
 import { EXTRACTION_SCHEMA, extractionToProposalItems } from "./extract.js";
+import { labelsMatch } from "./identity.js";
 import { hashInput } from "./knowledge.js";
 import type {
   ExtractionResult,
@@ -124,6 +125,12 @@ export async function filterDuplicateNodeProposals(
       skipped++;
       continue;
     }
+    // Alias or normalized identity → skip node proposal
+    const canon = await store.resolveCanonical({ label, type });
+    if (canon && (canon.type === type || !type)) {
+      skipped++;
+      continue;
+    }
     const hits = await store.findNodes({
       type,
       label,
@@ -131,8 +138,7 @@ export async function filterDuplicateNodeProposals(
       limit: 8,
     });
     const exact = hits.some(
-      (n) =>
-        n.type === type && n.label.toLowerCase() === label.toLowerCase()
+      (n) => n.type === type && labelsMatch(n.label, label)
     );
     if (exact) {
       skipped++;

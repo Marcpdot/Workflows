@@ -27,7 +27,7 @@ export interface KnowledgeNode {
   updatedAt: number;
 }
 
-/** Core relation vocabulary for M11 — string allowed for forward-compat */
+/** Core relation vocabulary for M11+ — string allowed for forward-compat */
 export type KnowledgeRelation =
   | "requires"
   | "limits"
@@ -40,7 +40,10 @@ export type KnowledgeRelation =
   | "contradicts"
   | "used_in"
   | "part_of"
-  | "about";
+  | "about"
+  | "same_as"
+  | "alias_of"
+  | "supersedes";
 
 export interface KnowledgeEdge {
   id: string;
@@ -102,6 +105,32 @@ export interface ProjectStatus {
 }
 
 export type ProjectLinkRelation = "used_in" | "about" | "part_of";
+
+/** M15 alias row */
+export interface KnowledgeAlias {
+  id: string;
+  aliasLabel: string;
+  canonicalNodeId: string;
+  createdAt: number;
+}
+
+/** M15 merge result */
+export interface MergeNodesResult {
+  from: KnowledgeNode;
+  into: KnowledgeNode;
+  edgesRewired: number;
+  evidenceRewired: number;
+  aliasesRetargeted: number;
+  aliasCreated: boolean;
+}
+
+/** M15 contradiction pair (accepted contradicts edges) */
+export interface ContradictionPair {
+  edge: KnowledgeEdge;
+  from: KnowledgeNode;
+  to: KnowledgeNode;
+  summary: string;
+}
 
 export interface KnowledgeStore {
   createEvent(input: {
@@ -174,6 +203,47 @@ export interface KnowledgeStore {
     workspaceId?: string | null;
     hops?: 1 | 2;
   }): Promise<ProjectStatus>;
+
+  /** M15: map alias label → existing accepted canonical node */
+  addAlias(input: {
+    aliasLabel: string;
+    canonicalNodeId: string;
+  }): Promise<KnowledgeAlias>;
+
+  /** M15: resolve label via alias table or accepted exact/normalized node */
+  resolveCanonical(input: {
+    label: string;
+    type?: KnowledgeNodeType;
+  }): Promise<KnowledgeNode | null>;
+
+  /** M15: rewire edges/evidence from → into; mark from rejected; keep history */
+  mergeNodes(input: {
+    fromId: string;
+    intoId: string;
+  }): Promise<MergeNodesResult>;
+
+  /** M15: list accepted contradicts edges */
+  findContradictions(input?: {
+    nodeId?: string;
+    limit?: number;
+  }): Promise<ContradictionPair[]>;
+
+  /** M15: record contradicts edge (explicit; no auto-arbitration) */
+  markContradiction(input: {
+    fromId: string;
+    toId: string;
+    confidence?: number;
+    sourceEventId?: string;
+  }): Promise<KnowledgeEdge>;
+
+  /** M15: new claim supersedes old (edge supersedes; old kept, optionally disputed) */
+  supersedeClaim(input: {
+    oldClaimId: string;
+    newClaimId: string;
+    markOldDisputed?: boolean;
+  }): Promise<KnowledgeEdge>;
+
+  listAliases(canonicalNodeId?: string): Promise<KnowledgeAlias[]>;
 
   close(): void;
 }

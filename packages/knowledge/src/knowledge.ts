@@ -4,8 +4,11 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
+import { labelsMatch, normalizeLabel } from "./identity.js";
 import { KnowledgeSqliteStore } from "./store.js";
 import type {
+  ContradictionPair,
+  KnowledgeAlias,
   KnowledgeEdge,
   KnowledgeEvent,
   KnowledgeNode,
@@ -14,6 +17,7 @@ import type {
   KnowledgeStatus,
   KnowledgeStore,
   KnowledgeStoreConfig,
+  MergeNodesResult,
   ProjectLinkRelation,
   ProjectStatus,
 } from "./types.js";
@@ -384,6 +388,260 @@ class SqliteKnowledgeStore implements KnowledgeStore {
     };
   }
 
+  async addAlias(input: {
+    aliasLabel: string;
+    canonicalNodeId: string;
+  }): Promise<KnowledgeAlias> {
+    const aliasLabel = normalizeLabel(input.aliasLabel);
+    if (!aliasLabel) {
+      throw new Error("addAlias: aliasLabel is required");
+    }
+    const canonical = this.store.getNode(input.canonicalNodeId);
+    if (!canonical) {
+      throw new Error(`addAlias: unknown node ${input.canonicalNodeId}`);
+    }
+    if (canonical.status === "rejected") {
+      throw new Error("addAlias: canonical node is rejected");
+    }
+    const existing = this.store.getAlias(aliasLabel);
+    if (existing) {
+      if (existing.canonicalNodeId === canonical.id) {
+        return {
+          id: existing.id,
+          aliasLabel: existing.aliasLabel,
+          canonicalNodeId: existing.canonicalNodeId,
+          createdAt: existing.createdAt,
+        };
+      }
+      throw new Error(
+        `addAlias: alias "${aliasLabel}" already points to ${existing.canonicalNodeId}`
+      );
+    }
+    // If alias equals another accepted node's label of same type, prefer merge
+    const row: KnowledgeAlias = {
+      id: randomUUID(),
+      aliasLabel,
+      canonicalNodeId: canonical.id,
+      createdAt: Date.now(),
+    };
+    this.store.insertAlias(row);
+    return row;
+  }
+
+  async resolveCanonical(input: {
+    label: string;
+    type?: KnowledgeNodeType;
+  }): Promise<KnowledgeNode | null> {
+    const raw = input.label?.trim();
+    if (!raw) return null;
+    // Direct id
+    const byId = this.store.getNode(raw);
+    if (byId && byId.status !== "rejected") return byId;
+
+    const norm = normalizeLabel(raw);
+    const alias = this.store.getAlias(norm);
+    if (alias) {
+      const n = this.store.getNode(alias.canonicalNodeId);
+      if (n && n.status !== "rejected") return n;
+    }
+
+    if (input.type) {
+      const hit = this.store.findNodeByTypeLabel(input.type, raw, "accepted");
+      if (hit) return hit;
+      // normalized scan among accepted of type
+      const candidates = this.store.findNodes({
+        type: input.type,
+        status: "accepted",
+        limit: 100,
+      });
+      const match = candidates.find((n) => labelsMatch(n.label, raw));
+      if (match) return match;
+      return null;
+    }
+
+    for (const t of [
+      "concept",
+      "claim",
+      "project",
+      "artifact",
+      "source",
+      "event",
+    ] as KnowledgeNodeType[]) {
+      const hit = this.store.findNodeByTypeLabel(t, raw, "accepted");
+      if (hit) return hit;
+    }
+    const any = this.store.findNodes({ status: "accepted", limit: 200 });
+    return any.find((n) => labelsMatch(n.label, raw)) ?? null;
+  }
+
+  async mergeNodes(input: {
+    fromId: string;
+    intoId: string;
+  }): Promise<MergeNodesResult> {
+    if (input.fromId === input.intoId) {
+      throw new Error("mergeNodes: fromId and intoId must differ");
+    }
+    const from = this.store.getNode(input.fromId);
+    const into = this.store.getNode(input.intoId);
+    if (!from) throw new Error(`mergeNodes: unknown fromId ${input.fromId}`);
+    if (!into) throw new Error(`mergeNodes: unknown intoId ${input.intoId}`);
+    if (into.status === "rejected") {
+      throw new Error("mergeNodes: into node is rejected");
+    }
+
+    const edgesRewired = this.store.rewireEdges(from.id, into.id);
+    this.store.deleteSelfLoopEdges();
+    const evidenceRewired = this.store.rewireEvidence(from.id, into.id);
+    const aliasesRetargeted = this.store.retargetAliases(from.id, into.id);
+
+    // Alias for the merged-away label → into
+    let aliasCreated = false;
+    const norm = normalizeLabel(from.label);
+    if (norm) {
+      const existingAlias = this.store.getAlias(norm);
+      if (!existingAlias) {
+        this.store.insertAlias({
+          id: randomUUID(),
+          aliasLabel: norm,
+          canonicalNodeId: into.id,
+          createdAt: Date.now(),
+        });
+        aliasCreated = true;
+      }
+    }
+
+    const now = Date.now();
+    const note = `merged into ${into.id} (${into.label}) at ${now}`;
+    const desc = from.description ? `${from.description}; ${note}` : note;
+    this.store.updateNodeStatus(from.id, "rejected", now, desc);
+
+    // Provenance edge kept on into graph: into -[same_as]-> from (historical)
+    // Prefer from -[same_as]-> into but from is rejected; store edge into → from label via relation for audit
+    this.store.insertEdge({
+      id: randomUUID(),
+      fromNodeId: into.id,
+      relation: "same_as",
+      toNodeId: from.id,
+      status: "accepted",
+      createdAt: now,
+      sourceEventId: undefined,
+    });
+
+    const updatedInto = this.store.getNode(into.id)!;
+    const updatedFrom = this.store.getNode(from.id)!;
+    return {
+      from: updatedFrom,
+      into: updatedInto,
+      edgesRewired,
+      evidenceRewired,
+      aliasesRetargeted,
+      aliasCreated,
+    };
+  }
+
+  async findContradictions(input?: {
+    nodeId?: string;
+    limit?: number;
+  }): Promise<ContradictionPair[]> {
+    const edges = this.store.findEdgesByRelation("contradicts", {
+      nodeId: input?.nodeId,
+      status: "accepted",
+      limit: input?.limit ?? 50,
+    });
+    const out: ContradictionPair[] = [];
+    for (const edge of edges) {
+      const from = this.store.getNode(edge.fromNodeId);
+      const to = this.store.getNode(edge.toNodeId);
+      if (!from || !to) continue;
+      out.push({
+        edge,
+        from,
+        to,
+        summary: `${from.label} -[contradicts]-> ${to.label}`,
+      });
+    }
+    return out;
+  }
+
+  async markContradiction(input: {
+    fromId: string;
+    toId: string;
+    confidence?: number;
+    sourceEventId?: string;
+  }): Promise<KnowledgeEdge> {
+    if (input.fromId === input.toId) {
+      throw new Error("markContradiction: from and to must differ");
+    }
+    const from = this.store.getNode(input.fromId);
+    const to = this.store.getNode(input.toId);
+    if (!from || !to) {
+      throw new Error("markContradiction: both nodes must exist");
+    }
+    // Avoid exact duplicate open contradicts
+    const existing = this.store.findEdgesByRelation("contradicts", {
+      nodeId: input.fromId,
+      status: "accepted",
+      limit: 50,
+    });
+    const dup = existing.find(
+      (e) =>
+        (e.fromNodeId === input.fromId && e.toNodeId === input.toId) ||
+        (e.fromNodeId === input.toId && e.toNodeId === input.fromId)
+    );
+    if (dup) return dup;
+
+    const edge: KnowledgeEdge = {
+      id: randomUUID(),
+      fromNodeId: input.fromId,
+      relation: "contradicts",
+      toNodeId: input.toId,
+      confidence: input.confidence,
+      sourceEventId: input.sourceEventId,
+      status: "accepted",
+      createdAt: Date.now(),
+    };
+    this.store.insertEdge(edge);
+    return edge;
+  }
+
+  async supersedeClaim(input: {
+    oldClaimId: string;
+    newClaimId: string;
+    markOldDisputed?: boolean;
+  }): Promise<KnowledgeEdge> {
+    if (input.oldClaimId === input.newClaimId) {
+      throw new Error("supersedeClaim: old and new must differ");
+    }
+    const oldN = this.store.getNode(input.oldClaimId);
+    const newN = this.store.getNode(input.newClaimId);
+    if (!oldN || oldN.type !== "claim") {
+      throw new Error("supersedeClaim: oldClaimId must be a claim node");
+    }
+    if (!newN || newN.type !== "claim") {
+      throw new Error("supersedeClaim: newClaimId must be a claim node");
+    }
+    const now = Date.now();
+    const edge: KnowledgeEdge = {
+      id: randomUUID(),
+      fromNodeId: newN.id,
+      relation: "supersedes",
+      toNodeId: oldN.id,
+      status: "accepted",
+      createdAt: now,
+    };
+    this.store.insertEdge(edge);
+    if (input.markOldDisputed !== false) {
+      const note = `superseded by ${newN.id} (${newN.label})`;
+      const desc = oldN.description ? `${oldN.description}; ${note}` : note;
+      this.store.updateNodeStatus(oldN.id, "disputed", now, desc);
+    }
+    return edge;
+  }
+
+  async listAliases(canonicalNodeId?: string): Promise<KnowledgeAlias[]> {
+    return this.store.listAliases(canonicalNodeId);
+  }
+
   close(): void {
     this.store.close();
   }
@@ -410,10 +668,26 @@ class SqliteKnowledgeStore implements KnowledgeStore {
     if (!label) {
       throw new Error("acceptProposal node: label is required");
     }
-    // Identity: reuse accepted concept/claim with same type+label
+    // M15: alias → canonical
+    const alias = this.store.getAlias(normalizeLabel(label));
+    if (alias) {
+      const canon = this.store.getNode(alias.canonicalNodeId);
+      if (canon && canon.status !== "rejected") return canon;
+    }
+    // Identity: reuse accepted same type+label (case-insensitive)
     const existing = this.store.findNodeByTypeLabel(type, label, "accepted");
     if (existing) {
       return existing;
+    }
+    // Normalized match among accepted of same type (whitespace/diacritics)
+    const candidates = this.store.findNodes({
+      type,
+      status: "accepted",
+      limit: 100,
+    });
+    const fuzzy = candidates.find((n) => labelsMatch(n.label, label));
+    if (fuzzy) {
+      return fuzzy;
     }
     const node: KnowledgeNode = {
       id: randomUUID(),
@@ -450,6 +724,12 @@ class SqliteKnowledgeStore implements KnowledgeStore {
     const byId = this.store.getNode(key);
     if (byId) return byId.id;
 
+    const alias = this.store.getAlias(normalizeLabel(key));
+    if (alias) {
+      const n = this.store.getNode(alias.canonicalNodeId);
+      if (n && n.status !== "rejected") return n.id;
+    }
+
     const accepted = this.store.findNodeByTypeLabel(
       preferType,
       key,
@@ -469,6 +749,11 @@ class SqliteKnowledgeStore implements KnowledgeStore {
       const n = this.store.findNodeByTypeLabel(t, key, "accepted");
       if (n) return n.id;
     }
+
+    // Normalized label match
+    const any = this.store.findNodes({ status: "accepted", limit: 200 });
+    const fuzzy = any.find((n) => labelsMatch(n.label, key));
+    if (fuzzy) return fuzzy.id;
 
     // Create concept node on the fly for missing endpoint
     const created = this.materializeNode(

@@ -81,6 +81,11 @@ Options:
   --knowledge link nodeId=... projectId=... [relation=used_in|about|part_of]
   --knowledge project-status [label=NAME|projectId=...] [hops=1|2]
   --knowledge ingest --text "..." | --file path [projectLabel=...] [workspaceId=...]
+  --knowledge add-alias aliasLabel=... canonicalNodeId=...
+  --knowledge merge fromId=... intoId=...
+  --knowledge contradictions [nodeId=...]
+  --knowledge mark-contradiction fromId=... toId=...
+  --knowledge supersede oldClaimId=... newClaimId=...
   --pipeline <task>  Sequential planner→worker pipeline (Milestone 3C)
   --workspace, -w PATH  Workspace root for tools + session namespace (env WORKSPACE_ROOT)
   --list-sessions    List short-term session ids (optional filter by current workspace)
@@ -136,7 +141,12 @@ interface KnowledgeCliAction {
     | "ensure-project"
     | "link"
     | "project-status"
-    | "ingest";
+    | "ingest"
+    | "add-alias"
+    | "merge"
+    | "contradictions"
+    | "mark-contradiction"
+    | "supersede";
   id?: string;
   filter?: string;
   args: Record<string, unknown>;
@@ -332,10 +342,15 @@ function parseArgs(argv: string[]): CliArgs {
             "link",
             "project-status",
             "ingest",
+            "add-alias",
+            "merge",
+            "contradictions",
+            "mark-contradiction",
+            "supersede",
           ].includes(sub)
         ) {
           console.error(
-            "--knowledge requires proposals|accept|reject|find|neighborhood|extract|ensure-project|link|project-status|ingest"
+            "--knowledge requires proposals|accept|reject|find|neighborhood|extract|ensure-project|link|project-status|ingest|add-alias|merge|contradictions|mark-contradiction|supersede"
           );
           process.exit(1);
         }
@@ -367,7 +382,12 @@ function parseArgs(argv: string[]): CliArgs {
           sub === "find" ||
           sub === "ensure-project" ||
           sub === "link" ||
-          sub === "project-status"
+          sub === "project-status" ||
+          sub === "add-alias" ||
+          sub === "merge" ||
+          sub === "contradictions" ||
+          sub === "mark-contradiction" ||
+          sub === "supersede"
         ) {
           const kv: string[] = [];
           while (i + 1 < argv.length && argv[i + 1]!.includes("=")) {
@@ -782,6 +802,108 @@ async function runKnowledgeAction(
         }
         console.log(
           "[knowledge] proposals only — use --knowledge accept <id> to commit"
+        );
+      }
+      return;
+    }
+    if (action.kind === "add-alias") {
+      const aliasLabel = action.args.aliasLabel
+        ? String(action.args.aliasLabel)
+        : action.args.alias
+          ? String(action.args.alias)
+          : "";
+      const canonicalNodeId = action.args.canonicalNodeId
+        ? String(action.args.canonicalNodeId)
+        : action.args.nodeId
+          ? String(action.args.nodeId)
+          : "";
+      if (!aliasLabel || !canonicalNodeId) {
+        console.error(
+          "--knowledge add-alias requires aliasLabel=... canonicalNodeId=..."
+        );
+        process.exit(1);
+      }
+      const alias = await store.addAlias({ aliasLabel, canonicalNodeId });
+      if (asJson) console.log(JSON.stringify(alias, null, 2));
+      else {
+        console.log(
+          `[knowledge] alias "${alias.aliasLabel}" → ${alias.canonicalNodeId}`
+        );
+      }
+      return;
+    }
+    if (action.kind === "merge") {
+      const fromId = action.args.fromId
+        ? String(action.args.fromId)
+        : "";
+      const intoId = action.args.intoId
+        ? String(action.args.intoId)
+        : "";
+      if (!fromId || !intoId) {
+        console.error("--knowledge merge requires fromId=... intoId=...");
+        process.exit(1);
+      }
+      const result = await store.mergeNodes({ fromId, intoId });
+      if (asJson) console.log(JSON.stringify(result, null, 2));
+      else {
+        console.log(
+          `[knowledge] merge ${result.from.label} (${result.from.id}) → ${result.into.label} (${result.into.id}) edgesRewired=${result.edgesRewired} aliasCreated=${result.aliasCreated}`
+        );
+      }
+      return;
+    }
+    if (action.kind === "contradictions") {
+      const nodeId = action.args.nodeId
+        ? String(action.args.nodeId)
+        : undefined;
+      const pairs = await store.findContradictions({ nodeId });
+      if (asJson) console.log(JSON.stringify(pairs, null, 2));
+      else {
+        console.log(`[knowledge] contradictions count=${pairs.length}`);
+        for (const p of pairs) {
+          console.log(`  ${p.summary}`);
+        }
+      }
+      return;
+    }
+    if (action.kind === "mark-contradiction") {
+      const fromId = action.args.fromId
+        ? String(action.args.fromId)
+        : "";
+      const toId = action.args.toId ? String(action.args.toId) : "";
+      if (!fromId || !toId) {
+        console.error(
+          "--knowledge mark-contradiction requires fromId=... toId=..."
+        );
+        process.exit(1);
+      }
+      const edge = await store.markContradiction({ fromId, toId });
+      if (asJson) console.log(JSON.stringify(edge, null, 2));
+      else {
+        console.log(
+          `[knowledge] contradicts ${edge.fromNodeId} → ${edge.toNodeId}`
+        );
+      }
+      return;
+    }
+    if (action.kind === "supersede") {
+      const oldClaimId = action.args.oldClaimId
+        ? String(action.args.oldClaimId)
+        : "";
+      const newClaimId = action.args.newClaimId
+        ? String(action.args.newClaimId)
+        : "";
+      if (!oldClaimId || !newClaimId) {
+        console.error(
+          "--knowledge supersede requires oldClaimId=... newClaimId=..."
+        );
+        process.exit(1);
+      }
+      const edge = await store.supersedeClaim({ oldClaimId, newClaimId });
+      if (asJson) console.log(JSON.stringify(edge, null, 2));
+      else {
+        console.log(
+          `[knowledge] supersedes ${edge.fromNodeId} → ${edge.toNodeId}`
         );
       }
       return;

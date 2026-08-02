@@ -40,8 +40,8 @@ Merge og contradiction-markering er **eksplisitte** handlinger (tool/CLI). Auto-
 
 ## Ferdig når
 
-- [ ] alias + merge fungerer med edge-rewire
-- [ ] findContradictions returnerer stabile resultater
-- [ ] propose/accept path kan unngå trivial duplicates
-- [ ] smoke passerer
-- [ ] ingen silent delete av historie
+- [x] alias + merge fungerer med edge-rewire
+- [x] findContradictions returnerer stabile resultater
+- [x] propose/accept path kan unngå trivial duplicates
+- [x] smoke passerer
+- [x] ingen silent delete av historie

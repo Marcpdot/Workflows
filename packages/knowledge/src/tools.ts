@@ -667,6 +667,192 @@ export function createKnowledgeTools(store: KnowledgeStore): Tool[] {
     },
   };
 
+  const knowledge_add_alias: Tool = {
+    name: "knowledge_add_alias",
+    description:
+      "Map an alternate label to an existing canonical node (identity). Does not delete history.",
+    parameters: [
+      {
+        name: "aliasLabel",
+        type: "string",
+        description: "Alternate label (normalized on store)",
+        required: true,
+      },
+      {
+        name: "canonicalNodeId",
+        type: "string",
+        description: "Canonical node UUID",
+        required: true,
+      },
+    ],
+    async execute(args): Promise<ToolResult> {
+      const aliasLabel = str(args.aliasLabel);
+      const canonicalNodeId = str(args.canonicalNodeId);
+      if (!aliasLabel || !canonicalNodeId) {
+        return fail(
+          "knowledge_add_alias: aliasLabel and canonicalNodeId are required"
+        );
+      }
+      try {
+        const alias = await store.addAlias({ aliasLabel, canonicalNodeId });
+        return ok(
+          `alias "${alias.aliasLabel}" → ${alias.canonicalNodeId}`,
+          { alias }
+        );
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    },
+  };
+
+  const knowledge_merge: Tool = {
+    name: "knowledge_merge",
+    description:
+      "Merge fromId into intoId: rewire edges/evidence, alias from label, mark from rejected. History kept (no hard delete).",
+    parameters: [
+      {
+        name: "fromId",
+        type: "string",
+        description: "Node to absorb (becomes rejected)",
+        required: true,
+      },
+      {
+        name: "intoId",
+        type: "string",
+        description: "Canonical survivor node",
+        required: true,
+      },
+    ],
+    async execute(args): Promise<ToolResult> {
+      const fromId = str(args.fromId);
+      const intoId = str(args.intoId);
+      if (!fromId || !intoId) {
+        return fail("knowledge_merge: fromId and intoId are required");
+      }
+      try {
+        const result = await store.mergeNodes({ fromId, intoId });
+        return ok(
+          `merged ${result.from.label} → ${result.into.label}; edgesRewired=${result.edgesRewired} aliasCreated=${result.aliasCreated}`,
+          { result }
+        );
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    },
+  };
+
+  const knowledge_find_contradictions: Tool = {
+    name: "knowledge_find_contradictions",
+    description:
+      "List accepted contradicts edges (optional filter by nodeId). Flags only — no auto truth arbitration.",
+    parameters: [
+      {
+        name: "nodeId",
+        type: "string",
+        description: "Optional node involved in contradiction",
+      },
+      {
+        name: "limit",
+        type: "number",
+        description: "Max pairs (default 50)",
+      },
+    ],
+    async execute(args): Promise<ToolResult> {
+      try {
+        const pairs = await store.findContradictions({
+          nodeId: str(args.nodeId),
+          limit: num(args.limit) ?? 50,
+        });
+        if (pairs.length === 0) {
+          return ok("No accepted contradictions found.", { pairs: [] });
+        }
+        const lines = pairs.map((p) => p.summary);
+        return ok(
+          `${pairs.length} contradiction(s):\n${lines.join("\n")}`,
+          { pairs }
+        );
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    },
+  };
+
+  const knowledge_mark_contradiction: Tool = {
+    name: "knowledge_mark_contradiction",
+    description:
+      "Explicitly mark two nodes as contradicts (accepted edge). Does not auto-resolve truth.",
+    parameters: [
+      {
+        name: "fromId",
+        type: "string",
+        description: "First node UUID",
+        required: true,
+      },
+      {
+        name: "toId",
+        type: "string",
+        description: "Second node UUID",
+        required: true,
+      },
+    ],
+    async execute(args): Promise<ToolResult> {
+      const fromId = str(args.fromId);
+      const toId = str(args.toId);
+      if (!fromId || !toId) {
+        return fail(
+          "knowledge_mark_contradiction: fromId and toId are required"
+        );
+      }
+      try {
+        const edge = await store.markContradiction({ fromId, toId });
+        return ok(
+          `contradicts ${fromId.slice(0, 8)}… ↔ ${toId.slice(0, 8)}…`,
+          { edge }
+        );
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    },
+  };
+
+  const knowledge_supersede: Tool = {
+    name: "knowledge_supersede",
+    description:
+      "Mark newClaim as superseding oldClaim (edge supersedes; old kept, default disputed). No delete.",
+    parameters: [
+      {
+        name: "oldClaimId",
+        type: "string",
+        description: "Older claim UUID",
+        required: true,
+      },
+      {
+        name: "newClaimId",
+        type: "string",
+        description: "Newer claim UUID",
+        required: true,
+      },
+    ],
+    async execute(args): Promise<ToolResult> {
+      const oldClaimId = str(args.oldClaimId);
+      const newClaimId = str(args.newClaimId);
+      if (!oldClaimId || !newClaimId) {
+        return fail(
+          "knowledge_supersede: oldClaimId and newClaimId are required"
+        );
+      }
+      try {
+        const edge = await store.supersedeClaim({ oldClaimId, newClaimId });
+        return ok(
+          `supersedes edge ${edge.fromNodeId.slice(0, 8)}… → ${edge.toNodeId.slice(0, 8)}…`,
+          { edge }
+        );
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    },
+  };
+
   return [
     knowledge_find,
     knowledge_get,
@@ -680,5 +866,10 @@ export function createKnowledgeTools(store: KnowledgeStore): Tool[] {
     knowledge_unlink_project,
     knowledge_project_status,
     knowledge_ingest,
+    knowledge_add_alias,
+    knowledge_merge,
+    knowledge_find_contradictions,
+    knowledge_mark_contradiction,
+    knowledge_supersede,
   ];
 }

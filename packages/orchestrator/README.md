@@ -47,6 +47,9 @@ npx tsx src/index.ts --knowledge ingest --text "Copper losses produce heat..."
 npx tsx src/index.ts --knowledge ingest --file notes.md
 npx tsx scripts/smoke-knowledge-projects.ts
 npx tsx scripts/smoke-knowledge-ingest.ts
+npx tsx scripts/smoke-knowledge-identity.ts
+npx tsx src/index.ts --knowledge merge fromId=... intoId=...
+npx tsx src/index.ts --knowledge contradictions
 
 # Tool loop (models can call knowledge_* tools):
 # TOOLS_ENABLED=true KNOWLEDGE_TOOLS_ENABLED=true npm run dev -- "..."

@@ -1,5 +1,7 @@
 export type {
+  ContradictionPair,
   ExtractionResult,
+  KnowledgeAlias,
   KnowledgeEdge,
   KnowledgeEvent,
   KnowledgeEvidence,
@@ -10,6 +12,7 @@ export type {
   KnowledgeStatus,
   KnowledgeStore,
   KnowledgeStoreConfig,
+  MergeNodesResult,
   ProjectLinkRelation,
   ProjectStatus,
 } from "./types.js";
@@ -40,3 +43,4 @@ export {
   type IngestFileInput,
   type IngestResult,
 } from "./ingest.js";
+export { normalizeLabel, labelsMatch } from "./identity.js";

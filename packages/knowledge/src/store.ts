@@ -75,6 +75,16 @@ CREATE TABLE IF NOT EXISTS knowledge_proposals (
 );
 CREATE INDEX IF NOT EXISTS idx_kp_status ON knowledge_proposals(status);
 CREATE INDEX IF NOT EXISTS idx_kp_event ON knowledge_proposals(event_id);
+
+CREATE TABLE IF NOT EXISTS knowledge_aliases (
+  id TEXT PRIMARY KEY,
+  alias_label TEXT NOT NULL,
+  canonical_node_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE(alias_label),
+  FOREIGN KEY (canonical_node_id) REFERENCES knowledge_nodes(id)
+);
+CREATE INDEX IF NOT EXISTS idx_ka_canonical ON knowledge_aliases(canonical_node_id);
 `;
 
 export class KnowledgeSqliteStore {
@@ -452,5 +462,202 @@ export class KnowledgeSqliteStore {
       status: r.status,
       createdAt: r.createdAt,
     }));
+  }
+
+  /** M15: list edges by relation (optionally involving a node). */
+  findEdgesByRelation(
+    relation: string,
+    options?: { nodeId?: string; status?: KnowledgeStatus; limit?: number }
+  ): KnowledgeEdge[] {
+    const clauses: string[] = ["relation = ?"];
+    const params: unknown[] = [relation];
+    if (options?.status) {
+      clauses.push("status = ?");
+      params.push(options.status);
+    }
+    if (options?.nodeId) {
+      clauses.push("(from_node_id = ? OR to_node_id = ?)");
+      params.push(options.nodeId, options.nodeId);
+    }
+    const limit =
+      options?.limit && Number.isFinite(options.limit) && options.limit > 0
+        ? Math.floor(options.limit)
+        : 100;
+    params.push(limit);
+    const rows = this.db
+      .prepare(
+        `SELECT id, from_node_id AS fromNodeId, relation, to_node_id AS toNodeId,
+                confidence, source_event_id AS sourceEventId, status, created_at AS createdAt
+         FROM knowledge_edges
+         WHERE ${clauses.join(" AND ")}
+         ORDER BY created_at DESC
+         LIMIT ?`
+      )
+      .all(...params) as Array<{
+      id: string;
+      fromNodeId: string;
+      relation: string;
+      toNodeId: string;
+      confidence: number | null;
+      sourceEventId: string | null;
+      status: KnowledgeStatus;
+      createdAt: number;
+    }>;
+    return rows.map((r) => ({
+      id: r.id,
+      fromNodeId: r.fromNodeId,
+      relation: r.relation,
+      toNodeId: r.toNodeId,
+      confidence: r.confidence ?? undefined,
+      sourceEventId: r.sourceEventId ?? undefined,
+      status: r.status,
+      createdAt: r.createdAt,
+    }));
+  }
+
+  updateNodeStatus(
+    id: string,
+    status: KnowledgeStatus,
+    updatedAt: number,
+    description?: string | null
+  ): void {
+    if (description !== undefined) {
+      this.db
+        .prepare(
+          `UPDATE knowledge_nodes
+           SET status = ?, updated_at = ?, description = ?
+           WHERE id = ?`
+        )
+        .run(status, updatedAt, description, id);
+    } else {
+      this.db
+        .prepare(
+          `UPDATE knowledge_nodes SET status = ?, updated_at = ? WHERE id = ?`
+        )
+        .run(status, updatedAt, id);
+    }
+  }
+
+  /** Point all edges that reference fromId at intoId (merge rewire). */
+  rewireEdges(fromId: string, intoId: string): number {
+    const a = this.db
+      .prepare(
+        `UPDATE knowledge_edges SET from_node_id = ? WHERE from_node_id = ?`
+      )
+      .run(intoId, fromId);
+    const b = this.db
+      .prepare(
+        `UPDATE knowledge_edges SET to_node_id = ? WHERE to_node_id = ?`
+      )
+      .run(intoId, fromId);
+    return a.changes + b.changes;
+  }
+
+  /** Remove edges where from == to (self-loops after merge). */
+  deleteSelfLoopEdges(): number {
+    const r = this.db
+      .prepare(
+        `DELETE FROM knowledge_edges WHERE from_node_id = to_node_id`
+      )
+      .run();
+    return r.changes;
+  }
+
+  rewireEvidence(fromId: string, intoId: string): number {
+    const a = this.db
+      .prepare(
+        `UPDATE knowledge_evidence SET claim_node_id = ? WHERE claim_node_id = ?`
+      )
+      .run(intoId, fromId);
+    const b = this.db
+      .prepare(
+        `UPDATE knowledge_evidence SET source_node_id = ? WHERE source_node_id = ?`
+      )
+      .run(intoId, fromId);
+    return a.changes + b.changes;
+  }
+
+  insertAlias(row: {
+    id: string;
+    aliasLabel: string;
+    canonicalNodeId: string;
+    createdAt: number;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT INTO knowledge_aliases (id, alias_label, canonical_node_id, created_at)
+         VALUES (@id, @aliasLabel, @canonicalNodeId, @createdAt)`
+      )
+      .run(row);
+  }
+
+  getAlias(aliasLabel: string): {
+    id: string;
+    aliasLabel: string;
+    canonicalNodeId: string;
+    createdAt: number;
+  } | null {
+    const row = this.db
+      .prepare(
+        `SELECT id, alias_label AS aliasLabel, canonical_node_id AS canonicalNodeId,
+                created_at AS createdAt
+         FROM knowledge_aliases WHERE alias_label = ?`
+      )
+      .get(aliasLabel) as
+      | {
+          id: string;
+          aliasLabel: string;
+          canonicalNodeId: string;
+          createdAt: number;
+        }
+      | undefined;
+    return row ?? null;
+  }
+
+  retargetAliases(fromCanonicalId: string, intoCanonicalId: string): number {
+    const r = this.db
+      .prepare(
+        `UPDATE knowledge_aliases
+         SET canonical_node_id = ?
+         WHERE canonical_node_id = ?`
+      )
+      .run(intoCanonicalId, fromCanonicalId);
+    return r.changes;
+  }
+
+  listAliases(canonicalNodeId?: string): Array<{
+    id: string;
+    aliasLabel: string;
+    canonicalNodeId: string;
+    createdAt: number;
+  }> {
+    if (canonicalNodeId) {
+      return this.db
+        .prepare(
+          `SELECT id, alias_label AS aliasLabel, canonical_node_id AS canonicalNodeId,
+                  created_at AS createdAt
+           FROM knowledge_aliases WHERE canonical_node_id = ?
+           ORDER BY created_at ASC`
+        )
+        .all(canonicalNodeId) as Array<{
+        id: string;
+        aliasLabel: string;
+        canonicalNodeId: string;
+        createdAt: number;
+      }>;
+    }
+    return this.db
+      .prepare(
+        `SELECT id, alias_label AS aliasLabel, canonical_node_id AS canonicalNodeId,
+                created_at AS createdAt
+         FROM knowledge_aliases
+         ORDER BY created_at ASC`
+      )
+      .all() as Array<{
+      id: string;
+      aliasLabel: string;
+      canonicalNodeId: string;
+      createdAt: number;
+    }>;
   }
 }

@@ -142,7 +142,7 @@ SQLite tables alongside existing DBs. No new infrastructure required for M11–M
 | **M12** | Knowledge tools + wire | Models use graph via tools | **shell delivered** |
 | **M13** | Project & workspace binding | Project nodes, links, `getProjectStatus`, workspaceId defaults | **shell delivered** |
 | **M14** | Continuous / batch ingest | `ingestText`/`ingestFile`, light dedupe, tool+CLI, auto-chat opt-in (proposals only) | **shell delivered** |
-| **M15** | Identity, merge & contradiction | Prevents semantic chaos | planned |
+| **M15** | Identity, merge & contradiction | Aliases, merge rewire, contradicts list, supersede (no silent delete) | **shell delivered** |
 | **M16** | First-principles workflow | One analysis template on the general graph | planned |
 | **M17** | Read surface | Navigate without 3D | planned |
 | **M18** | Voice / multimodal I/O (optional) | Same brain, speech interface | planned |
@@ -150,6 +150,8 @@ SQLite tables alongside existing DBs. No new infrastructure required for M11–M
 **M13 shell notes:** Project is a graph node (`type: "project"`), not a separate table. Binding uses edges (`used_in` | `about` | `part_of`). One knowledge.db with `workspaceId` filters (same idea as M9 session namespace). Accept applies `defaultWorkspaceId` when payload omits workspace. Tools: `knowledge_ensure_project`, `knowledge_link_project`, `knowledge_unlink_project`, `knowledge_project_status`. Inject prefers project status when the prompt matches a project label.
 
 **M14 shell notes:** Graph grows via **proposals only** — `ingestText` / `ingestFile` / `knowledge_ingest` never accept. Light dedupe skips node proposals whose type+label is already accepted. CLI: `--knowledge ingest --text| --file`. Auto chat segment (`KNOWLEDGE_INGEST_AUTO_ON_CHAT`) default off and still proposals-only.
+
+**M15 shell notes:** `knowledge_aliases` table + `normalizeLabel` (trim/case/diacritics). `mergeNodes` rewires edges/evidence, aliases the from-label, marks from **rejected** (history kept). `findContradictions` / `markContradiction` are explicit flags — no auto truth. `supersedeClaim` uses edge `supersedes` and can mark old disputed. Tools: `knowledge_add_alias`, `knowledge_merge`, `knowledge_find_contradictions`, `knowledge_mark_contradiction`, `knowledge_supersede`.
 
 **Capability bands**
 
