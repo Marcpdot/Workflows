@@ -143,7 +143,7 @@ SQLite tables alongside existing DBs. No new infrastructure required for M11–M
 | **M13** | Project & workspace binding | Project nodes, links, `getProjectStatus`, workspaceId defaults | **shell delivered** |
 | **M14** | Continuous / batch ingest | `ingestText`/`ingestFile`, light dedupe, tool+CLI, auto-chat opt-in (proposals only) | **shell delivered** |
 | **M15** | Identity, merge & contradiction | Aliases, merge rewire, contradicts list, supersede (no silent delete) | **shell delivered** |
-| **M16** | First-principles workflow | One analysis template on the general graph | planned |
+| **M16** | First-principles workflow | Template analysis → structured proposals (not sole purpose of knowledge) | **shell delivered** |
 | **M17** | Read surface | Navigate without 3D | planned |
 | **M18** | Voice / multimodal I/O (optional) | Same brain, speech interface | planned |
 
@@ -152,6 +152,8 @@ SQLite tables alongside existing DBs. No new infrastructure required for M11–M
 **M14 shell notes:** Graph grows via **proposals only** — `ingestText` / `ingestFile` / `knowledge_ingest` never accept. Light dedupe skips node proposals whose type+label is already accepted. CLI: `--knowledge ingest --text| --file`. Auto chat segment (`KNOWLEDGE_INGEST_AUTO_ON_CHAT`) default off and still proposals-only.
 
 **M15 shell notes:** `knowledge_aliases` table + `normalizeLabel` (trim/case/diacritics). `mergeNodes` rewires edges/evidence, aliases the from-label, marks from **rejected** (history kept). `findContradictions` / `markContradiction` are explicit flags — no auto truth. `supersedeClaim` uses edge `supersedes` and can mark old disputed. Tools: `knowledge_add_alias`, `knowledge_merge`, `knowledge_find_contradictions`, `knowledge_mark_contradiction`, `knowledge_supersede`.
+
+**M16 shell notes:** First-principles is **one workflow** on the general graph (`runFirstPrinciplesAnalysis` → pending proposals). Template steps: goal, laws, absolute/contingent limits, bottlenecks, scaling, next experiment. Offline heuristic + optional model `complete` + fixture for smoke. Optional `projectLabel` ensures M13 project and proposes `used_in` edges. Tool `knowledge_first_principles`; CLI `--knowledge fp --topic "..."`.
 
 **Capability bands**
 

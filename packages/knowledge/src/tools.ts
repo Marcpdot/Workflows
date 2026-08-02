@@ -5,6 +5,7 @@
 
 import type { Tool, ToolContext, ToolResult } from "@workflows/tools";
 import { applyExtractionResult } from "./extract.js";
+import { runFirstPrinciplesAnalysis } from "./firstPrinciples.js";
 import { formatNeighborhood } from "./formatNeighborhood.js";
 import { ingestFile, ingestText } from "./ingest.js";
 import type {
@@ -853,6 +854,67 @@ export function createKnowledgeTools(store: KnowledgeStore): Tool[] {
     },
   };
 
+  const knowledge_first_principles: Tool = {
+    name: "knowledge_first_principles",
+    description:
+      "Run a first-principles analysis template on a topic → pending knowledge proposals only (goal, laws, limits, bottlenecks, relations, next actions). Does NOT accept. One workflow on the general knowledge layer, not the sole purpose of knowledge.",
+    parameters: [
+      {
+        name: "topic",
+        type: "string",
+        description: "System or problem under study",
+        required: true,
+      },
+      {
+        name: "goal",
+        type: "string",
+        description: "Optional goal hint",
+      },
+      {
+        name: "projectLabel",
+        type: "string",
+        description: "Optional M13 project to ensure + used_in edge proposals",
+      },
+    ],
+    async execute(args): Promise<ToolResult> {
+      const topic = str(args.topic);
+      if (!topic) {
+        return fail("knowledge_first_principles: topic is required");
+      }
+      try {
+        // Tool path is offline/heuristic unless orchestrator injects complete later
+        const out = await runFirstPrinciplesAnalysis({
+          store,
+          topic,
+          goal: str(args.goal),
+          projectLabel: str(args.projectLabel),
+        });
+        const ids = out.proposals.map((p) => p.id);
+        const relTypes = [
+          ...new Set(
+            out.proposals
+              .filter((p) => p.kind === "edge")
+              .map((p) => String(p.payload.relation ?? ""))
+          ),
+        ].filter(Boolean);
+        return ok(
+          `FP analysis (${out.mode}) topic="${topic}" event=${out.eventId} proposals=${out.proposals.length} relations=${relTypes.join(",") || "none"}. Pending only — call knowledge_accept to commit.`,
+          {
+            eventId: out.eventId,
+            proposalIds: ids,
+            proposals: out.proposals,
+            analysis: out.analysis,
+            mode: out.mode,
+            projectId: out.projectId,
+            relationTypes: relTypes,
+          }
+        );
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    },
+  };
+
   return [
     knowledge_find,
     knowledge_get,
@@ -871,5 +933,6 @@ export function createKnowledgeTools(store: KnowledgeStore): Tool[] {
     knowledge_find_contradictions,
     knowledge_mark_contradiction,
     knowledge_supersede,
+    knowledge_first_principles,
   ];
 }

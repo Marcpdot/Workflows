@@ -24,7 +24,7 @@ Runnable glue is **`packages/orchestrator`**. Feature layers are sibling folders
 | `observability` | JSONL events |
 | `proactive` | Next-step suggestions |
 | `agents` | Sequential multi-role pipeline |
-| `knowledge` | Semantic graph shell (M11–M15): nodes, edges, proposals, project binding, ingest, identity/merge |
+| `knowledge` | Semantic graph shell (M11–M16): nodes, edges, proposals, project, ingest, identity, first-principles |
 
 **Integration HTTP** lives under `packages/orchestrator/src/integration` (not a separate package) so the HTTP adapter can import the Orchestrator class without a circular package graph.
 

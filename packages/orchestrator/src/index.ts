@@ -24,6 +24,7 @@ import {
   ingestFile,
   ingestText,
   resolveKnowledgeDbPath,
+  runFirstPrinciplesAnalysis,
   type ExtractionResult,
   type KnowledgeStore,
 } from "@workflows/knowledge";
@@ -86,6 +87,7 @@ Options:
   --knowledge contradictions [nodeId=...]
   --knowledge mark-contradiction fromId=... toId=...
   --knowledge supersede oldClaimId=... newClaimId=...
+  --knowledge fp --topic "..." [goal=...] [projectLabel=...]
   --pipeline <task>  Sequential planner→worker pipeline (Milestone 3C)
   --workspace, -w PATH  Workspace root for tools + session namespace (env WORKSPACE_ROOT)
   --list-sessions    List short-term session ids (optional filter by current workspace)
@@ -146,12 +148,14 @@ interface KnowledgeCliAction {
     | "merge"
     | "contradictions"
     | "mark-contradiction"
-    | "supersede";
+    | "supersede"
+    | "fp";
   id?: string;
   filter?: string;
   args: Record<string, unknown>;
   text?: string;
   file?: string;
+  topic?: string;
 }
 
 interface ToolCliAction {
@@ -347,10 +351,11 @@ function parseArgs(argv: string[]): CliArgs {
             "contradictions",
             "mark-contradiction",
             "supersede",
+            "fp",
           ].includes(sub)
         ) {
           console.error(
-            "--knowledge requires proposals|accept|reject|find|neighborhood|extract|ensure-project|link|project-status|ingest|add-alias|merge|contradictions|mark-contradiction|supersede"
+            "--knowledge requires proposals|accept|reject|find|neighborhood|extract|ensure-project|link|project-status|ingest|add-alias|merge|contradictions|mark-contradiction|supersede|fp"
           );
           process.exit(1);
         }
@@ -394,6 +399,36 @@ function parseArgs(argv: string[]): CliArgs {
             kv.push(argv[++i]!);
           }
           knowledgeAction = { kind: sub, args: parseKvArgs(kv) };
+        } else if (sub === "fp") {
+          let topic: string | undefined;
+          const kv: string[] = [];
+          while (i + 1 < argv.length) {
+            const next = argv[i + 1]!;
+            if (next === "--topic") {
+              i++;
+              topic = argv[++i];
+            } else if (next.includes("=")) {
+              kv.push(argv[++i]!);
+            } else if (!next.startsWith("-")) {
+              const parts: string[] = [];
+              while (i + 1 < argv.length && !argv[i + 1]!.startsWith("-")) {
+                parts.push(argv[++i]!);
+              }
+              topic = parts.join(" ");
+              break;
+            } else {
+              break;
+            }
+          }
+          const argsMap = parseKvArgs(kv);
+          if (!topic && typeof argsMap.topic === "string") {
+            topic = String(argsMap.topic);
+          }
+          knowledgeAction = {
+            kind: "fp",
+            topic,
+            args: argsMap,
+          };
         } else if (sub === "extract" || sub === "ingest") {
           let text: string | undefined;
           let file: string | undefined;
@@ -904,6 +939,47 @@ async function runKnowledgeAction(
       else {
         console.log(
           `[knowledge] supersedes ${edge.fromNodeId} → ${edge.toNodeId}`
+        );
+      }
+      return;
+    }
+    if (action.kind === "fp") {
+      const topic =
+        action.topic?.trim() ||
+        (action.args.topic ? String(action.args.topic).trim() : "");
+      if (!topic) {
+        console.error('--knowledge fp requires --topic "..." or topic=...');
+        process.exit(1);
+      }
+      const out = await runFirstPrinciplesAnalysis({
+        store,
+        topic,
+        goal: action.args.goal ? String(action.args.goal) : undefined,
+        projectLabel: action.args.projectLabel
+          ? String(action.args.projectLabel)
+          : undefined,
+        workspaceId: action.args.workspaceId
+          ? String(action.args.workspaceId)
+          : undefined,
+      });
+      if (asJson) {
+        console.log(JSON.stringify(out, null, 2));
+      } else {
+        console.log(
+          `[knowledge] fp mode=${out.mode} topic=${topic} event=${out.eventId} proposals=${out.proposals.length}${out.projectId ? ` project=${out.projectId}` : ""}`
+        );
+        console.log(`  goal: ${out.analysis.goal}`);
+        console.log(
+          `  laws=${out.analysis.laws.length} limits=${out.analysis.limits.length} bottlenecks=${out.analysis.bottlenecks.length} relations=${out.analysis.relations.length}`
+        );
+        for (const p of out.proposals.slice(0, 12)) {
+          console.log(`  ${p.id}  ${p.kind}  pending`);
+        }
+        if (out.proposals.length > 12) {
+          console.log(`  … +${out.proposals.length - 12} more`);
+        }
+        console.log(
+          "[knowledge] proposals only — use --knowledge accept <id> to commit"
         );
       }
       return;

@@ -1,6 +1,6 @@
 # @workflows/knowledge
 
-Semantic knowledge model shell (M11–M15): concepts, claims, edges, proposals, neighborhood, project binding, batch ingest, identity/merge/contradictions.
+Semantic knowledge model shell (M11–M16): concepts, claims, edges, proposals, neighborhood, project binding, batch ingest, identity/merge, first-principles workflow.
 
 ```bash
 cd packages/knowledge
@@ -12,9 +12,10 @@ npx tsx scripts/smoke-knowledge-tools.ts
 npx tsx scripts/smoke-knowledge-projects.ts
 npx tsx scripts/smoke-knowledge-ingest.ts
 npx tsx scripts/smoke-knowledge-identity.ts
+npx tsx scripts/smoke-knowledge-fp.ts
 ```
 
-Vertical: extract → propose/accept → neighborhood → project bind → ingest → alias/merge/contradict.
+Vertical: extract → propose/accept → neighborhood → project bind → ingest → alias/merge → first-principles.
 
 CLI (from `packages/orchestrator`):
 
@@ -33,8 +34,9 @@ npx tsx src/index.ts --knowledge merge fromId=... intoId=...
 npx tsx src/index.ts --knowledge contradictions
 npx tsx src/index.ts --knowledge mark-contradiction fromId=... toId=...
 npx tsx src/index.ts --knowledge supersede oldClaimId=... newClaimId=...
+npx tsx src/index.ts --knowledge fp --topic "continuous torque" projectLabel=aktuator-v2
 ```
 
 Env: `KNOWLEDGE_DB_PATH`, `PERSONAL_CONTEXT_DIR`, `KNOWLEDGE_DEFAULT_WORKSPACE_ID`,
 `KNOWLEDGE_TOOLS_ENABLED`, `KNOWLEDGE_INJECT_ENABLED`,
-`KNOWLEDGE_INGEST_AUTO_ON_CHAT`, `KNOWLEDGE_INGEST_MIN_CHARS` (see AGENTS-M14/M15.md).
+`KNOWLEDGE_INGEST_AUTO_ON_CHAT`, `KNOWLEDGE_INGEST_MIN_CHARS` (see AGENTS-M14–M16.md).

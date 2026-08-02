@@ -46,8 +46,8 @@ Map to existing proposal kinds (nodes/edges). Prefer accept-gate unchanged.
 
 ## Ferdig når
 
-- [ ] template + runner produserer proposals i stabil shape
-- [ ] tool + CLI
-- [ ] optional project link via M13 helpers
-- [ ] smoke offline with fixture
-- [ ] documented as workflow, not as sole purpose of knowledge
+- [x] template + runner produserer proposals i stabil shape
+- [x] tool + CLI
+- [x] optional project link via M13 helpers
+- [x] smoke offline with fixture
+- [x] documented as workflow, not as sole purpose of knowledge

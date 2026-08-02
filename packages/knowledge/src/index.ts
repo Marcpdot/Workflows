@@ -44,3 +44,13 @@ export {
   type IngestResult,
 } from "./ingest.js";
 export { normalizeLabel, labelsMatch } from "./identity.js";
+export {
+  FIRST_PRINCIPLES_STEPS,
+  FIRST_PRINCIPLES_SCHEMA,
+  heuristicFirstPrinciples,
+  firstPrinciplesToExtraction,
+  runFirstPrinciplesAnalysis,
+  type FirstPrinciplesResult,
+  type RunFirstPrinciplesInput,
+  type RunFirstPrinciplesOutput,
+} from "./firstPrinciples.js";

@@ -48,8 +48,10 @@ npx tsx src/index.ts --knowledge ingest --file notes.md
 npx tsx scripts/smoke-knowledge-projects.ts
 npx tsx scripts/smoke-knowledge-ingest.ts
 npx tsx scripts/smoke-knowledge-identity.ts
+npx tsx scripts/smoke-knowledge-fp.ts
 npx tsx src/index.ts --knowledge merge fromId=... intoId=...
 npx tsx src/index.ts --knowledge contradictions
+npx tsx src/index.ts --knowledge fp --topic "continuous torque"
 
 # Tool loop (models can call knowledge_* tools):
 # TOOLS_ENABLED=true KNOWLEDGE_TOOLS_ENABLED=true npm run dev -- "..."

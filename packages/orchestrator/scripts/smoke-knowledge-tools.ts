@@ -45,10 +45,11 @@ async function main(): Promise<void> {
     "knowledge_find_contradictions",
     "knowledge_mark_contradiction",
     "knowledge_supersede",
+    "knowledge_first_principles",
   ]) {
     assert(names.has(n), `missing tool ${n}`);
   }
-  console.log("OK: knowledge tools registered (M12–M15)");
+  console.log("OK: knowledge tools registered (M12–M16)");
 
   const ctx = { workspaceRoot: process.cwd() };
 
