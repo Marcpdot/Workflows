@@ -25,6 +25,7 @@ Runnable glue is **`packages/orchestrator`**. Feature layers are sibling folders
 | `proactive` | Next-step suggestions |
 | `agents` | Sequential multi-role pipeline |
 | `knowledge` | Semantic graph shell (M11–M17): graph + ingest + identity + FP + read surface |
+| `voice` | Optional STT/TTS I/O adapters (M18) — same handle path as text |
 
 **Integration HTTP** lives under `packages/orchestrator/src/integration` (not a separate package) so the HTTP adapter can import the Orchestrator class without a circular package graph.
 

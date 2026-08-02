@@ -34,6 +34,12 @@ import {
   type ExtractionResult,
   type KnowledgeStore,
 } from "@workflows/knowledge";
+import {
+  createSttAdapter,
+  createTtsAdapter,
+  loadVoiceConfig,
+  runVoiceTurn,
+} from "@workflows/voice";
 import type { ModelChoice } from "./types.js";
 
 function loadDotEnv(filePath = resolve(process.cwd(), ".env")): void {
@@ -96,6 +102,10 @@ Options:
   --knowledge supersede oldClaimId=... newClaimId=...
   --knowledge fp --topic "..." [goal=...] [projectLabel=...]
   --pipeline <task>  Sequential planner→worker pipeline (Milestone 3C)
+  --voice-once       One STT→handle→TTS turn (M18; needs --transcript or audio)
+  --transcript TEXT  Transcript for mock/local STT override (voice)
+  --audio PATH       Audio file for local STT (VOICE_STT_PROVIDER=local)
+  --voice-silent     Skip TTS for this turn
   --workspace, -w PATH  Workspace root for tools + session namespace (env WORKSPACE_ROOT)
   --list-sessions    List short-term session ids (optional filter by current workspace)
   --json             Machine JSON on stdout only (logs → stderr)
@@ -107,6 +117,7 @@ REPL commands:
   /frontier ...      Force frontier for one turn
   /route ...         Route-only for one turn
   /pipeline ...      Role pipeline for this task
+  /voice ...         Voice turn with line as transcript (mock STT; same handle)
   /tool list | /tool run NAME [k=v...]
   /remember [key=...] <content>
   /recall [key=...|text=...]
@@ -133,6 +144,8 @@ Env (see .env.example):
   KNOWLEDGE_TOOLS_ENABLED, KNOWLEDGE_INJECT_ENABLED
   KNOWLEDGE_INGEST_AUTO_ON_CHAT (default false; proposals only), KNOWLEDGE_INGEST_MIN_CHARS
   KNOWLEDGE_HTTP_READ (integration GET /v1/knowledge/* + /knowledge HTML)
+  VOICE_ENABLED, VOICE_STT_PROVIDER, VOICE_TTS_PROVIDER, VOICE_LANGUAGE
+  VOICE_STT_COMMAND, VOICE_TTS_COMMAND, VOICE_ALLOW_REMOTE_AUDIO
   PROACTIVE_ENABLED, PROACTIVE_MAX, PROACTIVE_USE_MODEL
   AGENTS_PIPELINE_ENABLED
   WORKSPACE_ROOT (or TOOL_WORKSPACE_ROOT), INTEGRATION_HTTP_PORT, INTEGRATION_HTTP_TOKEN
@@ -197,6 +210,11 @@ interface CliArgs {
   pipelineTask?: string;
   /** Absolute/relative workspace for tools + isolation (M5/M9) */
   workspace?: string;
+  /** M18: one voice turn via adapters → same handle() */
+  voiceOnce?: boolean;
+  voiceTranscript?: string;
+  voiceAudioPath?: string;
+  voiceSilent?: boolean;
 }
 
 /** Parse key=value tokens into a plain object (values stay strings). */
@@ -223,6 +241,10 @@ function parseArgs(argv: string[]): CliArgs {
   let pipelineTask: string | undefined;
   let workspace: string | undefined;
   let listSessions = false;
+  let voiceOnce = false;
+  let voiceTranscript: string | undefined;
+  let voiceAudioPath: string | undefined;
+  let voiceSilent = false;
   let sessionId =
     process.env.SESSION_ID?.trim() || "default";
   const rest: string[] = [];
@@ -230,6 +252,30 @@ function parseArgs(argv: string[]): CliArgs {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
     switch (arg) {
+      case "--voice-once":
+        voiceOnce = true;
+        break;
+      case "--voice-silent":
+        voiceSilent = true;
+        break;
+      case "--transcript": {
+        const next = argv[++i];
+        if (!next || next.startsWith("-")) {
+          console.error("--transcript requires text");
+          process.exit(1);
+        }
+        voiceTranscript = next;
+        break;
+      }
+      case "--audio": {
+        const next = argv[++i];
+        if (!next || next.startsWith("-")) {
+          console.error("--audio requires a path");
+          process.exit(1);
+        }
+        voiceAudioPath = next;
+        break;
+      }
       case "--list-sessions":
         listSessions = true;
         break;
@@ -530,6 +576,10 @@ function parseArgs(argv: string[]): CliArgs {
     knowledgeAction,
     pipelineTask,
     workspace,
+    voiceOnce,
+    voiceTranscript,
+    voiceAudioPath,
+    voiceSilent,
   };
 }
 
@@ -1347,6 +1397,127 @@ async function runOnce(
   });
 }
 
+/**
+ * M18: STT → Orchestrator.handle → optional TTS (same brain as text).
+ */
+async function runVoiceOnce(
+  orch: Orchestrator,
+  args: CliArgs,
+  memory: Memory | null,
+  ws: WorkspaceContext
+): Promise<void> {
+  const voiceCfg = loadVoiceConfig(process.env);
+  // One-shot CLI is explicit opt-in via --voice-once (does not require VOICE_ENABLED for mock/transcript).
+  // Continuous ambient listening is not implemented; VOICE_ENABLED documents session policy.
+  if (
+    !args.voiceTranscript &&
+    !args.voiceAudioPath &&
+    !args.prompt &&
+    !voiceCfg.mockTranscript
+  ) {
+    console.error(
+      "--voice-once requires --transcript TEXT, --audio PATH, prompt text, or VOICE_MOCK_TRANSCRIPT"
+    );
+    process.exit(1);
+  }
+
+  const stt = createSttAdapter({
+    ...voiceCfg,
+    // Prefer mock when only transcript is supplied (no mic)
+    sttProvider:
+      args.voiceAudioPath && voiceCfg.sttProvider !== "mock"
+        ? voiceCfg.sttProvider
+        : args.voiceTranscript || args.prompt || voiceCfg.mockTranscript
+          ? voiceCfg.sttProvider === "cloud" && !args.voiceAudioPath
+            ? "mock"
+            : voiceCfg.sttProvider
+          : voiceCfg.sttProvider,
+    mockTranscript:
+      args.voiceTranscript ||
+      args.prompt ||
+      voiceCfg.mockTranscript ||
+      undefined,
+  });
+  const tts = createTtsAdapter(
+    args.voiceSilent ? { ...voiceCfg, ttsProvider: "off" } : voiceCfg
+  );
+
+  const effectiveSessionId = ws.sessionId;
+  const history =
+    memory && args.useMemory
+      ? await memory.getHistory(effectiveSessionId)
+      : [];
+
+  const started = performance.now();
+  const turn = await runVoiceTurn(
+    {
+      stt,
+      tts,
+      language: voiceCfg.language,
+      handle: async (text) => {
+        const result = await orch.handle(text, {
+          forceModel: args.forceModel,
+          history,
+          sessionId: effectiveSessionId,
+        });
+        return { reply: result.reply };
+      },
+    },
+    {
+      transcript:
+        args.voiceTranscript ||
+        args.prompt ||
+        voiceCfg.mockTranscript ||
+        undefined,
+      audioPath: args.voiceAudioPath,
+      silent: args.voiceSilent,
+      language: voiceCfg.language,
+    }
+  );
+  const latencyMs = Math.round(performance.now() - started);
+
+  if (memory && args.useMemory) {
+    await memory.add(effectiveSessionId, {
+      role: "user",
+      content: turn.transcript,
+    });
+    await memory.add(effectiveSessionId, {
+      role: "assistant",
+      content: turn.reply,
+    });
+  }
+
+  if (args.json) {
+    console.log(
+      JSON.stringify(
+        {
+          viaVoice: true,
+          transcript: turn.transcript,
+          reply: turn.reply,
+          stt: turn.stt,
+          tts: turn.tts,
+          sessionId: args.useMemory ? effectiveSessionId : undefined,
+          latencyMs,
+          workspaceId: ws.id,
+        },
+        null,
+        2
+      )
+    );
+  } else {
+    console.log(`[voice] stt=${turn.stt.provider} remote=${turn.stt.remote}`);
+    console.log(`[voice] heard: ${turn.transcript}`);
+    console.log(turn.reply);
+    if (turn.tts?.spoken) {
+      console.log(
+        `[voice] tts=${turn.tts.provider} spoken=true${turn.tts.utterance ? ` (${turn.tts.utterance.slice(0, 60)}…)` : ""}`
+      );
+    } else {
+      console.log(`[voice] tts=${turn.tts?.provider ?? "off"} spoken=false`);
+    }
+  }
+}
+
 async function runRepl(
   orch: Orchestrator,
   args: CliArgs,
@@ -1357,7 +1528,7 @@ async function runRepl(
   let ws = initialWs;
   console.log(
     "Orchestrator REPL (empty line or Ctrl+C to exit).\n" +
-      "Commands: /local /frontier /route /pipeline /tool /remember /recall /forget /ltm /clear /session <id> /workspace"
+      "Commands: /local /frontier /route /pipeline /voice /tool /remember /recall /forget /ltm /clear /session <id> /workspace"
   );
   if (memory && args.useMemory) {
     const n = (await memory.getHistory(ws.sessionId)).length;
@@ -1375,6 +1546,27 @@ async function runRepl(
       if (line === "/workspace") {
         console.log(
           `[workspace] id=${ws.id}\n  root=${ws.rootPath}\n  contextDir=${ws.contextDir}\n  sessionPrefix=${ws.sessionPrefix || "(none)"}\n  logical=${ws.logicalSessionId}\n  effective=${ws.sessionId}`
+        );
+        continue;
+      }
+
+      if (line.startsWith("/voice")) {
+        const transcript = line.replace(/^\/voice\s*/, "").trim();
+        if (!transcript) {
+          console.log("Usage: /voice <spoken text as transcript>");
+          continue;
+        }
+        await runVoiceOnce(
+          orch,
+          {
+            ...args,
+            voiceOnce: true,
+            voiceTranscript: transcript,
+            voiceSilent: true,
+            prompt: "",
+          },
+          memory,
+          ws
         );
         continue;
       }
@@ -1662,6 +1854,11 @@ async function main(): Promise<void> {
 
       if (args.pipelineTask) {
         await runPipelineTask(orch, args.pipelineTask, args.json);
+        return;
+      }
+
+      if (args.voiceOnce) {
+        await runVoiceOnce(orch, args, memory, ws);
         return;
       }
 

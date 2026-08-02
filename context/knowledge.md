@@ -145,7 +145,7 @@ SQLite tables alongside existing DBs. No new infrastructure required for M11–M
 | **M15** | Identity, merge & contradiction | Aliases, merge rewire, contradicts list, supersede (no silent delete) | **shell delivered** |
 | **M16** | First-principles workflow | Template analysis → structured proposals (not sole purpose of knowledge) | **shell delivered** |
 | **M17** | Read surface | Reader helpers, renderers, CLI `--json`, optional HTTP + minimal HTML | **shell delivered** |
-| **M18** | Voice / multimodal I/O (optional) | Same brain, speech interface | planned |
+| **M18** | Voice / multimodal I/O (optional) | STT/TTS adapters → same `handle()` / tools; default off | **shell delivered (optional)** |
 
 **M13 shell notes:** Project is a graph node (`type: "project"`), not a separate table. Binding uses edges (`used_in` | `about` | `part_of`). One knowledge.db with `workspaceId` filters (same idea as M9 session namespace). Accept applies `defaultWorkspaceId` when payload omits workspace. Tools: `knowledge_ensure_project`, `knowledge_link_project`, `knowledge_unlink_project`, `knowledge_project_status`. Inject prefers project status when the prompt matches a project label.
 
@@ -156,6 +156,8 @@ SQLite tables alongside existing DBs. No new infrastructure required for M11–M
 **M16 shell notes:** First-principles is **one workflow** on the general graph (`runFirstPrinciplesAnalysis` → pending proposals). Template steps: goal, laws, absolute/contingent limits, bottlenecks, scaling, next experiment. Offline heuristic + optional model `complete` + fixture for smoke. Optional `projectLabel` ensures M13 project and proposes `used_in` edges. Tool `knowledge_first_principles`; CLI `--knowledge fp --topic "..."`.
 
 **M17 shell notes:** Read-only surface over M11–M16 — `createKnowledgeReader` (search, node, neighborhood, project status, contradictions, proposals) + compact renderers (table/list/subgraph/report/HTML). CLI uses stable `--json` envelopes. Optional `KNOWLEDGE_HTTP_READ=true` exposes `GET /v1/knowledge/*` behind the same integration token; `GET /knowledge` is a no-framework browse page. No write UI.
+
+**M18 shell notes:** Voice is **I/O only** (`@workflows/voice`): mock/local/cloud STT + off/mock/local/cloud TTS → `Orchestrator.handle` (same tools/knowledge). Default off (`VOICE_ENABLED=false`, TTS off). Cloud requires `VOICE_ALLOW_REMOTE_AUDIO`. CLI: `--voice-once --transcript "..."`, REPL `/voice ...`. Local path: `VOICE_STT_COMMAND` / `VOICE_TTS_COMMAND`. No second brain; propose/accept unchanged.
 
 **Capability bands**
 

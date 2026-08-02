@@ -36,6 +36,7 @@
     "@workflows/retrieval": "file:../retrieval",
     "@workflows/structured": "file:../structured",
     "@workflows/tools": "file:../tools",
+    "@workflows/voice": "file:../voice",
     "@workflows/workspace": "file:../workspace",
     "better-sqlite3": "^13.0.2"
   }

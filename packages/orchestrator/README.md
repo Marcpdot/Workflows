@@ -50,6 +50,7 @@ npx tsx scripts/smoke-knowledge-ingest.ts
 npx tsx scripts/smoke-knowledge-identity.ts
 npx tsx scripts/smoke-knowledge-fp.ts
 npx tsx scripts/smoke-knowledge-read.ts
+npx tsx scripts/smoke-voice.ts
 npx tsx src/index.ts --knowledge merge fromId=... intoId=...
 npx tsx src/index.ts --knowledge contradictions
 npx tsx src/index.ts --knowledge fp --topic "continuous torque"
@@ -57,6 +58,9 @@ npx tsx src/index.ts --json --knowledge find label=heat
 # Knowledge HTTP read (optional):
 # KNOWLEDGE_HTTP_READ=true npm run serve
 # open http://127.0.0.1:8787/knowledge
+# Voice I/O (M18 optional; mock STT, TTS off by default):
+# npx tsx src/index.ts --voice-once --transcript "What limits continuous torque?" --voice-silent
+# Local Whisper-class: VOICE_STT_PROVIDER=local VOICE_STT_COMMAND='whisper-cli -f {input} -nt'
 
 # Tool loop (models can call knowledge_* tools):
 # TOOLS_ENABLED=true KNOWLEDGE_TOOLS_ENABLED=true npm run dev -- "..."
@@ -67,7 +71,7 @@ npx tsx src/index.ts --json --knowledge find label=heat
 # KNOWLEDGE_INGEST_AUTO_ON_CHAT=true
 ```
 
-See `packages/knowledge` and `context/knowledge.md`.
+See `packages/knowledge`, `packages/voice`, and `context/knowledge.md`.
 
 ## Env
 

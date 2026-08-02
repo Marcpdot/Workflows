@@ -92,9 +92,9 @@ Details, invariants, and M11 done-when: [knowledge.md](knowledge.md).
 | **M15** | **Delivered as shell** — aliases, merge rewire, contradictions, supersede; tools+CLI; smoke-knowledge-identity |
 | **M16** | **Delivered as shell** — first-principles template/runner → proposals; tool+CLI; smoke-knowledge-fp |
 | **M17** | **Delivered as shell** — read helpers + renderers; CLI `--json`; optional HTTP `/v1/knowledge/*`; minimal HTML; smoke-knowledge-read |
-| **M18** | **Planned** (roadmap only) — optional voice / multimodal I/O |
+| **M18** | **Delivered as optional shell** — `@workflows/voice` STT/TTS adapters; `--voice-once` / `/voice`; mock smoke; same `handle()` |
 
-Vertical M0–M17 shells are in place. Next knowledge target is **M18** (voice, optional) when ready.
+Vertical **M0–M18** shells are in place (M18 is interface-only and default off).
 
 Thin spots accepted under shell-first (e.g. heuristic score fusion, static UI, linear vector scan, repair-not-constrained-decoding) are documented per topic.
 

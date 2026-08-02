@@ -11,7 +11,7 @@ Intended layers remain:
 
 1. **Orchestration** — receive, route/policy, call model, return  
 2. **Memory** — short-term + long-term (+ optional embeddings); session namespace per workspace (M9)  
-3. **Knowledge** (planned M11–M18) — explicit concepts, claims, relations, events, provenance; extraction-with-approval; later tools, project bind, ingest, FP workflow, read surface, optional voice  
+3. **Knowledge** (M11–M18 shells) — explicit concepts, claims, relations, events, provenance; extraction-with-approval; tools, project bind, ingest, FP workflow, read surface; optional voice I/O adapters only
 4. **Tools** — external capabilities via one interface  
 5. **Evaluation** — fixed cases, tokens/cost  
 6. **Interface** — CLI, then optional UI  

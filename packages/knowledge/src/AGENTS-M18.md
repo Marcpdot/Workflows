@@ -46,8 +46,8 @@ Knowledge propose/accept policy **uendret**.
 
 ## Ferdig når
 
-- [ ] mock adapters + one real provider path documented
-- [ ] voice session uses same tools as text
-- [ ] default off; no surprise mic use
-- [ ] smoke with mocks passes
-- [ ] marked optional in milestones if deferred
+- [x] mock adapters + one real provider path documented
+- [x] voice session uses same tools as text
+- [x] default off; no surprise mic use
+- [x] smoke with mocks passes
+- [x] marked optional in milestones if deferred
