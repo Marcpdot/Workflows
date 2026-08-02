@@ -3,9 +3,10 @@
  * Closures capture KnowledgeStore; permanent writes only via accept.
  */
 
-import type { Tool, ToolResult } from "@workflows/tools";
+import type { Tool, ToolContext, ToolResult } from "@workflows/tools";
 import { applyExtractionResult } from "./extract.js";
 import { formatNeighborhood } from "./formatNeighborhood.js";
+import { ingestFile, ingestText } from "./ingest.js";
 import type {
   ExtractionResult,
   KnowledgeNodeType,
@@ -586,6 +587,86 @@ export function createKnowledgeTools(store: KnowledgeStore): Tool[] {
     },
   };
 
+  const knowledge_ingest: Tool = {
+    name: "knowledge_ingest",
+    description:
+      "Batch-ingest text or a workspace file into **pending** knowledge proposals only (never auto-accept). Dedupes node labels already accepted. Call knowledge_accept to commit.",
+    parameters: [
+      {
+        name: "text",
+        type: "string",
+        description: "Free text / markdown segment to ingest",
+      },
+      {
+        name: "path",
+        type: "string",
+        description: "Relative path under workspace root (alt to text)",
+      },
+      {
+        name: "sourceRef",
+        type: "string",
+        description: 'Event source ref (default "tool-ingest")',
+      },
+      {
+        name: "projectLabel",
+        type: "string",
+        description: "Optional project hint encoded in sourceRef (no auto-link)",
+      },
+      {
+        name: "workspaceId",
+        type: "string",
+        description: "Optional workspaceId stamped on proposed nodes",
+      },
+    ],
+    async execute(args, ctx: ToolContext): Promise<ToolResult> {
+      const text = str(args.text);
+      const path = str(args.path);
+      if (!text && !path) {
+        return fail("knowledge_ingest: provide text and/or path");
+      }
+      try {
+        const common = {
+          sourceRef: str(args.sourceRef) ?? "tool-ingest",
+          projectLabel: str(args.projectLabel),
+          workspaceId: str(args.workspaceId),
+        };
+        const result = path
+          ? await ingestFile(store, {
+              ...common,
+              path,
+              workspaceRoot: ctx.workspaceRoot,
+              sourceType: "file",
+            })
+          : await ingestText(store, {
+              ...common,
+              text: text!,
+              sourceType: "manual",
+            });
+
+        if (result.mode === "skipped" && result.proposals.length === 0) {
+          return fail(
+            `knowledge_ingest: ${result.reason ?? "skipped"}`,
+            result.reason ?? "skipped"
+          );
+        }
+        const ids = result.proposals.map((p) => p.id);
+        return ok(
+          `Ingested (${result.mode}) event=${result.eventId || "none"} proposals=${result.proposals.length} skippedDuplicateNodes=${result.skippedDuplicateNodes}. Pending only — call knowledge_accept to commit.${ids.length ? ` ids: ${ids.join(", ")}` : ""}`,
+          {
+            eventId: result.eventId,
+            proposalIds: ids,
+            proposals: result.proposals,
+            skippedDuplicateNodes: result.skippedDuplicateNodes,
+            mode: result.mode,
+            sourceRef: result.sourceRef,
+          }
+        );
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    },
+  };
+
   return [
     knowledge_find,
     knowledge_get,
@@ -598,5 +679,6 @@ export function createKnowledgeTools(store: KnowledgeStore): Tool[] {
     knowledge_link_project,
     knowledge_unlink_project,
     knowledge_project_status,
+    knowledge_ingest,
   ];
 }

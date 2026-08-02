@@ -141,13 +141,15 @@ SQLite tables alongside existing DBs. No new infrastructure required for M11–M
 | **M11** | Semantic knowledge shell | Store, proposals, neighborhood | **shell delivered** |
 | **M12** | Knowledge tools + wire | Models use graph via tools | **shell delivered** |
 | **M13** | Project & workspace binding | Project nodes, links, `getProjectStatus`, workspaceId defaults | **shell delivered** |
-| **M14** | Continuous / batch ingest | Graph grows from work (proposals only) | planned |
+| **M14** | Continuous / batch ingest | `ingestText`/`ingestFile`, light dedupe, tool+CLI, auto-chat opt-in (proposals only) | **shell delivered** |
 | **M15** | Identity, merge & contradiction | Prevents semantic chaos | planned |
 | **M16** | First-principles workflow | One analysis template on the general graph | planned |
 | **M17** | Read surface | Navigate without 3D | planned |
 | **M18** | Voice / multimodal I/O (optional) | Same brain, speech interface | planned |
 
 **M13 shell notes:** Project is a graph node (`type: "project"`), not a separate table. Binding uses edges (`used_in` | `about` | `part_of`). One knowledge.db with `workspaceId` filters (same idea as M9 session namespace). Accept applies `defaultWorkspaceId` when payload omits workspace. Tools: `knowledge_ensure_project`, `knowledge_link_project`, `knowledge_unlink_project`, `knowledge_project_status`. Inject prefers project status when the prompt matches a project label.
+
+**M14 shell notes:** Graph grows via **proposals only** — `ingestText` / `ingestFile` / `knowledge_ingest` never accept. Light dedupe skips node proposals whose type+label is already accepted. CLI: `--knowledge ingest --text| --file`. Auto chat segment (`KNOWLEDGE_INGEST_AUTO_ON_CHAT`) default off and still proposals-only.
 
 **Capability bands**
 

@@ -43,13 +43,18 @@ npx tsx src/index.ts --knowledge neighborhood <nodeId>
 npx tsx src/index.ts --knowledge ensure-project label=aktuator-v2
 npx tsx src/index.ts --knowledge link nodeId=... projectId=...
 npx tsx src/index.ts --knowledge project-status label=aktuator-v2
+npx tsx src/index.ts --knowledge ingest --text "Copper losses produce heat..."
+npx tsx src/index.ts --knowledge ingest --file notes.md
 npx tsx scripts/smoke-knowledge-projects.ts
+npx tsx scripts/smoke-knowledge-ingest.ts
 
 # Tool loop (models can call knowledge_* tools):
 # TOOLS_ENABLED=true KNOWLEDGE_TOOLS_ENABLED=true npm run dev -- "..."
 # Optional context inject (default off; prefers project status when label matches):
 # KNOWLEDGE_INJECT_ENABLED=true
 # KNOWLEDGE_DEFAULT_WORKSPACE_ID=  # else active workspace id from --workspace
+# Optional auto chat→proposals only (never accept):
+# KNOWLEDGE_INGEST_AUTO_ON_CHAT=true
 ```
 
 See `packages/knowledge` and `context/knowledge.md`.

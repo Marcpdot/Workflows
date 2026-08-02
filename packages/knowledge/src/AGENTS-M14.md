@@ -43,8 +43,8 @@ Optional: if `projectLabel` set, after proposals created, do not auto-link; incl
 
 ## Ferdig når
 
-- [ ] ingestText + file path works → pending only
-- [ ] tool + CLI documented
-- [ ] smoke offline passes
-- [ ] no silent accept
-- [ ] auto-on-chat default false
+- [x] ingestText + file path works → pending only
+- [x] tool + CLI documented
+- [x] smoke offline passes
+- [x] no silent accept
+- [x] auto-on-chat default false

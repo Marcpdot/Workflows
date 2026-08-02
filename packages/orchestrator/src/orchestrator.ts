@@ -42,6 +42,8 @@ import {
   buildKnowledgeInjectBlock,
   createKnowledgeStore,
   createKnowledgeTools,
+  formatChatSegment,
+  ingestText,
   resolveKnowledgeDbPath,
   type KnowledgeStore,
 } from "@workflows/knowledge";
@@ -615,6 +617,7 @@ export class Orchestrator {
           longTermBlock
         ),
       };
+      await this.maybeAutoIngestChat(history, prompt, reply, sessionId);
       this.emitRequestEvent(result, {
         sessionId,
         started,
@@ -659,6 +662,12 @@ export class Orchestrator {
         longTermBlock
       ),
     };
+    await this.maybeAutoIngestChat(
+      history,
+      prompt,
+      response.content,
+      sessionId
+    );
     this.emitRequestEvent(result, {
       sessionId,
       started,
@@ -666,6 +675,41 @@ export class Orchestrator {
       prompt,
     });
     return result;
+  }
+
+  /**
+   * M14: optional post-chat segment → pending proposals only (never accept).
+   * Default off via KNOWLEDGE_INGEST_AUTO_ON_CHAT.
+   */
+  private async maybeAutoIngestChat(
+    history: Array<{ role: string; content: string }>,
+    prompt: string,
+    reply: string,
+    sessionId?: string
+  ): Promise<void> {
+    const kSettings = this.config.knowledgeSettings;
+    if (!this.knowledge || !kSettings?.ingestAutoOnChat) return;
+    try {
+      const segment = formatChatSegment(
+        [
+          ...history,
+          { role: "user", content: prompt },
+          { role: "assistant", content: reply },
+        ],
+        kSettings.ingestMaxMessages
+      );
+      await ingestText(this.knowledge, {
+        text: segment,
+        sourceType: "conversation",
+        sourceRef: sessionId
+          ? `chat-auto:${sessionId}`
+          : "chat-auto",
+        minChars: kSettings.ingestMinChars,
+        dedupeNodes: true,
+      });
+    } catch {
+      // best-effort; never fail the chat turn
+    }
   }
 
   private emitRequestEvent(
@@ -849,14 +893,19 @@ export function loadConfigFromEnv(
           : undefined,
       });
 
-  // M12/M13: knowledge store + optional tools (requires TOOLS_ENABLED path for loop)
+  // M12–M14: knowledge store + optional tools / inject / auto-ingest
   const knowledgeToolsEnabled = envFlagTrue(env.KNOWLEDGE_TOOLS_ENABLED);
   const knowledgeInjectEnabled = envFlagTrue(env.KNOWLEDGE_INJECT_ENABLED);
+  const knowledgeIngestAutoOnChat = envFlagTrue(
+    env.KNOWLEDGE_INGEST_AUTO_ON_CHAT
+  );
   const knowledgeDbPath = resolveKnowledgeDbPath(cwd, env);
   const defaultWorkspaceId =
     env.KNOWLEDGE_DEFAULT_WORKSPACE_ID?.trim() || workspace.id;
   const knowledge =
-    knowledgeToolsEnabled || knowledgeInjectEnabled
+    knowledgeToolsEnabled ||
+    knowledgeInjectEnabled ||
+    knowledgeIngestAutoOnChat
       ? createKnowledgeStore({
           dbPath: knowledgeDbPath,
           defaultWorkspaceId,
@@ -909,6 +958,12 @@ export function loadConfigFromEnv(
       injectHops: (parsePositiveInt(env.KNOWLEDGE_INJECT_HOPS, 1) >= 2
         ? 2
         : 1) as 1 | 2,
+      ingestAutoOnChat: knowledgeIngestAutoOnChat,
+      ingestMinChars: parsePositiveInt(env.KNOWLEDGE_INGEST_MIN_CHARS, 80),
+      ingestMaxMessages: parsePositiveInt(
+        env.KNOWLEDGE_INGEST_MAX_MESSAGES,
+        12
+      ),
     },
     longTermSettings: {
       dbPath: longTermDbPath,

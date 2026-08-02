@@ -30,3 +30,13 @@ export {
 } from "./formatNeighborhood.js";
 export { createKnowledgeTools } from "./tools.js";
 export { buildKnowledgeInjectBlock } from "./inject.js";
+export {
+  ingestText,
+  ingestFile,
+  heuristicExtract,
+  filterDuplicateNodeProposals,
+  formatChatSegment,
+  type IngestTextInput,
+  type IngestFileInput,
+  type IngestResult,
+} from "./ingest.js";

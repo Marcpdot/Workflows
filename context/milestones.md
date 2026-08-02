@@ -88,9 +88,10 @@ Details, invariants, and M11 done-when: [knowledge.md](knowledge.md).
 | **M11** | **Delivered as shell** — `packages/knowledge`; extract→propose→approve→neighborhood; smoke + CLI |
 | **M12** | **Delivered as shell** — `knowledge_*` tools; optional inject default off; smoke-knowledge-tools |
 | **M13** | **Delivered as shell** — project ensure/link/status; `workspaceId` defaults; M13 tools + CLI; smoke-knowledge-projects |
-| **M14–M18** | **Planned** (roadmap only) — ingest, identity, FP workflow, read surface, optional voice |
+| **M14** | **Delivered as shell** — `ingestText`/`ingestFile`; light dedupe; tool+CLI; auto-chat opt-in proposals-only; smoke-knowledge-ingest |
+| **M15–M18** | **Planned** (roadmap only) — identity, FP workflow, read surface, optional voice |
 
-Vertical M0–M13 shells are in place. Next knowledge target is **M14** (continuous/batch ingest) when ready.
+Vertical M0–M14 shells are in place. Next knowledge target is **M15** (identity/merge/contradiction) when ready.
 
 Thin spots accepted under shell-first (e.g. heuristic score fusion, static UI, linear vector scan, repair-not-constrained-decoding) are documented per topic.
 

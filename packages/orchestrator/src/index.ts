@@ -21,6 +21,8 @@ import { resolveWorkspace, type WorkspaceContext } from "@workflows/workspace";
 import {
   applyExtractionResult,
   createKnowledgeStore,
+  ingestFile,
+  ingestText,
   resolveKnowledgeDbPath,
   type ExtractionResult,
   type KnowledgeStore,
@@ -78,6 +80,7 @@ Options:
   --knowledge ensure-project label=NAME [description=...] [workspaceId=...]
   --knowledge link nodeId=... projectId=... [relation=used_in|about|part_of]
   --knowledge project-status [label=NAME|projectId=...] [hops=1|2]
+  --knowledge ingest --text "..." | --file path [projectLabel=...] [workspaceId=...]
   --pipeline <task>  Sequential planner→worker pipeline (Milestone 3C)
   --workspace, -w PATH  Workspace root for tools + session namespace (env WORKSPACE_ROOT)
   --list-sessions    List short-term session ids (optional filter by current workspace)
@@ -114,6 +117,7 @@ Env (see .env.example):
   KNOWLEDGE_DB_PATH, PERSONAL_CONTEXT_DIR (knowledge.db)
   KNOWLEDGE_DEFAULT_WORKSPACE_ID (else from --workspace / WORKSPACE_ROOT id)
   KNOWLEDGE_TOOLS_ENABLED, KNOWLEDGE_INJECT_ENABLED
+  KNOWLEDGE_INGEST_AUTO_ON_CHAT (default false; proposals only), KNOWLEDGE_INGEST_MIN_CHARS
   PROACTIVE_ENABLED, PROACTIVE_MAX, PROACTIVE_USE_MODEL
   AGENTS_PIPELINE_ENABLED
   WORKSPACE_ROOT (or TOOL_WORKSPACE_ROOT), INTEGRATION_HTTP_PORT, INTEGRATION_HTTP_TOKEN
@@ -131,11 +135,13 @@ interface KnowledgeCliAction {
     | "extract"
     | "ensure-project"
     | "link"
-    | "project-status";
+    | "project-status"
+    | "ingest";
   id?: string;
   filter?: string;
   args: Record<string, unknown>;
   text?: string;
+  file?: string;
 }
 
 interface ToolCliAction {
@@ -325,10 +331,11 @@ function parseArgs(argv: string[]): CliArgs {
             "ensure-project",
             "link",
             "project-status",
+            "ingest",
           ].includes(sub)
         ) {
           console.error(
-            "--knowledge requires proposals|accept|reject|find|neighborhood|extract|ensure-project|link|project-status"
+            "--knowledge requires proposals|accept|reject|find|neighborhood|extract|ensure-project|link|project-status|ingest"
           );
           process.exit(1);
         }
@@ -367,18 +374,22 @@ function parseArgs(argv: string[]): CliArgs {
             kv.push(argv[++i]!);
           }
           knowledgeAction = { kind: sub, args: parseKvArgs(kv) };
-        } else if (sub === "extract") {
+        } else if (sub === "extract" || sub === "ingest") {
           let text: string | undefined;
+          let file: string | undefined;
           const kv: string[] = [];
           while (i + 1 < argv.length) {
             const next = argv[i + 1]!;
             if (next === "--text") {
               i++;
               text = argv[++i];
+            } else if (next === "--file") {
+              i++;
+              file = argv[++i];
             } else if (next.includes("=")) {
               kv.push(argv[++i]!);
             } else if (!next.startsWith("-")) {
-              // remaining free text as extract body
+              // remaining free text as extract/ingest body
               const parts: string[] = [];
               while (i + 1 < argv.length && !argv[i + 1]!.startsWith("-")) {
                 parts.push(argv[++i]!);
@@ -393,9 +404,13 @@ function parseArgs(argv: string[]): CliArgs {
           if (!text && typeof argsMap.text === "string") {
             text = String(argsMap.text);
           }
+          if (!file && typeof argsMap.file === "string") {
+            file = String(argsMap.file);
+          }
           knowledgeAction = {
-            kind: "extract",
+            kind: sub,
             text,
+            file,
             args: argsMap,
           };
         }
@@ -719,6 +734,55 @@ async function runKnowledgeAction(
         for (const p of proposals) {
           console.log(`  ${p.id}  ${p.kind}`);
         }
+      }
+      return;
+    }
+    if (action.kind === "ingest") {
+      const text = action.text?.trim();
+      const file = action.file?.trim();
+      if (!text && !file) {
+        console.error(
+          '--knowledge ingest requires --text "..." or --file path'
+        );
+        process.exit(1);
+      }
+      const projectLabel = action.args.projectLabel
+        ? String(action.args.projectLabel)
+        : undefined;
+      const workspaceId = action.args.workspaceId
+        ? String(action.args.workspaceId)
+        : undefined;
+      const result = file
+        ? await ingestFile(store, {
+            path: file,
+            workspaceRoot: options?.workspaceRoot,
+            projectLabel,
+            workspaceId,
+            sourceRef: action.args.sourceRef
+              ? String(action.args.sourceRef)
+              : undefined,
+          })
+        : await ingestText(store, {
+            text: text!,
+            projectLabel,
+            workspaceId,
+            sourceType: "manual",
+            sourceRef: action.args.sourceRef
+              ? String(action.args.sourceRef)
+              : "cli-ingest",
+          });
+      if (asJson) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(
+          `[knowledge] ingest mode=${result.mode} event=${result.eventId || "none"} proposals=${result.proposals.length} skippedDupNodes=${result.skippedDuplicateNodes}${result.reason ? ` reason=${result.reason}` : ""}`
+        );
+        for (const p of result.proposals) {
+          console.log(`  ${p.id}  ${p.kind}  pending`);
+        }
+        console.log(
+          "[knowledge] proposals only — use --knowledge accept <id> to commit"
+        );
       }
       return;
     }
