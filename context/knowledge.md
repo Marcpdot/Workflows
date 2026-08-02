@@ -144,7 +144,7 @@ SQLite tables alongside existing DBs. No new infrastructure required for M11–M
 | **M14** | Continuous / batch ingest | `ingestText`/`ingestFile`, light dedupe, tool+CLI, auto-chat opt-in (proposals only) | **shell delivered** |
 | **M15** | Identity, merge & contradiction | Aliases, merge rewire, contradicts list, supersede (no silent delete) | **shell delivered** |
 | **M16** | First-principles workflow | Template analysis → structured proposals (not sole purpose of knowledge) | **shell delivered** |
-| **M17** | Read surface | Navigate without 3D | planned |
+| **M17** | Read surface | Reader helpers, renderers, CLI `--json`, optional HTTP + minimal HTML | **shell delivered** |
 | **M18** | Voice / multimodal I/O (optional) | Same brain, speech interface | planned |
 
 **M13 shell notes:** Project is a graph node (`type: "project"`), not a separate table. Binding uses edges (`used_in` | `about` | `part_of`). One knowledge.db with `workspaceId` filters (same idea as M9 session namespace). Accept applies `defaultWorkspaceId` when payload omits workspace. Tools: `knowledge_ensure_project`, `knowledge_link_project`, `knowledge_unlink_project`, `knowledge_project_status`. Inject prefers project status when the prompt matches a project label.
@@ -154,6 +154,8 @@ SQLite tables alongside existing DBs. No new infrastructure required for M11–M
 **M15 shell notes:** `knowledge_aliases` table + `normalizeLabel` (trim/case/diacritics). `mergeNodes` rewires edges/evidence, aliases the from-label, marks from **rejected** (history kept). `findContradictions` / `markContradiction` are explicit flags — no auto truth. `supersedeClaim` uses edge `supersedes` and can mark old disputed. Tools: `knowledge_add_alias`, `knowledge_merge`, `knowledge_find_contradictions`, `knowledge_mark_contradiction`, `knowledge_supersede`.
 
 **M16 shell notes:** First-principles is **one workflow** on the general graph (`runFirstPrinciplesAnalysis` → pending proposals). Template steps: goal, laws, absolute/contingent limits, bottlenecks, scaling, next experiment. Offline heuristic + optional model `complete` + fixture for smoke. Optional `projectLabel` ensures M13 project and proposes `used_in` edges. Tool `knowledge_first_principles`; CLI `--knowledge fp --topic "..."`.
+
+**M17 shell notes:** Read-only surface over M11–M16 — `createKnowledgeReader` (search, node, neighborhood, project status, contradictions, proposals) + compact renderers (table/list/subgraph/report/HTML). CLI uses stable `--json` envelopes. Optional `KNOWLEDGE_HTTP_READ=true` exposes `GET /v1/knowledge/*` behind the same integration token; `GET /knowledge` is a no-framework browse page. No write UI.
 
 **Capability bands**
 

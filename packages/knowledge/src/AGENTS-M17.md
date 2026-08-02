@@ -31,8 +31,8 @@ KNOWLEDGE_HTTP_READ=false
 
 ## Ferdig når
 
-- [ ] library read helpers documented
-- [ ] CLI read paths consistent (`--json`)
-- [ ] one subgraph render path (text or minimal HTML)
-- [ ] smoke on read stability
-- [ ] no requirement for heavy frontend toolchain
+- [x] library read helpers documented
+- [x] CLI read paths consistent (`--json`)
+- [x] one subgraph render path (text or minimal HTML)
+- [x] smoke on read stability
+- [x] no requirement for heavy frontend toolchain

@@ -49,9 +49,14 @@ npx tsx scripts/smoke-knowledge-projects.ts
 npx tsx scripts/smoke-knowledge-ingest.ts
 npx tsx scripts/smoke-knowledge-identity.ts
 npx tsx scripts/smoke-knowledge-fp.ts
+npx tsx scripts/smoke-knowledge-read.ts
 npx tsx src/index.ts --knowledge merge fromId=... intoId=...
 npx tsx src/index.ts --knowledge contradictions
 npx tsx src/index.ts --knowledge fp --topic "continuous torque"
+npx tsx src/index.ts --json --knowledge find label=heat
+# Knowledge HTTP read (optional):
+# KNOWLEDGE_HTTP_READ=true npm run serve
+# open http://127.0.0.1:8787/knowledge
 
 # Tool loop (models can call knowledge_* tools):
 # TOOLS_ENABLED=true KNOWLEDGE_TOOLS_ENABLED=true npm run dev -- "..."

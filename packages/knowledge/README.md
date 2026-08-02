@@ -1,6 +1,6 @@
 # @workflows/knowledge
 
-Semantic knowledge model shell (M11–M16): concepts, claims, edges, proposals, neighborhood, project binding, batch ingest, identity/merge, first-principles workflow.
+Semantic knowledge model shell (M11–M17): graph, ingest, identity, first-principles, **read surface**.
 
 ```bash
 cd packages/knowledge
@@ -13,9 +13,10 @@ npx tsx scripts/smoke-knowledge-projects.ts
 npx tsx scripts/smoke-knowledge-ingest.ts
 npx tsx scripts/smoke-knowledge-identity.ts
 npx tsx scripts/smoke-knowledge-fp.ts
+npx tsx scripts/smoke-knowledge-read.ts
 ```
 
-Vertical: extract → propose/accept → neighborhood → project bind → ingest → alias/merge → first-principles.
+Vertical: extract → propose/accept → neighborhood → project → ingest → identity → FP → **read**.
 
 CLI (from `packages/orchestrator`):
 
@@ -35,8 +36,19 @@ npx tsx src/index.ts --knowledge contradictions
 npx tsx src/index.ts --knowledge mark-contradiction fromId=... toId=...
 npx tsx src/index.ts --knowledge supersede oldClaimId=... newClaimId=...
 npx tsx src/index.ts --knowledge fp --topic "continuous torque" projectLabel=aktuator-v2
+npx tsx src/index.ts --json --knowledge find label=heat
+npx tsx src/index.ts --json --knowledge neighborhood <nodeId>
+npx tsx src/index.ts --knowledge find label=heat --table
 ```
 
-Env: `KNOWLEDGE_DB_PATH`, `PERSONAL_CONTEXT_DIR`, `KNOWLEDGE_DEFAULT_WORKSPACE_ID`,
-`KNOWLEDGE_TOOLS_ENABLED`, `KNOWLEDGE_INJECT_ENABLED`,
-`KNOWLEDGE_INGEST_AUTO_ON_CHAT`, `KNOWLEDGE_INGEST_MIN_CHARS` (see AGENTS-M14–M16.md).
+Read library: `createKnowledgeReader(store)`, renderers in `@workflows/knowledge`.
+
+Optional HTTP (integration server):
+
+```bash
+# KNOWLEDGE_HTTP_READ=true INTEGRATION_HTTP_PORT=8787 npm run serve
+# GET /v1/knowledge/search?label=heat
+# GET /knowledge  (minimal HTML browse)
+```
+
+Env: `KNOWLEDGE_DB_PATH`, `KNOWLEDGE_HTTP_READ`, plus M11–M16 flags (see AGENTS-M17.md).

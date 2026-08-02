@@ -123,3 +123,20 @@ scripts/smoke-integration.ts
 - Minst ett eksempel utenfor Orchestrator-mappa som kaller inn
 - Smoke grønn
 - (Stretch) lokal HTTP `/v1/chat` + `/health`
+
+## Knowledge read (M17)
+
+When `KNOWLEDGE_HTTP_READ=true`, the integration server also serves:
+
+| Method | Path |
+|--------|------|
+| GET | `/v1/knowledge` (route index) |
+| GET | `/v1/knowledge/node?id=` |
+| GET | `/v1/knowledge/search?label=&type=&status=` |
+| GET | `/v1/knowledge/neighborhood?nodeId=&hops=` |
+| GET | `/v1/knowledge/project-status?label=` |
+| GET | `/v1/knowledge/contradictions` |
+| GET | `/v1/knowledge/proposals?status=` |
+| GET | `/knowledge` (minimal HTML browse; no framework) |
+
+Same `INTEGRATION_HTTP_TOKEN` bearer gate as other `/v1/*` routes.

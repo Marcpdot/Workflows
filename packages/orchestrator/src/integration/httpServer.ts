@@ -4,7 +4,16 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { extname, join, normalize, resolve, sep } from "node:path";
+import { dirname, extname, join, normalize, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  createKnowledgeReader,
+  createKnowledgeStore,
+  renderKnowledgeBrowseHtml,
+  resolveKnowledgeDbPath,
+  type KnowledgeNodeType,
+  type KnowledgeStatus,
+} from "@workflows/knowledge";
 import { Orchestrator, loadConfigFromEnv } from "../orchestrator.js";
 import { createMemory } from "@workflows/memory";
 import { createRegistryFromConfig } from "@workflows/tools";
@@ -15,6 +24,16 @@ import type {
   IntegrationErrorResponse,
   IntegrationHealthResponse,
 } from "./types.js";
+
+function envFlagTrue(value: string | undefined): boolean {
+  return value === "1" || value === "true" || value === "yes";
+}
+
+function knowledgeHttpReadEnabled(
+  env: NodeJS.ProcessEnv = process.env
+): boolean {
+  return envFlagTrue(env.KNOWLEDGE_HTTP_READ);
+}
 
 export interface HttpServerOptions {
   host?: string;
@@ -156,6 +175,35 @@ export function createIntegrationServer(
           version,
         };
         sendJson(res, 200, body);
+        return;
+      }
+
+      // M17: optional knowledge read API (same token gate as /v1/*)
+      if (
+        knowledgeHttpReadEnabled() &&
+        req.method === "GET" &&
+        path.startsWith("/v1/knowledge")
+      ) {
+        if (!checkAuth(req, token)) {
+          unauthorized(res);
+          return;
+        }
+        await handleKnowledgeRead(req, res, path, url);
+        return;
+      }
+
+      // M17: minimal knowledge browse HTML (no auth for static shell; API still gated)
+      if (
+        knowledgeHttpReadEnabled() &&
+        req.method === "GET" &&
+        (path === "/knowledge" || path === "/knowledge/")
+      ) {
+        const html = renderKnowledgeBrowseHtml({ apiBase: "" });
+        res.writeHead(200, {
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Length": Buffer.byteLength(html),
+        });
+        res.end(html);
         return;
       }
 
@@ -303,4 +351,149 @@ export function listenIntegrationServer(
     });
     server.on("error", reject);
   });
+}
+
+/**
+ * GET /v1/knowledge/node|search|neighborhood|project-status|contradictions|proposals
+ */
+async function handleKnowledgeRead(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  path: string,
+  url: URL
+): Promise<void> {
+  const store = createKnowledgeStore({
+    dbPath: resolveKnowledgeDbPath(process.cwd(), process.env),
+  });
+  const reader = createKnowledgeReader(store);
+  try {
+    const q = url.searchParams;
+
+    if (path === "/v1/knowledge/node") {
+      const id = q.get("id")?.trim();
+      if (!id) {
+        sendJson(res, 400, { ok: false, error: "id query param required" });
+        return;
+      }
+      const node = await reader.getNode(id);
+      if (!node) {
+        sendJson(res, 404, { ok: false, error: `node not found: ${id}` });
+        return;
+      }
+      sendJson(res, 200, { ok: true, node });
+      return;
+    }
+
+    if (path === "/v1/knowledge/search") {
+      const result = await reader.search({
+        label: q.get("label") ?? undefined,
+        type: (q.get("type") as KnowledgeNodeType | null) ?? undefined,
+        status: (q.get("status") as KnowledgeStatus | null) ?? "accepted",
+        workspaceId: q.get("workspaceId") ?? undefined,
+        limit: q.get("limit") ? Number(q.get("limit")) : 20,
+      });
+      sendJson(res, 200, { ok: true, ...result });
+      return;
+    }
+
+    if (path === "/v1/knowledge/neighborhood") {
+      const nodeId = q.get("nodeId")?.trim() ?? q.get("id")?.trim();
+      if (!nodeId) {
+        sendJson(res, 400, {
+          ok: false,
+          error: "nodeId (or id) query param required",
+        });
+        return;
+      }
+      const hops = q.get("hops") === "2" ? 2 : 1;
+      const result = await reader.getNeighborhood(nodeId, {
+        hops: hops as 1 | 2,
+      });
+      sendJson(res, 200, { ok: true, ...result });
+      return;
+    }
+
+    if (path === "/v1/knowledge/project-status") {
+      const label = q.get("label")?.trim() ?? undefined;
+      const projectId = q.get("projectId")?.trim() ?? undefined;
+      if (!label && !projectId) {
+        sendJson(res, 400, {
+          ok: false,
+          error: "label or projectId required",
+        });
+        return;
+      }
+      try {
+        const status = await reader.getProjectStatus({
+          label,
+          projectId,
+          hops: q.get("hops") === "2" ? 2 : 1,
+        });
+        sendJson(res, 200, { ok: true, status });
+      } catch (err) {
+        sendJson(res, 404, {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return;
+    }
+
+    if (path === "/v1/knowledge/contradictions") {
+      const result = await reader.findContradictions({
+        nodeId: q.get("nodeId")?.trim() ?? undefined,
+        limit: q.get("limit") ? Number(q.get("limit")) : 50,
+      });
+      sendJson(res, 200, { ok: true, ...result });
+      return;
+    }
+
+    if (path === "/v1/knowledge/proposals") {
+      const st = q.get("status")?.trim() as
+        | "pending"
+        | "accepted"
+        | "rejected"
+        | undefined;
+      const result = await reader.listProposals({
+        status: st ?? "pending",
+      });
+      sendJson(res, 200, { ok: true, ...result });
+      return;
+    }
+
+    // Index of available read routes
+    if (path === "/v1/knowledge" || path === "/v1/knowledge/") {
+      sendJson(res, 200, {
+        ok: true,
+        service: "knowledge-read",
+        routes: [
+          "GET /v1/knowledge/node?id=",
+          "GET /v1/knowledge/search?label=&type=&status=",
+          "GET /v1/knowledge/neighborhood?nodeId=&hops=1|2",
+          "GET /v1/knowledge/project-status?label=|projectId=",
+          "GET /v1/knowledge/contradictions?nodeId=",
+          "GET /v1/knowledge/proposals?status=pending",
+          "GET /knowledge  (minimal HTML browse)",
+        ],
+      });
+      return;
+    }
+
+    sendJson(res, 404, {
+      ok: false,
+      error: `Unknown knowledge read path: ${path}`,
+    });
+  } finally {
+    store.close();
+  }
+}
+
+/** Path to optional static knowledge HTML file on disk (for packaging). */
+export function knowledgeBrowseHtmlPath(): string {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    return resolve(here, "knowledge-ui", "index.html");
+  } catch {
+    return resolve(process.cwd(), "src/integration/knowledge-ui/index.html");
+  }
 }

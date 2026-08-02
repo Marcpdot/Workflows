@@ -20,9 +20,15 @@ import { createRegistryFromConfig } from "@workflows/tools";
 import { resolveWorkspace, type WorkspaceContext } from "@workflows/workspace";
 import {
   applyExtractionResult,
+  createKnowledgeReader,
   createKnowledgeStore,
   ingestFile,
   ingestText,
+  renderContradictionsRead,
+  renderNeighborhoodRead,
+  renderNodeTable,
+  renderProjectStatusReport,
+  renderSearchRead,
   resolveKnowledgeDbPath,
   runFirstPrinciplesAnalysis,
   type ExtractionResult,
@@ -75,8 +81,9 @@ Options:
   --knowledge proposals [pending|accepted|rejected]
   --knowledge accept <proposalId>
   --knowledge reject <proposalId>
-  --knowledge find [label=...] [type=concept|claim|...] [workspaceId=...]
+  --knowledge find [label=...] [type=concept|claim|...] [workspaceId=...] [--table]
   --knowledge neighborhood <nodeId> [hops=1|2]
+  --knowledge search [label=...] [type=...]   # M17 read alias for find
   --knowledge extract --text "..."   # fixture-free extract via local model if available
   --knowledge ensure-project label=NAME [description=...] [workspaceId=...]
   --knowledge link nodeId=... projectId=... [relation=used_in|about|part_of]
@@ -125,6 +132,7 @@ Env (see .env.example):
   KNOWLEDGE_DEFAULT_WORKSPACE_ID (else from --workspace / WORKSPACE_ROOT id)
   KNOWLEDGE_TOOLS_ENABLED, KNOWLEDGE_INJECT_ENABLED
   KNOWLEDGE_INGEST_AUTO_ON_CHAT (default false; proposals only), KNOWLEDGE_INGEST_MIN_CHARS
+  KNOWLEDGE_HTTP_READ (integration GET /v1/knowledge/* + /knowledge HTML)
   PROACTIVE_ENABLED, PROACTIVE_MAX, PROACTIVE_USE_MODEL
   AGENTS_PIPELINE_ENABLED
   WORKSPACE_ROOT (or TOOL_WORKSPACE_ROOT), INTEGRATION_HTTP_PORT, INTEGRATION_HTTP_TOKEN
@@ -138,6 +146,7 @@ interface KnowledgeCliAction {
     | "accept"
     | "reject"
     | "find"
+    | "search"
     | "neighborhood"
     | "extract"
     | "ensure-project"
@@ -340,6 +349,7 @@ function parseArgs(argv: string[]): CliArgs {
             "accept",
             "reject",
             "find",
+            "search",
             "neighborhood",
             "extract",
             "ensure-project",
@@ -355,7 +365,7 @@ function parseArgs(argv: string[]): CliArgs {
           ].includes(sub)
         ) {
           console.error(
-            "--knowledge requires proposals|accept|reject|find|neighborhood|extract|ensure-project|link|project-status|ingest|add-alias|merge|contradictions|mark-contradiction|supersede|fp"
+            "--knowledge requires proposals|accept|reject|find|search|neighborhood|extract|ensure-project|link|project-status|ingest|add-alias|merge|contradictions|mark-contradiction|supersede|fp"
           );
           process.exit(1);
         }
@@ -385,6 +395,7 @@ function parseArgs(argv: string[]): CliArgs {
           };
         } else if (
           sub === "find" ||
+          sub === "search" ||
           sub === "ensure-project" ||
           sub === "link" ||
           sub === "project-status" ||
@@ -395,10 +406,21 @@ function parseArgs(argv: string[]): CliArgs {
           sub === "supersede"
         ) {
           const kv: string[] = [];
-          while (i + 1 < argv.length && argv[i + 1]!.includes("=")) {
-            kv.push(argv[++i]!);
+          while (i + 1 < argv.length) {
+            const next = argv[i + 1]!;
+            if (next === "--table") {
+              i++;
+              kv.push("table=1");
+            } else if (next.includes("=")) {
+              kv.push(argv[++i]!);
+            } else {
+              break;
+            }
           }
-          knowledgeAction = { kind: sub, args: parseKvArgs(kv) };
+          knowledgeAction = {
+            kind: sub === "search" ? "find" : sub,
+            args: parseKvArgs(kv),
+          };
         } else if (sub === "fp") {
           let topic: string | undefined;
           const kv: string[] = [];
@@ -554,12 +576,15 @@ async function runKnowledgeAction(
         action.filter === "rejected"
           ? action.filter
           : "pending";
-      const list = await store.listProposals({ status });
+      const reader = createKnowledgeReader(store);
+      const result = await reader.listProposals({ status });
       if (asJson) {
-        console.log(JSON.stringify(list, null, 2));
+        console.log(JSON.stringify(result, null, 2));
       } else {
-        console.log(`[knowledge] proposals status=${status} count=${list.length}`);
-        for (const p of list) {
+        console.log(
+          `[knowledge] proposals status=${result.status} count=${result.count}`
+        );
+        for (const p of result.proposals) {
           console.log(
             `  ${p.id}  ${p.kind}  ${JSON.stringify(p.payload).slice(0, 120)}`
           );
@@ -580,7 +605,8 @@ async function runKnowledgeAction(
       return;
     }
     if (action.kind === "find") {
-      const nodes = await store.findNodes({
+      const reader = createKnowledgeReader(store);
+      const result = await reader.search({
         type: action.args.type
           ? (String(action.args.type) as
               | "concept"
@@ -607,38 +633,24 @@ async function runKnowledgeAction(
           ? String(action.args.workspaceId)
           : undefined,
       });
-      if (asJson) console.log(JSON.stringify(nodes, null, 2));
-      else {
-        console.log(`[knowledge] find count=${nodes.length}`);
-        for (const n of nodes) {
-          console.log(
-            `  ${n.id}  ${n.type}  ${n.label}  (${n.status})${
-              n.workspaceId ? ` ws=${n.workspaceId}` : ""
-            }`
-          );
-        }
+      if (asJson) console.log(JSON.stringify(result, null, 2));
+      else if (action.args.table === "1" || action.args.table === 1) {
+        console.log(renderNodeTable(result.nodes));
+      } else {
+        console.log(renderSearchRead(result));
       }
       return;
     }
     if (action.kind === "neighborhood") {
+      const reader = createKnowledgeReader(store);
       const hops = action.args.hops === "2" || action.args.hops === 2 ? 2 : 1;
-      const neigh = await store.getNeighborhood(action.id!, {
+      const neigh = await reader.getNeighborhood(action.id!, {
         hops: hops as 1 | 2,
         status: "accepted",
       });
       if (asJson) console.log(JSON.stringify(neigh, null, 2));
       else {
-        console.log(
-          `[knowledge] neighborhood root=${action.id} hops=${hops} nodes=${neigh.nodes.length} edges=${neigh.edges.length}`
-        );
-        for (const n of neigh.nodes) {
-          console.log(`  node ${n.id}  ${n.type}  ${n.label}`);
-        }
-        for (const e of neigh.edges) {
-          console.log(
-            `  edge ${e.fromNodeId} -[${e.relation}]-> ${e.toNodeId}`
-          );
-        }
+        console.log(renderNeighborhoodRead(neigh));
       }
       return;
     }
@@ -716,7 +728,8 @@ async function runKnowledgeAction(
       }
       const hops =
         action.args.hops === "2" || action.args.hops === 2 ? 2 : 1;
-      const status = await store.getProjectStatus({
+      const reader = createKnowledgeReader(store);
+      const status = await reader.getProjectStatus({
         label,
         projectId,
         hops: hops as 1 | 2,
@@ -724,12 +737,9 @@ async function runKnowledgeAction(
           ? String(action.args.workspaceId)
           : undefined,
       });
-      if (asJson) console.log(JSON.stringify(status, null, 2));
+      if (asJson) console.log(JSON.stringify({ ok: true, status }, null, 2));
       else {
-        console.log(`[knowledge] project-status`);
-        for (const line of status.summaryLines) {
-          console.log(`  ${line}`);
-        }
+        console.log(renderProjectStatusReport(status));
       }
       return;
     }
@@ -891,13 +901,11 @@ async function runKnowledgeAction(
       const nodeId = action.args.nodeId
         ? String(action.args.nodeId)
         : undefined;
-      const pairs = await store.findContradictions({ nodeId });
-      if (asJson) console.log(JSON.stringify(pairs, null, 2));
+      const reader = createKnowledgeReader(store);
+      const result = await reader.findContradictions({ nodeId });
+      if (asJson) console.log(JSON.stringify(result, null, 2));
       else {
-        console.log(`[knowledge] contradictions count=${pairs.length}`);
-        for (const p of pairs) {
-          console.log(`  ${p.summary}`);
-        }
+        console.log(renderContradictionsRead(result));
       }
       return;
     }

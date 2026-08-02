@@ -54,3 +54,25 @@ export {
   type RunFirstPrinciplesInput,
   type RunFirstPrinciplesOutput,
 } from "./firstPrinciples.js";
+export {
+  createKnowledgeReader,
+  toNodeDto,
+  toEdgeDto,
+  type KnowledgeReader,
+  type KnowledgeNodeDto,
+  type KnowledgeEdgeDto,
+  type NeighborhoodRead,
+  type SearchRead,
+  type ContradictionsRead,
+  type ProposalsRead,
+} from "./read.js";
+export {
+  renderNodeTable,
+  renderNodeList,
+  renderSubgraph,
+  renderNeighborhoodRead,
+  renderSearchRead,
+  renderProjectStatusReport,
+  renderContradictionsRead,
+  renderKnowledgeBrowseHtml,
+} from "./render.js";
