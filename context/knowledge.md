@@ -178,6 +178,8 @@ and still use. Do not collapse these into one “build the full world model” d
 
 ### M11 detail (first shell)
 
+**Implementation spec:** [`packages/knowledge/src/AGENTS.md`](../packages/knowledge/src/AGENTS.md) (types, schema, API, extraction, smoke, done-when).
+
 **In scope**
 
 1. Types + SQLite store for nodes, edges, evidence, events, proposals
