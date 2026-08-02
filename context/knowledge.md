@@ -108,7 +108,8 @@ packages/
   knowledge/    # store + query + commit API (+ extract helpers)
 ```
 
-Tools (M12): see [`packages/knowledge/src/AGENTS-M12.md`](../packages/knowledge/src/AGENTS-M12.md) — `knowledge_find`, `knowledge_neighborhood`, `knowledge_list_proposals`, `knowledge_propose`, `knowledge_accept`, `knowledge_reject`.
+- **M12 tools:** [`AGENTS-M12.md`](../packages/knowledge/src/AGENTS-M12.md)
+- **M13 project binding:** [`AGENTS-M13.md`](../packages/knowledge/src/AGENTS-M13.md)
 
 ## Voice / natural-language use (intent)
 
@@ -153,7 +154,7 @@ and still use. Do not collapse these into one “build the full world model” d
 |---|--------|----------|----------------|
 | **M11** | Semantic knowledge shell | Types + SQLite; extract → propose → approve → commit; neighborhood query; smoke | Proves representation and the approval loop |
 | **M12** | Knowledge tools + orchestrator wire | `knowledge_*` tools; optional neighborhood into model context | Models can *use* the graph, not only CLI |
-| **M13** | Project & workspace binding | Claims/events linked to workspace/project; status queries | “Status on aktuator-v2?” becomes real |
+| **M13** | Project & workspace binding | Project nodes, links, `getProjectStatus`, workspaceId defaults | “Status on aktuator-v2?” becomes real |
 | **M14** | Continuous / batch ingest | New chat segment or markdown → proposals (still not blind commit) | Graph grows from daily work |
 | **M15** | Identity, merge & contradiction | Aliases, duplicate merge, supports/contradicts, revision | Prevents semantic chaos as volume grows |
 | **M16** | First-principles workflow | Fixed analysis template stored as events/claims (goal → laws → limits → scale → next bottleneck) | Direct support for the analysis style that motivated this layer |
@@ -175,17 +176,21 @@ and still use. Do not collapse these into one “build the full world model” d
 
 ### M11 detail (first shell)
 
-**Implementation spec:** [`packages/knowledge/src/AGENTS.md`](../packages/knowledge/src/AGENTS.md) (types, schema, API, extraction, smoke, done-when).
+**Implementation spec:** [`packages/knowledge/src/AGENTS.md`](../packages/knowledge/src/AGENTS.md).
 
-**Status:** delivered as shell (`430ce65` and follow-ups).
+**Status:** delivered as shell.
 
 ### M12 detail (tools + wire)
 
 **Implementation spec:** [`packages/knowledge/src/AGENTS-M12.md`](../packages/knowledge/src/AGENTS-M12.md).
 
-**Status:** delivered as shell — `createKnowledgeTools(store)`, orchestrator registers when `KNOWLEDGE_TOOLS_ENABLED=true` (with tools path), inject when `KNOWLEDGE_INJECT_ENABLED=true` (default off). Smoke: `scripts/smoke-knowledge-tools.ts`.
+### M13 detail (project & workspace)
 
-**Out of scope still:** M13–M18 items; auto-accept; always-on full-graph inject.
+**Implementation spec:** [`packages/knowledge/src/AGENTS-M13.md`](../packages/knowledge/src/AGENTS-M13.md).
+
+**In scope:** `ensureProject`, `linkToProject`, `getProjectStatus`, workspaceId defaults, tools/CLI, smoke.
+
+**Out of scope:** auto-ingest, separate DB per workspace, path-safety changes.
 
 ## First-principles root question (kept)
 
