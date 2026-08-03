@@ -5,7 +5,12 @@
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { ChatMessage, StoredMessage } from "./types.js";
+import type {
+  ChatMessage,
+  InteractionMode,
+  SessionState,
+  StoredMessage,
+} from "./types.js";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS messages (
@@ -17,6 +22,16 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
+
+CREATE TABLE IF NOT EXISTS session_state (
+  session_id TEXT PRIMARY KEY,
+  interaction_mode TEXT NOT NULL DEFAULT 'active',
+  proposals_enabled INTEGER NOT NULL DEFAULT 1,
+  last_extract_turn_id TEXT,
+  max_proposals_per_turn INTEGER NOT NULL DEFAULT 8,
+  min_user_message_length INTEGER NOT NULL DEFAULT 40,
+  updated_at INTEGER NOT NULL
+);
 `;
 
 export class MessageStore {
@@ -159,6 +174,88 @@ export class MessageStore {
         }`
       );
     }
+  }
+
+  defaultSessionState(sessionId: string): SessionState {
+    return {
+      sessionId,
+      interactionMode: "active",
+      proposalsEnabled: true,
+      maxProposalsPerTurn: 8,
+      minUserMessageLength: 40,
+      updatedAt: Date.now(),
+    };
+  }
+
+  getSessionState(sessionId: string): SessionState {
+    if (!sessionId.trim()) {
+      throw new Error("sessionId must be a non-empty string");
+    }
+    const row = this.db
+      .prepare(
+        `SELECT session_id AS sessionId,
+                interaction_mode AS interactionMode,
+                proposals_enabled AS proposalsEnabled,
+                last_extract_turn_id AS lastExtractTurnId,
+                max_proposals_per_turn AS maxProposalsPerTurn,
+                min_user_message_length AS minUserMessageLength,
+                updated_at AS updatedAt
+         FROM session_state WHERE session_id = ?`
+      )
+      .get(sessionId) as
+      | {
+          sessionId: string;
+          interactionMode: string;
+          proposalsEnabled: number;
+          lastExtractTurnId: string | null;
+          maxProposalsPerTurn: number;
+          minUserMessageLength: number;
+          updatedAt: number;
+        }
+      | undefined;
+    if (!row) {
+      return this.defaultSessionState(sessionId);
+    }
+    const mode: InteractionMode =
+      row.interactionMode === "neutral" ? "neutral" : "active";
+    return {
+      sessionId: row.sessionId,
+      interactionMode: mode,
+      proposalsEnabled: row.proposalsEnabled !== 0,
+      lastExtractTurnId: row.lastExtractTurnId ?? undefined,
+      maxProposalsPerTurn: row.maxProposalsPerTurn,
+      minUserMessageLength: row.minUserMessageLength,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  upsertSessionState(state: SessionState): void {
+    this.db
+      .prepare(
+        `INSERT INTO session_state (
+           session_id, interaction_mode, proposals_enabled, last_extract_turn_id,
+           max_proposals_per_turn, min_user_message_length, updated_at
+         ) VALUES (
+           @sessionId, @interactionMode, @proposalsEnabled, @lastExtractTurnId,
+           @maxProposalsPerTurn, @minUserMessageLength, @updatedAt
+         )
+         ON CONFLICT(session_id) DO UPDATE SET
+           interaction_mode = excluded.interaction_mode,
+           proposals_enabled = excluded.proposals_enabled,
+           last_extract_turn_id = excluded.last_extract_turn_id,
+           max_proposals_per_turn = excluded.max_proposals_per_turn,
+           min_user_message_length = excluded.min_user_message_length,
+           updated_at = excluded.updated_at`
+      )
+      .run({
+        sessionId: state.sessionId,
+        interactionMode: state.interactionMode,
+        proposalsEnabled: state.proposalsEnabled ? 1 : 0,
+        lastExtractTurnId: state.lastExtractTurnId ?? null,
+        maxProposalsPerTurn: state.maxProposalsPerTurn,
+        minUserMessageLength: state.minUserMessageLength,
+        updatedAt: state.updatedAt,
+      });
   }
 
   close(): void {

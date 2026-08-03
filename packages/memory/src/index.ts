@@ -1,8 +1,10 @@
 export { createMemory } from "./memory.js";
 export type {
   ChatMessage,
+  InteractionMode,
   Memory,
   MemoryConfig,
+  SessionState,
   StoredMessage,
 } from "./types.js";
 export {

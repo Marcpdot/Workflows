@@ -5,13 +5,20 @@ import type {
   ToolLoopStep,
   ModelToolSchema,
 } from "@workflows/tools";
-import type { LongTermMemory, LongTermSettings } from "@workflows/memory";
+import type {
+  InteractionMode,
+  LongTermMemory,
+  LongTermSettings,
+} from "@workflows/memory";
 import type { ProactiveSettings, Suggestion } from "@workflows/proactive";
 import type { Embedder, VectorStore } from "@workflows/embeddings";
 import type { ComputePolicy, PolicyDecision } from "@workflows/policy";
 import type { Observer } from "@workflows/observability";
 import type { WorkspaceContext } from "@workflows/workspace";
-import type { KnowledgeStore } from "@workflows/knowledge";
+import type {
+  KnowledgeProposalSummary,
+  KnowledgeStore,
+} from "@workflows/knowledge";
 
 export type ModelChoice = "local" | "mid" | "frontier";
 
@@ -152,6 +159,11 @@ export interface OrchestratorConfig {
     ingestAutoOnChat: boolean;
     ingestMinChars: number;
     ingestMaxMessages: number;
+    /**
+     * Continuous capture when session mode is active (design: interaction mode).
+     * Default true unless KNOWLEDGE_CAPTURE_DISABLED.
+     */
+    captureEnabled: boolean;
   };
 }
 
@@ -181,4 +193,18 @@ export interface OrchestratorResult {
   toolsHitMaxSteps?: boolean;
   /** Milestone 3B suggestions (metadata — does not alter reply) */
   suggestions?: Suggestion[];
+  /** Session interaction mode used for this turn */
+  interactionMode?: InteractionMode;
+  /** Whether continuous proposals are enabled for the session */
+  proposalsEnabled?: boolean;
+  /** New pending proposals created this turn (never auto-accepted) */
+  proposals?: KnowledgeProposalSummary[];
+  /** Total pending proposals in the knowledge store (session/workspace scoped count is best-effort) */
+  pendingProposalCount?: number;
+  /** Capture skipped/ran metadata */
+  capture?: {
+    ran: boolean;
+    reason?: string;
+    mode?: string;
+  };
 }

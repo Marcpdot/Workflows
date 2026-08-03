@@ -26,12 +26,133 @@ body {
 
 .app {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 260px 1fr minmax(260px, 320px);
   grid-template-rows: auto 1fr;
   grid-template-areas:
-    "top top"
-    "side main";
+    "top top top"
+    "side main proposals";
   min-height: 100vh;
+}
+
+@media (max-width: 960px) {
+  .app {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "top"
+      "side"
+      "main"
+      "proposals";
+  }
+}
+
+.top-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.mode-btn {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.mode-btn.active {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.mode-btn.neutral {
+  border-color: var(--muted);
+  color: var(--muted);
+}
+
+.proposals-panel {
+  grid-area: proposals;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0.75rem;
+}
+
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.5rem;
+}
+
+.proposals-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.proposal-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem 0.65rem;
+  background: var(--bg);
+  font-size: 0.8rem;
+}
+
+.proposal-card .kind {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.proposal-card .label {
+  margin: 0.25rem 0 0.45rem;
+  word-break: break-word;
+}
+
+.proposal-card .actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.proposal-card button,
+.btn-secondary,
+.cmd-row button {
+  font-size: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 0.25rem 0.45rem;
+  cursor: pointer;
+}
+
+.proposal-card button.accept {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.proposal-card button.reject {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.cmd-row {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.panel-actions {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
 }
 
 .top {

@@ -162,6 +162,21 @@ SQLite tables alongside existing DBs. No new infrastructure required for M11–M
 
 **Explicitly out of early roadmap (still rejected):** Neo4j-as-required, fully autonomous permanent writes, 3D UI, complete self-model of Workflows on day one.
 
+## Interaction mode + continuous knowledge capture (post-M18 design)
+
+**Status:** active (design confirmed; implementation in progress)  
+**Evidence:** confirmed  
+**Source:** [`docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md`](../docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md); merge `cafb42c`  
+**Revisit when:** daily reasoning sessions show capture quality or UI friction issues
+
+**Decision:** Free-form reasoning sessions use a first-class session **`interactionMode`** (`active` | `neutral`, default **active**). In active mode the system continuously extracts **pending** knowledge proposals from the conversation (caps + substance heuristics + light dedupe); the human accepts/rejects. Explicit `/capture` works in any mode. Web UI gets a real proposals panel — still the same orchestrator/knowledge brain.
+
+**Reason:** Capture friction must be near-zero or the graph stays empty; mode must be remembered so deep sessions feel natural; FP and other analysis remain usage patterns on the general graph.
+
+**Rejected:** Auto-accept; FP-only graph types; treating UI as afterthought; a second capture brain outside orchestrator; every-turn extract without caps/mode.
+
+**See also:** [interface.md](interface.md) (UI/session surface); design doc for API shapes and priorities.
+
 ## Decisions delivered with M11–M18 shells
 
 **Status:** active  

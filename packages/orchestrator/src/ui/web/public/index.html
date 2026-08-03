@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Orchestrator</title>
+    <title>Orchestrator — reasoning + capture</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -11,9 +11,14 @@
       <header class="top">
         <div class="brand">
           <strong>Orchestrator</strong>
-          <span class="muted">M6 web shell</span>
+          <span class="muted">interaction mode + knowledge capture</span>
         </div>
-        <div class="status" id="health">connecting…</div>
+        <div class="top-right">
+          <button type="button" id="modeToggle" class="mode-btn active" title="Toggle active/neutral">
+            mode: active
+          </button>
+          <div class="status" id="health">connecting…</div>
+        </div>
       </header>
 
       <aside class="sidebar">
@@ -34,6 +39,14 @@
           <input id="toolsEnabled" type="checkbox" />
           Tools enabled
         </label>
+        <label class="check">
+          <input id="proposalsEnabled" type="checkbox" checked />
+          Proposals capture
+        </label>
+        <div class="cmd-row">
+          <button type="button" id="btnCapture" class="btn-secondary">/capture</button>
+          <button type="button" id="btnRefreshProposals" class="btn-secondary">Refresh</button>
+        </div>
         <div class="meta" id="meta">
           <div class="meta-empty">Send a message to see route / model / latency.</div>
         </div>
@@ -45,16 +58,29 @@
           <textarea
             id="prompt"
             rows="3"
-            placeholder="Message… (Enter to send, Shift+Enter newline)"
+            placeholder="Reason freely… (Enter send · Shift+Enter newline · /mode /capture /accept)"
             required
           ></textarea>
           <button type="submit" id="send">Send</button>
         </form>
         <p class="hint muted">
-          UI is a shell over <code>POST /v1/chat</code>. CLI remains for scripts/CI.
-          No personal data is written to public paths by this page.
+          Active mode continuously proposes knowledge (pending only). Accept in the panel or via
+          <code>/accept &lt;id&gt;</code>. Same brain as CLI — no second system.
         </p>
       </main>
+
+      <aside class="proposals-panel" id="proposalsPanel">
+        <div class="panel-head">
+          <strong>Proposals</strong>
+          <span class="muted" id="pendingCount">0 pending</span>
+        </div>
+        <div id="proposalsList" class="proposals-list">
+          <div class="meta-empty">No pending proposals yet. Speak in active mode to capture structure.</div>
+        </div>
+        <div class="panel-actions">
+          <button type="button" id="btnAcceptAll" class="btn-secondary" disabled>Accept all visible</button>
+        </div>
+      </aside>
     </div>
     <script src="/app.js"></script>
   </body>

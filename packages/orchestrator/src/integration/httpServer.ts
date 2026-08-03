@@ -15,6 +15,7 @@ import {
   type KnowledgeStatus,
 } from "@workflows/knowledge";
 import { Orchestrator, loadConfigFromEnv } from "../orchestrator.js";
+import { tryHandleSessionCommand } from "../sessionCommands.js";
 import { createMemory } from "@workflows/memory";
 import { createRegistryFromConfig } from "@workflows/tools";
 import { resolveWorkspace } from "@workflows/workspace";
@@ -279,10 +280,48 @@ export function createIntegrationServer(
               historyCount = history.length;
             }
 
-            const result = await orch.handle(parsed.prompt, {
+            const cmd = await tryHandleSessionCommand(parsed.prompt, {
+              memory,
+              sessionId,
+              knowledge: orch.knowledge,
+            });
+            if (cmd.kind === "handled") {
+              sendJson(res, 200, {
+                reply: cmd.message,
+                sessionId,
+                logicalSessionId: ws.logicalSessionId,
+                historyCount,
+                latencyMs: Math.round(performance.now() - started),
+                workspaceRoot: config.workspaceRoot,
+                workspaceId: ws.id,
+                interactionMode: cmd.sessionState?.interactionMode,
+                proposalsEnabled: cmd.sessionState?.proposalsEnabled,
+                command: true,
+                data: cmd.data,
+              });
+              return;
+            }
+
+            const sessionState = memory
+              ? await memory.getSessionState(sessionId)
+              : null;
+            const forceCapture = cmd.kind === "force_capture";
+            const promptForModel =
+              forceCapture && cmd.restPrompt === "capture last segment"
+                ? "(Session capture of recent conversation — acknowledge briefly.)"
+                : forceCapture
+                  ? cmd.restPrompt
+                  : parsed.prompt;
+
+            const result = await orch.handle(promptForModel, {
               history,
               forceModel: parsed.options?.forceModel,
               sessionId,
+              interactionMode: sessionState?.interactionMode ?? "active",
+              proposalsEnabled: sessionState?.proposalsEnabled ?? true,
+              forceCapture,
+              maxProposalsPerTurn: sessionState?.maxProposalsPerTurn,
+              minUserMessageLength: sessionState?.minUserMessageLength,
             });
 
             if (memory) {
@@ -294,6 +333,11 @@ export function createIntegrationServer(
                 role: "assistant",
                 content: result.reply,
               });
+              if (result.capture?.ran && result.proposals?.length) {
+                await memory.updateSessionState(sessionId, {
+                  lastExtractTurnId: result.proposals[0]?.id,
+                });
+              }
             }
 
             const response: IntegrationChatResponse = {

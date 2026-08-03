@@ -43,3 +43,22 @@ Speech enters as **transcript string** into the same orchestrator path as typed 
 - **Always-on ambient listening without wake policy** — privacy and noise risk for a personal machine.
 - **Voice-owned knowledge or tool loop** — forks the brain; violates “one handle path”.
 - **Cloud STT/TTS as default** — audio/text leave the machine unless explicitly allowed.
+
+## Interaction mode + proposals as first-class UI (design)
+
+**Status:** active (design confirmed; implementation in progress)  
+**Evidence:** confirmed  
+**Source:** [`docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md`](../docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md)  
+**Revisit when:** web UI is preferred for multi-hour reasoning sessions
+
+**Decision:** The web surface (and CLI/REPL) treat **active vs neutral** mode and a **proposals panel** as primary workflow chrome — not optional widgets on a bare chat shell. Mode is persisted per session. Capture commands (`/mode`, `/capture`, `/accept`, `/reject`) work on CLI and UI so agents stay consistent.
+
+**Reason:** Continuous knowledge capture only succeeds if review/accept is low-friction and always visible; a thin M6 chat shell is not enough for that loop.
+
+**Rejected alternatives:**
+
+- Keep M6 as “minimum chat only” and hope CLI accept is enough.
+- Wizard/forms as the only capture path (kills free-form reasoning).
+- Auto-accept so the UI never needs a proposals panel.
+
+**Related:** [knowledge.md](knowledge.md) (propose→accept invariant + capture decision).

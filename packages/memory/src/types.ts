@@ -7,6 +7,23 @@ export interface ChatMessage {
   content: string;
 }
 
+/** Session interaction mode for continuous knowledge capture (design doc). */
+export type InteractionMode = "active" | "neutral";
+
+/**
+ * Persisted per-session settings (mode + capture).
+ * Defaults: active mode, proposals on, auto-extract when active.
+ */
+export interface SessionState {
+  sessionId: string;
+  interactionMode: InteractionMode;
+  proposalsEnabled: boolean;
+  lastExtractTurnId?: string;
+  maxProposalsPerTurn: number;
+  minUserMessageLength: number;
+  updatedAt: number;
+}
+
 export interface MemoryConfig {
   /** Path to the SQLite database file. Parent dirs are created if missing. */
   dbPath: string;
@@ -32,6 +49,24 @@ export interface Memory {
    * @param prefix when set, only ids that start with this prefix (workspace namespace)
    */
   listSessions(prefix?: string): Promise<string[]>;
+
+  /** Load or create default session state (interaction mode + capture). */
+  getSessionState(sessionId: string): Promise<SessionState>;
+
+  /** Patch session state fields; creates row if missing. */
+  updateSessionState(
+    sessionId: string,
+    patch: Partial<
+      Pick<
+        SessionState,
+        | "interactionMode"
+        | "proposalsEnabled"
+        | "lastExtractTurnId"
+        | "maxProposalsPerTurn"
+        | "minUserMessageLength"
+      >
+    >
+  ): Promise<SessionState>;
 
   /** Close the database connection. */
   close(): void;

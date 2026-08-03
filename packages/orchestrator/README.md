@@ -71,6 +71,26 @@ npx tsx src/index.ts --json --knowledge find label=heat
 # KNOWLEDGE_INGEST_AUTO_ON_CHAT=true
 ```
 
+## Interaction mode + continuous capture
+
+Default session mode is **active**: after each substantial turn the orchestrator
+extracts pending knowledge proposals (never auto-accept). Commands:
+
+```bash
+/mode active|neutral
+/proposals on|off
+/capture
+/accept <proposalId>
+/reject <proposalId>
+```
+
+Web UI (`npm run ui`): mode toggle + proposals panel. Design:
+`docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md`.
+
+```bash
+npx tsx scripts/smoke-interaction-capture.ts
+```
+
 See `packages/knowledge`, `packages/voice`, and `context/knowledge.md`.
 
 ## Env

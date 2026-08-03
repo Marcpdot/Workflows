@@ -76,3 +76,10 @@ export {
   renderContradictionsRead,
   renderKnowledgeBrowseHtml,
 } from "./render.js";
+export {
+  captureConversationSegment,
+  proposalToSummary,
+  type CaptureConversationInput,
+  type CaptureConversationResult,
+  type KnowledgeProposalSummary,
+} from "./capture.js";

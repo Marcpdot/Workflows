@@ -40,13 +40,14 @@ import {
 } from "@workflows/memory";
 import {
   buildKnowledgeInjectBlock,
+  captureConversationSegment,
   createKnowledgeStore,
   createKnowledgeTools,
-  formatChatSegment,
-  ingestText,
   resolveKnowledgeDbPath,
+  type KnowledgeProposalSummary,
   type KnowledgeStore,
 } from "@workflows/knowledge";
+import type { InteractionMode } from "@workflows/memory";
 import { createEmbeddingsFromEnv } from "@workflows/embeddings";
 import { suggestNextSteps } from "@workflows/proactive";
 import {
@@ -350,6 +351,13 @@ export class Orchestrator {
       forceModel?: ModelChoice;
       history?: ChatMessage[];
       sessionId?: string;
+      /** Session interaction mode (default active) */
+      interactionMode?: InteractionMode;
+      proposalsEnabled?: boolean;
+      /** Force knowledge capture this turn (/capture) */
+      forceCapture?: boolean;
+      maxProposalsPerTurn?: number;
+      minUserMessageLength?: number;
     }
   ): Promise<OrchestratorResult> {
     const started = performance.now();
@@ -379,10 +387,18 @@ export class Orchestrator {
       forceModel?: ModelChoice;
       history?: ChatMessage[];
       sessionId?: string;
+      interactionMode?: InteractionMode;
+      proposalsEnabled?: boolean;
+      forceCapture?: boolean;
+      maxProposalsPerTurn?: number;
+      minUserMessageLength?: number;
     } | undefined,
     started: number,
     sessionId?: string
   ): Promise<OrchestratorResult> {
+    const interactionMode: InteractionMode =
+      options?.interactionMode === "neutral" ? "neutral" : "active";
+    const proposalsEnabled = options?.proposalsEnabled !== false;
     const routing = this.decide(prompt);
 
     // M7: policy wraps router (when off, decide mirrors router)
@@ -476,6 +492,14 @@ export class Orchestrator {
     if (useToolLoop && this.tools) {
       systemParts.push(TOOLS_SYSTEM_ADDENDUM);
       systemParts.push(formatToolsForPrompt(this.tools.list()));
+    }
+    if (interactionMode === "active" && proposalsEnabled) {
+      systemParts.push(
+        "Interaction mode: ACTIVE. You are a rigorous sparring partner for free-form reasoning " +
+          "(including first-principles style). Challenge weak claims, ask hard questions, " +
+          "point out missing links and absolute vs contingent limits. Be concise. " +
+          "Do not dump proposal lists; structured capture runs separately."
+      );
     }
 
     // M12: optional accepted knowledge neighborhood (default off)
@@ -617,7 +641,16 @@ export class Orchestrator {
           longTermBlock
         ),
       };
-      await this.maybeAutoIngestChat(history, prompt, reply, sessionId);
+      await this.attachCapture(
+        result,
+        history,
+        prompt,
+        reply,
+        sessionId,
+        interactionMode,
+        proposalsEnabled,
+        options
+      );
       this.emitRequestEvent(result, {
         sessionId,
         started,
@@ -662,11 +695,15 @@ export class Orchestrator {
         longTermBlock
       ),
     };
-    await this.maybeAutoIngestChat(
+    await this.attachCapture(
+      result,
       history,
       prompt,
       response.content,
-      sessionId
+      sessionId,
+      interactionMode,
+      proposalsEnabled,
+      options
     );
     this.emitRequestEvent(result, {
       sessionId,
@@ -678,37 +715,93 @@ export class Orchestrator {
   }
 
   /**
-   * M14: optional post-chat segment → pending proposals only (never accept).
-   * Default off via KNOWLEDGE_INGEST_AUTO_ON_CHAT.
+   * Continuous capture (active mode) + optional M14 legacy auto-ingest flag.
+   * Never accepts proposals.
    */
-  private async maybeAutoIngestChat(
+  private async attachCapture(
+    result: OrchestratorResult,
     history: Array<{ role: string; content: string }>,
     prompt: string,
     reply: string,
-    sessionId?: string
+    sessionId: string | undefined,
+    interactionMode: InteractionMode,
+    proposalsEnabled: boolean,
+    options?: {
+      forceCapture?: boolean;
+      maxProposalsPerTurn?: number;
+      minUserMessageLength?: number;
+    }
   ): Promise<void> {
+    result.interactionMode = interactionMode;
+    result.proposalsEnabled = proposalsEnabled;
+
     const kSettings = this.config.knowledgeSettings;
-    if (!this.knowledge || !kSettings?.ingestAutoOnChat) return;
+    if (!this.knowledge || !kSettings) {
+      result.capture = { ran: false, reason: "knowledge store closed" };
+      return;
+    }
+
+    const force = options?.forceCapture === true;
+    const shouldCapture =
+      force ||
+      (kSettings.captureEnabled &&
+        interactionMode === "active" &&
+        proposalsEnabled) ||
+      kSettings.ingestAutoOnChat;
+
+    if (!shouldCapture) {
+      result.capture = {
+        ran: false,
+        reason:
+          interactionMode === "neutral"
+            ? "neutral mode (use /capture or /mode active)"
+            : !proposalsEnabled
+              ? "proposals off"
+              : "capture disabled",
+      };
+      // still report pending count
+      try {
+        const pending = await this.knowledge.listProposals({
+          status: "pending",
+        });
+        result.pendingProposalCount = pending.length;
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+
     try {
-      const segment = formatChatSegment(
-        [
-          ...history,
-          { role: "user", content: prompt },
-          { role: "assistant", content: reply },
-        ],
-        kSettings.ingestMaxMessages
-      );
-      await ingestText(this.knowledge, {
-        text: segment,
-        sourceType: "conversation",
-        sourceRef: sessionId
-          ? `chat-auto:${sessionId}`
-          : "chat-auto",
-        minChars: kSettings.ingestMinChars,
-        dedupeNodes: true,
+      const messages = [
+        ...history,
+        { role: "user", content: prompt },
+        { role: "assistant", content: reply },
+      ];
+      const cap = await captureConversationSegment({
+        store: this.knowledge,
+        messages,
+        sessionId: sessionId ?? "default",
+        force,
+        minUserMessageLength:
+          options?.minUserMessageLength ?? kSettings.ingestMinChars,
+        maxProposalsPerTurn: options?.maxProposalsPerTurn ?? 8,
+        maxMessages: kSettings.ingestMaxMessages,
       });
-    } catch {
-      // best-effort; never fail the chat turn
+      result.proposals = cap.summaries as KnowledgeProposalSummary[];
+      result.capture = {
+        ran: cap.mode !== "skipped" || cap.proposals.length > 0,
+        reason: cap.reason,
+        mode: cap.mode,
+      };
+      const pending = await this.knowledge.listProposals({
+        status: "pending",
+      });
+      result.pendingProposalCount = pending.length;
+    } catch (err) {
+      result.capture = {
+        ran: false,
+        reason: err instanceof Error ? err.message : String(err),
+      };
     }
   }
 
@@ -893,19 +986,24 @@ export function loadConfigFromEnv(
           : undefined,
       });
 
-  // M12–M14: knowledge store + optional tools / inject / auto-ingest
+  // M12–M14 + continuous capture: open knowledge unless capture explicitly disabled
   const knowledgeToolsEnabled = envFlagTrue(env.KNOWLEDGE_TOOLS_ENABLED);
   const knowledgeInjectEnabled = envFlagTrue(env.KNOWLEDGE_INJECT_ENABLED);
   const knowledgeIngestAutoOnChat = envFlagTrue(
     env.KNOWLEDGE_INGEST_AUTO_ON_CHAT
   );
+  const knowledgeCaptureDisabled = envFlagTrue(
+    env.KNOWLEDGE_CAPTURE_DISABLED
+  );
+  const knowledgeCaptureEnabled = !knowledgeCaptureDisabled;
   const knowledgeDbPath = resolveKnowledgeDbPath(cwd, env);
   const defaultWorkspaceId =
     env.KNOWLEDGE_DEFAULT_WORKSPACE_ID?.trim() || workspace.id;
   const knowledge =
     knowledgeToolsEnabled ||
     knowledgeInjectEnabled ||
-    knowledgeIngestAutoOnChat
+    knowledgeIngestAutoOnChat ||
+    knowledgeCaptureEnabled
       ? createKnowledgeStore({
           dbPath: knowledgeDbPath,
           defaultWorkspaceId,
@@ -959,11 +1057,12 @@ export function loadConfigFromEnv(
         ? 2
         : 1) as 1 | 2,
       ingestAutoOnChat: knowledgeIngestAutoOnChat,
-      ingestMinChars: parsePositiveInt(env.KNOWLEDGE_INGEST_MIN_CHARS, 80),
+      ingestMinChars: parsePositiveInt(env.KNOWLEDGE_INGEST_MIN_CHARS, 40),
       ingestMaxMessages: parsePositiveInt(
         env.KNOWLEDGE_INGEST_MAX_MESSAGES,
         12
       ),
+      captureEnabled: knowledgeCaptureEnabled,
     },
     longTermSettings: {
       dbPath: longTermDbPath,

@@ -16,6 +16,7 @@ import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { Orchestrator, loadConfigFromEnv } from "./orchestrator.js";
 import { createMemory, type Memory } from "@workflows/memory";
+import { tryHandleSessionCommand } from "./sessionCommands.js";
 import { createRegistryFromConfig } from "@workflows/tools";
 import { resolveWorkspace, type WorkspaceContext } from "@workflows/workspace";
 import {
@@ -126,6 +127,11 @@ REPL commands:
   /clear             Clear current session history
   /session ID        Switch logical session id (namespaced per workspace)
   /workspace         Show active workspace id / root / context
+  /mode [active|neutral]   Interaction mode (persisted; default active)
+  /proposals [on|off]      Continuous capture toggle
+  /capture                 Force knowledge extract → pending proposals
+  /accept <id>[,id…]       Accept proposals
+  /reject <id>[,id…]       Reject proposals
 
 Env (see .env.example):
   OLLAMA_MODEL, OLLAMA_BIN
@@ -144,6 +150,7 @@ Env (see .env.example):
   KNOWLEDGE_TOOLS_ENABLED, KNOWLEDGE_INJECT_ENABLED
   KNOWLEDGE_INGEST_AUTO_ON_CHAT (default false; proposals only), KNOWLEDGE_INGEST_MIN_CHARS
   KNOWLEDGE_HTTP_READ (integration GET /v1/knowledge/* + /knowledge HTML)
+  KNOWLEDGE_CAPTURE_DISABLED (default false — continuous capture in active mode)
   VOICE_ENABLED, VOICE_STT_PROVIDER, VOICE_TTS_PROVIDER, VOICE_LANGUAGE
   VOICE_STT_COMMAND, VOICE_TTS_COMMAND, VOICE_ALLOW_REMOTE_AUDIO
   PROACTIVE_ENABLED, PROACTIVE_MAX, PROACTIVE_USE_MODEL
@@ -1327,6 +1334,21 @@ function printResult(
       );
     }
   }
+  if (result.interactionMode) {
+    console.log(
+      `[mode] ${result.interactionMode}  proposals=${result.proposalsEnabled ? "on" : "off"}  pending=${result.pendingProposalCount ?? 0}`
+    );
+  }
+  if (result.proposals && result.proposals.length > 0) {
+    console.log(
+      `[capture] +${result.proposals.length} pending (accept with --knowledge accept <id> or /accept)`
+    );
+    for (const p of result.proposals.slice(0, 8)) {
+      console.log(`  ${p.id}  ${p.kind}  ${p.label.slice(0, 80)}`);
+    }
+  } else if (result.capture && !result.capture.ran && result.capture.reason) {
+    console.log(`[capture] skipped: ${result.capture.reason}`);
+  }
   if (result.usage?.totalTokens != null) {
     console.log(`[tokens] ${result.usage.totalTokens}`);
   }
@@ -1362,16 +1384,53 @@ async function runOnce(
   }
 
   const effectiveSessionId = ws.sessionId;
+  const cmd = await tryHandleSessionCommand(args.prompt, {
+    memory: memory && args.useMemory ? memory : null,
+    sessionId: effectiveSessionId,
+    knowledge: orch.knowledge,
+  });
+  if (cmd.kind === "handled") {
+    if (args.json) {
+      console.log(
+        JSON.stringify(
+          { ok: true, message: cmd.message, sessionState: cmd.sessionState, data: cmd.data },
+          null,
+          2
+        )
+      );
+    } else {
+      console.log(cmd.message);
+    }
+    return;
+  }
+
+  const sessionState =
+    memory && args.useMemory
+      ? await memory.getSessionState(effectiveSessionId)
+      : null;
+  const forceCapture = cmd.kind === "force_capture";
+  const promptForModel =
+    forceCapture && cmd.restPrompt === "capture last segment"
+      ? "(Session capture of recent conversation — acknowledge briefly.)"
+      : forceCapture
+        ? cmd.restPrompt
+        : args.prompt;
+
   const history =
     memory && args.useMemory
       ? await memory.getHistory(effectiveSessionId)
       : [];
 
   const started = performance.now();
-  const result = await orch.handle(args.prompt, {
+  const result = await orch.handle(promptForModel, {
     forceModel: args.forceModel,
     history,
     sessionId: effectiveSessionId,
+    interactionMode: sessionState?.interactionMode ?? "active",
+    proposalsEnabled: sessionState?.proposalsEnabled ?? true,
+    forceCapture,
+    maxProposalsPerTurn: sessionState?.maxProposalsPerTurn,
+    minUserMessageLength: sessionState?.minUserMessageLength,
   });
   const latencyMs = Math.round(performance.now() - started);
 
@@ -1379,12 +1438,17 @@ async function runOnce(
     // Do not auto-store system prompts — only the user turn + assistant reply.
     await memory.add(effectiveSessionId, {
       role: "user",
-      content: args.prompt,
+      content: forceCapture ? `/capture ${cmd.kind === "force_capture" ? cmd.restPrompt : ""}`.trim() : args.prompt,
     });
     await memory.add(effectiveSessionId, {
       role: "assistant",
       content: result.reply,
     });
+    if (result.capture?.ran && result.proposals?.length) {
+      await memory.updateSessionState(effectiveSessionId, {
+        lastExtractTurnId: result.proposals[0]?.id,
+      });
+    }
   }
 
   printResult(result, args.json, {
@@ -1528,7 +1592,7 @@ async function runRepl(
   let ws = initialWs;
   console.log(
     "Orchestrator REPL (empty line or Ctrl+C to exit).\n" +
-      "Commands: /local /frontier /route /pipeline /voice /tool /remember /recall /forget /ltm /clear /session <id> /workspace"
+      "Commands: /mode /proposals /capture /accept /reject /local /frontier /route /pipeline /voice /tool /remember /recall /forget /ltm /clear /session /workspace"
   );
   if (memory && args.useMemory) {
     const n = (await memory.getHistory(ws.sessionId)).length;
@@ -1565,6 +1629,23 @@ async function runRepl(
             voiceSilent: true,
             prompt: "",
           },
+          memory,
+          ws
+        );
+        continue;
+      }
+
+      // Interaction mode + capture commands (same as design slash surface)
+      if (
+        line.startsWith("/mode") ||
+        line.startsWith("/proposals") ||
+        line.startsWith("/capture") ||
+        line.startsWith("/accept") ||
+        line.startsWith("/reject")
+      ) {
+        await runOnce(
+          orch,
+          { ...args, prompt: line, routeOnly: false },
           memory,
           ws
         );

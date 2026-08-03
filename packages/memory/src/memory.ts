@@ -3,7 +3,12 @@
  */
 
 import { MessageStore } from "./store.js";
-import type { ChatMessage, Memory, MemoryConfig } from "./types.js";
+import type {
+  ChatMessage,
+  Memory,
+  MemoryConfig,
+  SessionState,
+} from "./types.js";
 
 class SqliteMemory implements Memory {
   private readonly store: MessageStore;
@@ -38,6 +43,34 @@ class SqliteMemory implements Memory {
 
   async listSessions(prefix?: string): Promise<string[]> {
     return this.store.listSessionIds(prefix);
+  }
+
+  async getSessionState(sessionId: string): Promise<SessionState> {
+    return this.store.getSessionState(sessionId);
+  }
+
+  async updateSessionState(
+    sessionId: string,
+    patch: Partial<
+      Pick<
+        SessionState,
+        | "interactionMode"
+        | "proposalsEnabled"
+        | "lastExtractTurnId"
+        | "maxProposalsPerTurn"
+        | "minUserMessageLength"
+      >
+    >
+  ): Promise<SessionState> {
+    const current = this.store.getSessionState(sessionId);
+    const next: SessionState = {
+      ...current,
+      ...patch,
+      sessionId,
+      updatedAt: Date.now(),
+    };
+    this.store.upsertSessionState(next);
+    return next;
   }
 
   close(): void {
