@@ -140,6 +140,8 @@ export interface KnowledgeStore {
     inputHash?: string;
   }): Promise<KnowledgeEvent>;
 
+  getEvent(id: string): Promise<KnowledgeEvent | null>;
+
   addProposals(
     eventId: string,
     items: Array<{

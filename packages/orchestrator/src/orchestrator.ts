@@ -43,6 +43,7 @@ import {
   captureConversationSegment,
   createKnowledgeStore,
   createKnowledgeTools,
+  listPendingForSession,
   resolveKnowledgeDbPath,
   type KnowledgeProposalSummary,
   type KnowledgeStore,
@@ -358,6 +359,8 @@ export class Orchestrator {
       forceCapture?: boolean;
       maxProposalsPerTurn?: number;
       minUserMessageLength?: number;
+      lastExtractAt?: number;
+      minCaptureIntervalMs?: number;
     }
   ): Promise<OrchestratorResult> {
     const started = performance.now();
@@ -392,6 +395,8 @@ export class Orchestrator {
       forceCapture?: boolean;
       maxProposalsPerTurn?: number;
       minUserMessageLength?: number;
+      lastExtractAt?: number;
+      minCaptureIntervalMs?: number;
     } | undefined,
     started: number,
     sessionId?: string
@@ -493,12 +498,19 @@ export class Orchestrator {
       systemParts.push(TOOLS_SYSTEM_ADDENDUM);
       systemParts.push(formatToolsForPrompt(this.tools.list()));
     }
-    if (interactionMode === "active" && proposalsEnabled) {
+    if (interactionMode === "active") {
       systemParts.push(
-        "Interaction mode: ACTIVE. You are a rigorous sparring partner for free-form reasoning " +
-          "(including first-principles style). Challenge weak claims, ask hard questions, " +
-          "point out missing links and absolute vs contingent limits. Be concise. " +
-          "Do not dump proposal lists; structured capture runs separately."
+        "Interaction mode: ACTIVE (sparring). Free-form reasoning partner — do not take over the analysis. " +
+          "Challenge weak assumptions; ask whether limits are fundamental, technological, industrial, economic, or regulatory. " +
+          "Point out missing causal links and ask what the next bottleneck would be if the current one were solved. " +
+          "Help the user state clearer claims. Stay concise. " +
+          "Do not list knowledge proposals; capture runs separately into a pending queue."
+      );
+    } else if (interactionMode === "neutral") {
+      systemParts.push(
+        "Interaction mode: NEUTRAL. Answer helpfully and briefly. " +
+          "Do not challenge, interrogate, or expand into unsolicited first-principles coaching. " +
+          "Knowledge is only stored when the user explicitly captures."
       );
     }
 
@@ -730,14 +742,18 @@ export class Orchestrator {
       forceCapture?: boolean;
       maxProposalsPerTurn?: number;
       minUserMessageLength?: number;
+      lastExtractAt?: number;
+      minCaptureIntervalMs?: number;
     }
   ): Promise<void> {
     result.interactionMode = interactionMode;
     result.proposalsEnabled = proposalsEnabled;
+    const sid = sessionId ?? "default";
 
     const kSettings = this.config.knowledgeSettings;
     if (!this.knowledge || !kSettings) {
       result.capture = { ran: false, reason: "knowledge store closed" };
+      result.pendingProposalCount = 0;
       return;
     }
 
@@ -749,6 +765,22 @@ export class Orchestrator {
         proposalsEnabled) ||
       kSettings.ingestAutoOnChat;
 
+    const reportPending = async () => {
+      try {
+        const sessionPending = await listPendingForSession(this.knowledge!, sid);
+        result.pendingProposalCount = sessionPending.length;
+      } catch {
+        try {
+          const pending = await this.knowledge!.listProposals({
+            status: "pending",
+          });
+          result.pendingProposalCount = pending.length;
+        } catch {
+          result.pendingProposalCount = 0;
+        }
+      }
+    };
+
     if (!shouldCapture) {
       result.capture = {
         ran: false,
@@ -759,15 +791,7 @@ export class Orchestrator {
               ? "proposals off"
               : "capture disabled",
       };
-      // still report pending count
-      try {
-        const pending = await this.knowledge.listProposals({
-          status: "pending",
-        });
-        result.pendingProposalCount = pending.length;
-      } catch {
-        /* ignore */
-      }
+      await reportPending();
       return;
     }
 
@@ -777,31 +801,38 @@ export class Orchestrator {
         { role: "user", content: prompt },
         { role: "assistant", content: reply },
       ];
+      const turnId = String(Date.now());
       const cap = await captureConversationSegment({
         store: this.knowledge,
         messages,
-        sessionId: sessionId ?? "default",
+        sessionId: sid,
+        turnId,
         force,
         minUserMessageLength:
           options?.minUserMessageLength ?? kSettings.ingestMinChars,
         maxProposalsPerTurn: options?.maxProposalsPerTurn ?? 8,
         maxMessages: kSettings.ingestMaxMessages,
+        minIntervalMs: force
+          ? 0
+          : (options?.minCaptureIntervalMs ??
+            kSettings.minCaptureIntervalMs ??
+            8000),
+        lastExtractAt: options?.lastExtractAt,
       });
       result.proposals = cap.summaries as KnowledgeProposalSummary[];
       result.capture = {
-        ran: cap.mode !== "skipped" || cap.proposals.length > 0,
+        ran: cap.proposals.length > 0,
         reason: cap.reason,
         mode: cap.mode,
       };
-      const pending = await this.knowledge.listProposals({
-        status: "pending",
-      });
-      result.pendingProposalCount = pending.length;
+      await reportPending();
     } catch (err) {
+      // Never break the main reply
       result.capture = {
         ran: false,
         reason: err instanceof Error ? err.message : String(err),
       };
+      await reportPending();
     }
   }
 
@@ -1063,6 +1094,10 @@ export function loadConfigFromEnv(
         12
       ),
       captureEnabled: knowledgeCaptureEnabled,
+      minCaptureIntervalMs: parsePositiveInt(
+        env.KNOWLEDGE_CAPTURE_MIN_INTERVAL_MS,
+        8000
+      ),
     },
     longTermSettings: {
       dbPath: longTermDbPath,

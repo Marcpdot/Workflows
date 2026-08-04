@@ -46,9 +46,9 @@ Speech enters as **transcript string** into the same orchestrator path as typed 
 
 ## Interaction mode + proposals as first-class UI (design)
 
-**Status:** active (design confirmed; implementation in progress)  
+**Status:** active  
 **Evidence:** confirmed  
-**Source:** [`docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md`](../docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md)  
+**Source:** design + iteration docs; foundation `04415a5` + iteration implementation  
 **Revisit when:** web UI is preferred for multi-hour reasoning sessions
 
 **Decision:** The web surface (and CLI/REPL) treat **active vs neutral** mode and a **proposals panel** as primary workflow chrome — not optional widgets on a bare chat shell. Mode is persisted per session. Capture commands (`/mode`, `/capture`, `/accept`, `/reject`) work on CLI and UI so agents stay consistent.
@@ -61,4 +61,6 @@ Speech enters as **transcript string** into the same orchestrator path as typed 
 - Wizard/forms as the only capture path (kills free-form reasoning).
 - Auto-accept so the UI never needs a proposals panel.
 
-**Related:** [knowledge.md](knowledge.md) (propose→accept invariant + capture decision).
+**Live UI behaviour (iteration):** Panel loads **full session pending queue** via `GET /v1/knowledge/proposals?sessionId=` (not only last-turn payload). Mode toggle changes capture *and* sparring system prompt. Refresh re-fetches store; accept/reject update the queue.
+
+**Related:** [knowledge.md](knowledge.md); [`docs/INTERACTION_CAPTURE_ITERATION.md`](../docs/INTERACTION_CAPTURE_ITERATION.md).

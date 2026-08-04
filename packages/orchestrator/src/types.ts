@@ -164,6 +164,8 @@ export interface OrchestratorConfig {
      * Default true unless KNOWLEDGE_CAPTURE_DISABLED.
      */
     captureEnabled: boolean;
+    /** Min ms between auto-extracts in a session (force /capture ignores). */
+    minCaptureIntervalMs: number;
   };
 }
 

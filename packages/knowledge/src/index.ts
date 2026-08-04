@@ -79,7 +79,16 @@ export {
 export {
   captureConversationSegment,
   proposalToSummary,
+  listPendingForSession,
+  conversationSourceRef,
   type CaptureConversationInput,
   type CaptureConversationResult,
   type KnowledgeProposalSummary,
 } from "./capture.js";
+export {
+  conversationHeuristicExtract,
+  isLowSubstanceUserMessage,
+  rankAndCapItems,
+  scoreProposalItem,
+  type LimitKind,
+} from "./conversationExtract.js";

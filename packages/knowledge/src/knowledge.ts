@@ -69,6 +69,10 @@ class SqliteKnowledgeStore implements KnowledgeStore {
     return ev;
   }
 
+  async getEvent(id: string): Promise<KnowledgeEvent | null> {
+    return this.store.getEvent(id);
+  }
+
   async addProposals(
     eventId: string,
     items: Array<{

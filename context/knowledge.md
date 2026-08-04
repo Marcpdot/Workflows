@@ -164,10 +164,10 @@ SQLite tables alongside existing DBs. No new infrastructure required for M11–M
 
 ## Interaction mode + continuous knowledge capture (post-M18 design)
 
-**Status:** active (design confirmed; implementation in progress)  
+**Status:** active  
 **Evidence:** confirmed  
-**Source:** [`docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md`](../docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md); merge `cafb42c`  
-**Revisit when:** daily reasoning sessions show capture quality or UI friction issues
+**Source:** [`docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md`](../docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md); iteration [`docs/INTERACTION_CAPTURE_ITERATION.md`](../docs/INTERACTION_CAPTURE_ITERATION.md); foundation `04415a5`  
+**Revisit when:** daily reasoning sessions show remaining quality gaps after iteration
 
 **Decision:** Free-form reasoning sessions use a first-class session **`interactionMode`** (`active` | `neutral`, default **active**). In active mode the system continuously extracts **pending** knowledge proposals from the conversation (caps + substance heuristics + light dedupe); the human accepts/rejects. Explicit `/capture` works in any mode. Web UI gets a real proposals panel — still the same orchestrator/knowledge brain.
 
@@ -175,7 +175,17 @@ SQLite tables alongside existing DBs. No new infrastructure required for M11–M
 
 **Rejected:** Auto-accept; FP-only graph types; treating UI as afterthought; a second capture brain outside orchestrator; every-turn extract without caps/mode.
 
-**See also:** [interface.md](interface.md) (UI/session surface); design doc for API shapes and priorities.
+**Implementation status**
+
+| Layer | Live | Notes |
+|-------|------|--------|
+| Foundation (`04415a5`) | yes | Mode, slash cmds, continuous capture→pending, response fields, basic panel |
+| Capture quality (iteration) | yes | Conversation-optimised extract; pending+accepted dedupe; ranking; limitKind as property |
+| Panel as session queue | yes | `listPendingForSession` + `GET /v1/knowledge/proposals?sessionId=` |
+| Active sparring vs neutral | yes | Distinct system prompts per mode |
+| Robustness | yes | Rate-limit interval; capture never breaks reply; session-scoped pending count |
+
+**See also:** [interface.md](interface.md); design + iteration docs under `docs/`.
 
 ## Decisions delivered with M11–M18 shells
 

@@ -21,8 +21,14 @@ const btnAcceptAll = $("btnAcceptAll");
 
 /** @type {"active"|"neutral"} */
 let interactionMode = "active";
-/** @type {Array<{id:string,kind:string,label:string}>} */
-let lastProposals = [];
+/** @type {Array<{id:string,kind:string,label:string,relation?:string,sourceRef?:string,limitKind?:string}>} */
+let queueProposals = [];
+/** @type {"idle"|"loading"|"error"} */
+let queueStatus = "idle";
+let queueError = "";
+
+/** @type {string|null} */
+let lastServerSessionId = null;
 
 function appendBubble(role, text, isError) {
   const div = document.createElement("div");
@@ -89,25 +95,42 @@ function renderMeta(data) {
 }
 
 function renderProposals(list, totalPending) {
-  lastProposals = Array.isArray(list) ? list : [];
+  if (Array.isArray(list)) queueProposals = list;
   const n =
-    totalPending != null ? totalPending : lastProposals.length;
+    totalPending != null ? totalPending : queueProposals.length;
   pendingCountEl.textContent = `${n} pending`;
-  btnAcceptAll.disabled = lastProposals.length === 0;
+  btnAcceptAll.disabled = queueProposals.length === 0;
 
-  if (lastProposals.length === 0) {
+  if (queueStatus === "loading") {
     proposalsList.innerHTML =
-      '<div class="meta-empty">No new proposals this turn. Pending may still exist in the DB — use /knowledge proposals in CLI or capture more.</div>';
+      '<div class="meta-empty">Loading session queue…</div>';
+    return;
+  }
+  if (queueStatus === "error") {
+    proposalsList.innerHTML = `<div class="meta-empty" style="color:var(--error)">Failed to load: ${escapeHtml(queueError)}</div>`;
+    return;
+  }
+  if (queueProposals.length === 0) {
+    proposalsList.innerHTML =
+      '<div class="meta-empty">No pending proposals for this session. Reason freely in active mode, or use Capture.</div>';
     return;
   }
 
   proposalsList.innerHTML = "";
-  for (const p of lastProposals) {
+  for (const p of queueProposals) {
     const card = document.createElement("div");
     card.className = "proposal-card";
     card.dataset.id = p.id;
+    const metaBits = [
+      p.kind || "?",
+      p.relation ? `rel=${p.relation}` : null,
+      p.limitKind ? `limit=${p.limitKind}` : null,
+      p.sourceRef ? p.sourceRef.replace(/^conversation:[^#]+/, "session") : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
     card.innerHTML = `
-      <div class="kind">${escapeHtml(p.kind || "?")}</div>
+      <div class="kind">${escapeHtml(metaBits)}</div>
       <div class="label">${escapeHtml(p.label || p.id)}</div>
       <div class="actions">
         <button type="button" class="accept" data-act="accept">Accept</button>
@@ -115,6 +138,43 @@ function renderProposals(list, totalPending) {
       </div>
     `;
     proposalsList.appendChild(card);
+  }
+}
+
+/** Full session queue from knowledge store (not only last turn). */
+async function refreshSessionQueue() {
+  queueStatus = "loading";
+  renderProposals(queueProposals);
+  try {
+    // Prefer server namespaced session id when known (ws:…:logical)
+    const sid = lastServerSessionId || sessionEl.value.trim() || "ui-default";
+    const res = await fetch(
+      `/v1/knowledge/proposals?sessionId=${encodeURIComponent(sid)}`
+    );
+    if (!res.ok) {
+      // Fallback: try logical id only if we used namespaced and failed
+      if (lastServerSessionId) {
+        const res2 = await fetch(
+          `/v1/knowledge/proposals?sessionId=${encodeURIComponent(sessionEl.value.trim() || "ui-default")}`
+        );
+        if (res2.ok) {
+          const body2 = await res2.json();
+          queueStatus = "idle";
+          queueError = "";
+          renderProposals(body2.proposals || [], body2.count);
+          return;
+        }
+      }
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const body = await res.json();
+    queueStatus = "idle";
+    queueError = "";
+    renderProposals(body.proposals || [], body.count);
+  } catch (err) {
+    queueStatus = "error";
+    queueError = err instanceof Error ? err.message : String(err);
+    renderProposals(queueProposals);
   }
 }
 
@@ -193,26 +253,28 @@ btnCapture.addEventListener("click", async () => {
   try {
     const data = await chat("/capture");
     appendBubble("assistant", data.reply || "(capture)");
+    if (data.sessionId) lastServerSessionId = data.sessionId;
     renderMeta(data);
     if (data.interactionMode) setModeUi(data.interactionMode);
-    renderProposals(data.proposals || [], data.pendingProposalCount);
+    await refreshSessionQueue();
   } catch (err) {
     appendBubble("assistant", err.message || String(err), true);
   }
 });
 
 btnRefreshProposals.addEventListener("click", () => {
-  renderProposals(lastProposals, lastProposals.length);
+  refreshSessionQueue();
 });
 
 btnAcceptAll.addEventListener("click", async () => {
-  if (!lastProposals.length) return;
-  const ids = lastProposals.map((p) => p.id).join(" ");
+  if (!queueProposals.length) return;
+  const ids = queueProposals.map((p) => p.id).join(" ");
   try {
     const data = await chat(`/accept ${ids}`);
     appendBubble("assistant", data.reply || "accepted");
-    renderProposals([], data.pendingProposalCount ?? 0);
+    if (data.sessionId) lastServerSessionId = data.sessionId;
     renderMeta(data);
+    await refreshSessionQueue();
   } catch (err) {
     appendBubble("assistant", err.message || String(err), true);
   }
@@ -228,12 +290,17 @@ proposalsList.addEventListener("click", async (e) => {
   try {
     const data = await chat(`/${act} ${id}`);
     appendBubble("assistant", data.reply || `${act} ${id}`);
-    lastProposals = lastProposals.filter((p) => p.id !== id);
-    renderProposals(lastProposals, data.pendingProposalCount);
+    if (data.sessionId) lastServerSessionId = data.sessionId;
     renderMeta(data);
+    await refreshSessionQueue();
   } catch (err) {
     appendBubble("assistant", err.message || String(err), true);
   }
+});
+
+sessionEl.addEventListener("change", () => {
+  lastServerSessionId = null;
+  refreshSessionQueue();
 });
 
 form.addEventListener("submit", async (e) => {
@@ -247,6 +314,7 @@ form.addEventListener("submit", async (e) => {
 
   try {
     const data = await chat(prompt);
+    if (data.sessionId) lastServerSessionId = data.sessionId;
     if (data.command) {
       appendBubble("assistant", data.reply || "(ok)");
     } else {
@@ -256,7 +324,8 @@ form.addEventListener("submit", async (e) => {
     if (data.proposalsEnabled === false) proposalsEnabledEl.checked = false;
     if (data.proposalsEnabled === true) proposalsEnabledEl.checked = true;
     renderMeta(data);
-    renderProposals(data.proposals || [], data.pendingProposalCount);
+    // Prefer full session queue over last-turn only
+    await refreshSessionQueue();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     appendBubble("assistant", msg, true);
@@ -274,15 +343,17 @@ promptEl.addEventListener("keydown", (e) => {
   }
 });
 
-// Sync mode from server on load
+// Sync mode + queue from server on load
 (async () => {
   try {
     const data = await chat("/mode");
+    if (data.sessionId) lastServerSessionId = data.sessionId;
     if (data.interactionMode) setModeUi(data.interactionMode);
     else if (typeof data.reply === "string" && data.reply.includes("neutral")) {
       setModeUi("neutral");
     }
     renderMeta(data);
+    await refreshSessionQueue();
   } catch {
     /* offline until server up */
   }

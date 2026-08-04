@@ -1422,6 +1422,9 @@ async function runOnce(
       : [];
 
   const started = performance.now();
+  const lastExtractAt = sessionState?.lastExtractTurnId
+    ? Number(sessionState.lastExtractTurnId)
+    : undefined;
   const result = await orch.handle(promptForModel, {
     forceModel: args.forceModel,
     history,
@@ -1431,6 +1434,7 @@ async function runOnce(
     forceCapture,
     maxProposalsPerTurn: sessionState?.maxProposalsPerTurn,
     minUserMessageLength: sessionState?.minUserMessageLength,
+    lastExtractAt: Number.isFinite(lastExtractAt) ? lastExtractAt : undefined,
   });
   const latencyMs = Math.round(performance.now() - started);
 
@@ -1444,9 +1448,9 @@ async function runOnce(
       role: "assistant",
       content: result.reply,
     });
-    if (result.capture?.ran && result.proposals?.length) {
+    if (result.capture?.ran) {
       await memory.updateSessionState(effectiveSessionId, {
-        lastExtractTurnId: result.proposals[0]?.id,
+        lastExtractTurnId: String(Date.now()),
       });
     }
   }

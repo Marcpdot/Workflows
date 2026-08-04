@@ -1,5 +1,18 @@
 # Interaction Mode + Continuous Capture — Iteration
 
+## Iteration delivery status
+
+**Status:** shell delivered (implementation following this doc)  
+**Evidence:** code + `smoke-interaction-capture.ts`  
+
+| Gap | Done |
+|-----|------|
+| 1 Capture quality | Conversation extract profile; pending+accepted dedupe; ranking/cap; limitKind properties |
+| 2 Panel as session queue | `listPendingForSession` + `GET …/proposals?sessionId=` + UI refresh |
+| 3 Active sparring | Distinct active vs neutral system prompts |
+| 4 Robustness | Rate-limit interval; capture errors do not break reply; session-scoped pending count |
+| 5 Context | knowledge.md + interface.md + original design status section |
+
 ## Status of foundation (04415a5)
 
 Delivered and accepted as foundation:

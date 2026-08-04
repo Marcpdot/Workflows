@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import {
   createKnowledgeReader,
   createKnowledgeStore,
+  listPendingForSession,
   renderKnowledgeBrowseHtml,
   resolveKnowledgeDbPath,
   type KnowledgeNodeType,
@@ -179,11 +180,15 @@ export function createIntegrationServer(
         return;
       }
 
-      // M17: optional knowledge read API (same token gate as /v1/*)
+      // M17/M-capture: knowledge read API (same token gate as /v1/*)
+      // Full catalog behind KNOWLEDGE_HTTP_READ; session pending queue always on (UI panel).
       if (
-        knowledgeHttpReadEnabled() &&
         req.method === "GET" &&
-        path.startsWith("/v1/knowledge")
+        path.startsWith("/v1/knowledge") &&
+        (knowledgeHttpReadEnabled() ||
+          path === "/v1/knowledge/proposals" ||
+          path === "/v1/knowledge" ||
+          path === "/v1/knowledge/")
       ) {
         if (!checkAuth(req, token)) {
           unauthorized(res);
@@ -313,6 +318,9 @@ export function createIntegrationServer(
                   ? cmd.restPrompt
                   : parsed.prompt;
 
+            const lastExtractAt = sessionState?.lastExtractTurnId
+              ? Number(sessionState.lastExtractTurnId)
+              : undefined;
             const result = await orch.handle(promptForModel, {
               history,
               forceModel: parsed.options?.forceModel,
@@ -322,6 +330,9 @@ export function createIntegrationServer(
               forceCapture,
               maxProposalsPerTurn: sessionState?.maxProposalsPerTurn,
               minUserMessageLength: sessionState?.minUserMessageLength,
+              lastExtractAt: Number.isFinite(lastExtractAt)
+                ? lastExtractAt
+                : undefined,
             });
 
             if (memory) {
@@ -333,9 +344,9 @@ export function createIntegrationServer(
                 role: "assistant",
                 content: result.reply,
               });
-              if (result.capture?.ran && result.proposals?.length) {
+              if (result.capture?.ran) {
                 await memory.updateSessionState(sessionId, {
-                  lastExtractTurnId: result.proposals[0]?.id,
+                  lastExtractTurnId: String(Date.now()),
                 });
               }
             }
@@ -493,6 +504,19 @@ async function handleKnowledgeRead(
     }
 
     if (path === "/v1/knowledge/proposals") {
+      const sessionId = q.get("sessionId")?.trim();
+      if (sessionId) {
+        // Full session-scoped pending queue (interaction capture iteration)
+        const proposals = await listPendingForSession(store, sessionId);
+        sendJson(res, 200, {
+          ok: true,
+          sessionId,
+          status: "pending",
+          proposals,
+          count: proposals.length,
+        });
+        return;
+      }
       const st = q.get("status")?.trim() as
         | "pending"
         | "accepted"
@@ -517,6 +541,7 @@ async function handleKnowledgeRead(
           "GET /v1/knowledge/project-status?label=|projectId=",
           "GET /v1/knowledge/contradictions?nodeId=",
           "GET /v1/knowledge/proposals?status=pending",
+          "GET /v1/knowledge/proposals?sessionId= (session pending queue)",
           "GET /knowledge  (minimal HTML browse)",
         ],
       });
