@@ -269,4 +269,6 @@ export interface ExtractionResult {
     excerpt: string;
     stance: "supports" | "contradicts" | "mentions";
   }>;
+  assumptions?: string[];
+  openQuestions?: string[];
 }

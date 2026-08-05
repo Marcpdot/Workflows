@@ -166,6 +166,10 @@ export interface OrchestratorConfig {
     captureEnabled: boolean;
     /** Min ms between auto-extracts in a session (force /capture ignores). */
     minCaptureIntervalMs: number;
+    /** Local structured extraction, or explicit degraded/offline heuristic mode. */
+    captureModelTier: "local" | "heuristic";
+    /** Optional local Ollama model tag used only for capture. */
+    captureModel?: string;
   };
 }
 

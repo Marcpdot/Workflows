@@ -12,6 +12,10 @@ import { extractionToProposalItems } from "./extract.js";
 import { formatChatSegment } from "./ingest.js";
 import { labelsMatch, normalizeLabel } from "./identity.js";
 import { hashInput } from "./knowledge.js";
+import {
+  extractStructuredConversation,
+  normalizeStructuredCapture,
+} from "./structuredCapture.js";
 import type {
   KnowledgeEvent,
   KnowledgeNodeType,
@@ -49,6 +53,13 @@ export interface CaptureConversationInput {
    */
   minIntervalMs?: number;
   lastExtractAt?: number;
+  /** Primary quality path. Omit to use degraded heuristic extraction. */
+  complete?: (messages: Array<{
+    role: "system" | "user" | "assistant";
+    content: string;
+  }>) => Promise<string>;
+  /** Model identifier recorded on the provenance event. */
+  model?: string;
 }
 
 export interface CaptureConversationResult {
@@ -56,6 +67,7 @@ export interface CaptureConversationResult {
   proposals: KnowledgeProposal[];
   summaries: KnowledgeProposalSummary[];
   skippedDuplicateNodes: number;
+  droppedQualityItems: number;
   mode: "heuristic" | "model" | "skipped";
   reason?: string;
   sourceRef: string;
@@ -208,6 +220,29 @@ async function filterAgainstAcceptedAndPending(
         skipped++;
         continue;
       }
+      const fromNode = await store.resolveCanonical({
+        label: String(item.payload.from ?? ""),
+      });
+      const toNode = await store.resolveCanonical({
+        label: String(item.payload.to ?? ""),
+      });
+      if (fromNode && toNode) {
+        const neighborhood = await store.getNeighborhood(fromNode.id, {
+          hops: 1,
+          status: "accepted",
+        });
+        if (
+          neighborhood.edges.some(
+            (edge) =>
+              edge.fromNodeId === fromNode.id &&
+              edge.toNodeId === toNode.id &&
+              edge.relation.toLowerCase() === rel
+          )
+        ) {
+          skipped++;
+          continue;
+        }
+      }
       pendingEdgeKeys.add(ek);
       out.push(item);
       continue;
@@ -215,6 +250,48 @@ async function filterAgainstAcceptedAndPending(
     out.push(item);
   }
   return { items: out, skipped };
+}
+
+async function filterResolvableEdges(
+  store: KnowledgeStore,
+  items: Array<{
+    kind: KnowledgeProposal["kind"];
+    payload: Record<string, unknown>;
+  }>
+): Promise<{ items: typeof items; dropped: number }> {
+  const proposedLabels = new Set(
+    items
+      .filter((item) => item.kind === "node")
+      .map((item) => normalizeLabel(String(item.payload.label ?? "")))
+      .filter(Boolean)
+  );
+  const known = new Map<string, boolean>();
+  const endpointExists = async (label: string): Promise<boolean> => {
+    const key = normalizeLabel(label);
+    if (proposedLabels.has(key)) return true;
+    if (known.has(key)) return known.get(key)!;
+    const node = await store.resolveCanonical({ label });
+    const exists = node != null;
+    known.set(key, exists);
+    return exists;
+  };
+
+  const output: typeof items = [];
+  let dropped = 0;
+  for (const item of items) {
+    if (item.kind !== "edge") {
+      output.push(item);
+      continue;
+    }
+    const from = String(item.payload.from ?? "");
+    const to = String(item.payload.to ?? "");
+    if (!(await endpointExists(from)) || !(await endpointExists(to))) {
+      dropped++;
+      continue;
+    }
+    output.push(item);
+  }
+  return { items: output, dropped };
 }
 
 /**
@@ -247,6 +324,7 @@ export async function captureConversationSegment(
       proposals: [],
       summaries: [],
       skippedDuplicateNodes: 0,
+      droppedQualityItems: 0,
       mode: "skipped",
       reason: `rate-limit: last extract ${Date.now() - input.lastExtractAt}ms ago`,
       sourceRef,
@@ -266,6 +344,7 @@ export async function captureConversationSegment(
       proposals: [],
       summaries: [],
       skippedDuplicateNodes: 0,
+      droppedQualityItems: 0,
       mode: "skipped",
       reason: `low-substance user message (len=${userText.length})`,
       sourceRef,
@@ -282,15 +361,46 @@ export async function captureConversationSegment(
       proposals: [],
       summaries: [],
       skippedDuplicateNodes: 0,
+      droppedQualityItems: 0,
       mode: "skipped",
       reason: "empty segment",
       sourceRef,
     };
   }
 
-  // Conversation-optimised offline extract (model path can replace later)
-  const extraction = conversationHeuristicExtract(segment);
+  let mode: "heuristic" | "model" = "heuristic";
+  let modelError: string | undefined;
+  let droppedQualityItems = 0;
+  let extraction;
+  if (input.complete) {
+    try {
+      const structured = await extractStructuredConversation({
+        segment,
+        complete: input.complete,
+      });
+      if (structured.ok && structured.extraction) {
+        extraction = structured.extraction;
+        droppedQualityItems += structured.dropped;
+        mode = "model";
+      } else {
+        modelError = structured.error ?? "structured capture failed";
+      }
+    } catch (err) {
+      modelError = err instanceof Error ? err.message : String(err);
+    }
+  }
+  if (!extraction) {
+    const normalized = normalizeStructuredCapture(
+      conversationHeuristicExtract(segment)
+    );
+    extraction = normalized.extraction;
+    droppedQualityItems += normalized.dropped;
+  }
   let items = extractionToProposalItems(extraction);
+
+  const resolvable = await filterResolvableEdges(input.store, items);
+  items = resolvable.items;
+  droppedQualityItems += resolvable.dropped;
 
   if (input.workspaceId !== undefined) {
     items = items.map((item) => {
@@ -312,11 +422,14 @@ export async function captureConversationSegment(
       proposals: [],
       summaries: [],
       skippedDuplicateNodes: filtered.skipped,
-      mode: "heuristic",
+      droppedQualityItems,
+      mode,
       reason:
         filtered.skipped > 0
           ? "no proposals after extract/dedupe"
-          : "no structural extract",
+          : modelError
+            ? `model fallback produced no structural extract: ${modelError}`
+            : "no structural extract",
       sourceRef,
     };
   }
@@ -324,7 +437,7 @@ export async function captureConversationSegment(
   const event = await input.store.createEvent({
     sourceType: "conversation",
     sourceRef,
-    model: "conversation-heuristic",
+    model: mode === "model" ? input.model ?? "structured-capture" : "conversation-heuristic",
     inputHash: hashInput(segment),
   });
   const proposals = await input.store.addProposals(event.id, items);
@@ -334,9 +447,10 @@ export async function captureConversationSegment(
     proposals,
     summaries: proposals.map((p) => proposalToSummary(p, sourceRef)),
     skippedDuplicateNodes: filtered.skipped,
-    mode: "heuristic",
+    droppedQualityItems,
+    mode,
+    reason: modelError ? `model fallback: ${modelError}` : undefined,
     sourceRef,
   };
 }
-
 

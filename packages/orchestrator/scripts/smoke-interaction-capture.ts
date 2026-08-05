@@ -11,8 +11,10 @@ import {
   createKnowledgeStore,
   isLowSubstanceUserMessage,
   listPendingForSession,
+  normalizeStructuredCapture,
 } from "@workflows/knowledge";
 import { tryHandleSessionCommand } from "../src/sessionCommands.js";
+import { loadConfigFromEnv } from "../src/orchestrator.js";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);
@@ -30,6 +32,22 @@ async function main(): Promise<void> {
   const sessionId = "ws:test:smoke-capture";
 
   try {
+    const remoteConfigured = loadConfigFromEnv(
+      {
+        XAI_API_KEY: "present-but-must-not-be-used-for-capture",
+        KNOWLEDGE_CAPTURE_TIER: "frontier",
+        KNOWLEDGE_CAPTURE_DISABLED: "true",
+        LONGTERM_DISABLED: "true",
+        TOOLS_DISABLED: "true",
+      },
+      { cwd: dataDir }
+    );
+    assert(
+      remoteConfigured.knowledgeSettings?.captureModelTier === "local",
+      "capture remains local even when frontier credentials/tier are present"
+    );
+    console.log("OK: capture model policy is local-only");
+
     // 1. default session state is active
     const st0 = await memory.getSessionState(sessionId);
     assert(st0.interactionMode === "active", "default active");
@@ -84,13 +102,63 @@ async function main(): Promise<void> {
       `OK: conversation extract relations=${extracted.relations.length} claims=${extracted.claims.length}`
     );
 
-    // 4. captureConversationSegment produces pending only
+    // 4. quality boundary rejects questions, stutter, pseudo-edge labels and aliases relations
+    const normalized = normalizeStructuredCapture({
+      concepts: [
+        { label: "heat" },
+        { label: "How would heat change?" },
+        { label: "heat -[causes]-> damage" },
+        { label: "loss loss loss" },
+      ],
+      claims: [
+        { label: "Copper loss increases winding temperature" },
+        { label: "What if cooling improves?" },
+      ],
+      relations: [
+        { from: "copper loss", relation: "produces", to: "heat" },
+        { from: "heat", relation: "invented_relation", to: "torque" },
+      ],
+      openQuestions: ["Could another material help?"],
+    });
+    assert(normalized.extraction.concepts.length === 1, "junk concepts removed");
+    assert(normalized.extraction.claims.length === 1, "question claims removed");
+    assert(
+      normalized.extraction.relations[0]?.relation === "causes",
+      "relation alias normalized"
+    );
+    assert(normalized.dropped >= 5, "quality drops reported");
+    console.log("OK: structured capture quality boundary");
+
+    const structuredFixture = JSON.stringify({
+      concepts: [
+        { label: "copper loss" },
+        { label: "heat" },
+        { label: "continuous torque" },
+      ],
+      claims: [
+        {
+          label: "Copper loss increases winding temperature under sustained load",
+          description: "limitKind=technological",
+          confidence: 0.92,
+        },
+      ],
+      relations: [
+        { from: "copper loss", relation: "causes", to: "heat", confidence: 0.95 },
+        { from: "heat", relation: "limits", to: "continuous torque", confidence: 0.9 },
+      ],
+      assumptions: [],
+      openQuestions: ["How much cooling is enough?"],
+    });
+
+    // 5. schema-constrained model capture produces clean pending proposals only
     const cap = await captureConversationSegment({
       store: knowledge,
       sessionId,
       force: true,
       minUserMessageLength: 10,
       maxProposalsPerTurn: 8,
+      model: "fixture-strong-model",
+      complete: async () => structuredFixture,
       messages: [
         {
           role: "user",
@@ -110,6 +178,14 @@ async function main(): Promise<void> {
       "all pending"
     );
     assert(cap.summaries.length === cap.proposals.length, "summaries");
+    assert(cap.mode === "model", "structured model is primary path");
+    assert(cap.droppedQualityItems >= 1, "open question dropped");
+    assert(
+      cap.proposals.every(
+        (p) => !String(p.payload.label ?? "").trim().endsWith("?")
+      ),
+      "question-only proposals rejected"
+    );
     const edgeKinds = cap.proposals
       .filter((p) => p.kind === "edge")
       .map((p) => String(p.payload.relation));
@@ -123,7 +199,7 @@ async function main(): Promise<void> {
       `OK: capture segment proposals=${cap.proposals.length} mode=${cap.mode} edges=${edgeKinds.join(",")}`
     );
 
-    // 5. session-scoped pending queue
+    // 6. session-scoped pending queue
     const queue = await listPendingForSession(knowledge, sessionId);
     assert(queue.length >= 1, "session queue non-empty");
     assert(
@@ -132,11 +208,13 @@ async function main(): Promise<void> {
     );
     console.log(`OK: listPendingForSession count=${queue.length}`);
 
-    // 6. second capture dedupes pending
+    // 7. second identical structured capture dedupes pending
     const cap2 = await captureConversationSegment({
       store: knowledge,
       sessionId,
       force: true,
+      model: "fixture-strong-model",
+      complete: async () => structuredFixture,
       messages: [
         {
           role: "user",
@@ -159,7 +237,47 @@ async function main(): Promise<void> {
       `OK: second capture skipped=${cap2.skippedDuplicateNodes} queue=${queue2.length}`
     );
 
-    // 7. accept via command
+    // 8. noisy structured result creates no graph debris
+    const noisy = await captureConversationSegment({
+      store: knowledge,
+      sessionId: "ws:test:noisy",
+      force: true,
+      messages: [{ role: "user", content: "Hello, how would this work?" }],
+      complete: async () =>
+        JSON.stringify({
+          concepts: [{ label: "hello" }, { label: "How would this work?" }],
+          claims: [{ label: "What if what if what if?" }],
+          relations: [
+            { from: "hello", relation: "causes", to: "missing endpoint" },
+          ],
+          assumptions: [],
+          openQuestions: ["How would this work?"],
+        }),
+    });
+    assert(noisy.proposals.length === 0, "noisy segment creates no proposals");
+    assert(noisy.droppedQualityItems >= 3, "noisy items counted as dropped");
+    console.log("OK: noisy structured capture creates no proposals");
+
+    // 9. model failure degrades to the quality-filtered heuristic path
+    const fallback = await captureConversationSegment({
+      store: knowledge,
+      sessionId: "ws:test:fallback",
+      force: true,
+      messages: [
+        {
+          role: "user",
+          content: "Bearing friction increases heat and heat limits continuous torque.",
+        },
+      ],
+      complete: async () => {
+        throw new Error("fixture model unavailable");
+      },
+    });
+    assert(fallback.mode === "heuristic", "model error uses heuristic fallback");
+    assert(fallback.reason?.includes("model fallback"), "fallback is visible");
+    console.log("OK: model error falls back without breaking capture");
+
+    // 10. accept via command
     const id = cap.proposals[0]!.id;
     const acc = await tryHandleSessionCommand(`/accept ${id}`, {
       memory,
@@ -171,7 +289,34 @@ async function main(): Promise<void> {
     assert(!still.some((p) => p.id === id), "accepted removed from pending");
     console.log("OK: /accept removes from pending");
 
-    // 8. proposals off
+    // Accept remaining nodes before remaining edges, then verify accepted dedupe.
+    for (const kind of ["node", "edge"] as const) {
+      const pending = await knowledge.listProposals({ status: "pending" });
+      for (const proposal of pending.filter((p) => p.kind === kind)) {
+        await knowledge.acceptProposal(proposal.id);
+      }
+    }
+    const acceptedDedupe = await captureConversationSegment({
+      store: knowledge,
+      sessionId: "ws:test:accepted-dedupe",
+      force: true,
+      messages: [
+        {
+          role: "user",
+          content:
+            "Copper losses produce heat that limits continuous torque under sustained load.",
+        },
+      ],
+      model: "fixture-strong-model",
+      complete: async () => structuredFixture,
+    });
+    assert(
+      acceptedDedupe.proposals.length === 0,
+      `accepted identity should suppress duplicates, got ${acceptedDedupe.proposals.length}`
+    );
+    console.log("OK: accepted nodes and edges dedupe structured capture");
+
+    // 11. proposals off
     await tryHandleSessionCommand("/proposals off", {
       memory,
       sessionId,
@@ -181,7 +326,7 @@ async function main(): Promise<void> {
     assert(st2.proposalsEnabled === false, "proposals off");
     console.log("OK: /proposals off");
 
-    // 9. low substance skip
+    // 12. low substance skip
     assert(isLowSubstanceUserMessage("hi", 40), "hi low substance");
     assert(isLowSubstanceUserMessage("ok", 40), "ok low substance");
     const skip = await captureConversationSegment({
@@ -194,7 +339,7 @@ async function main(): Promise<void> {
     assert(skip.mode === "skipped", "short skipped");
     console.log("OK: substance heuristic skips short messages");
 
-    // 10. rate limit
+    // 13. rate limit
     const rate = await captureConversationSegment({
       store: knowledge,
       sessionId,

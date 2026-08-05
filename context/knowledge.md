@@ -166,7 +166,7 @@ SQLite tables alongside existing DBs. No new infrastructure required for M11–M
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** design [`docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md`](../docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md); iteration [`docs/INTERACTION_CAPTURE_ITERATION.md`](../docs/INTERACTION_CAPTURE_ITERATION.md); foundation `04415a5`; iteration `7d474bb`  
+**Source:** design [`docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md`](../docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md); structured capture [`docs/STRUCTURED_CAPTURE_AND_NETWORK_VIZ.md`](../docs/STRUCTURED_CAPTURE_AND_NETWORK_VIZ.md); foundation `04415a5`; iteration `7d474bb`  
 **Revisit when:** daily multi-hour sessions show extract quality, queue noise, or sparring tone still wrong
 
 ### Product decision
@@ -183,13 +183,21 @@ SQLite tables alongside existing DBs. No new infrastructure required for M11–M
 |-------|--------|--------|
 | Foundation | `04415a5` | `session_state` in memory; slash `/mode` `/proposals` `/capture` `/accept` `/reject`; continuous capture→pending; extended chat response; basic panel |
 | Iteration | `7d474bb` | Conversation-optimised extract; pending+accepted dedupe + ranking; `limitKind` as property (not new types); full session queue API/UI; active vs neutral sparring prompts; rate-limit; capture failures never break reply |
+| Structured quality | 2026-08-05 implementation | Strict schema model extract; normalise/filter; resolvable typed edges; accepted+pending identity; heuristic fallback |
 
 ### Iteration decisions (why of `7d474bb`)
 
 **Conversation extract over bag-of-words**  
-Generic word-bag ingest produced noise unsuitable for deep reasoning. Capture uses a dedicated conversation path that prioritises causal/limit chains, next-bottleneck language, assumptions/open questions, and typed edges already in the vocabulary.
+Generic word-bag ingest produced noise unsuitable for deep reasoning. The primary path is now a separate schema-constrained completion that returns clean concepts, declarative claims, assumptions, and canonical typed edges. Questions are omitted from default proposals. The earlier conversation heuristic remains the offline/degraded fallback and passes through the same quality boundary.
 
-**Rejected:** Rely only on M14 `heuristicExtract` for continuous chat; invent FP-only graph types for limits.
+The extraction model is separately configurable with `KNOWLEDGE_CAPTURE_TIER` and `KNOWLEDGE_CAPTURE_MODEL`, but capture is deliberately **local-only**: it uses the configured Ollama client/model and never calls frontier or mid APIs. `heuristic` remains an explicit degraded/offline option. Chat reply routing remains independent.
+
+**Rejected:** Frontier/mid extraction, because capture must work without remote API access and must not send captured conversation segments remotely; heuristic regex as the primary quality path; silently use a weak model as if output quality were equivalent; couple extraction model choice to the chat reply; invent FP-only graph types for limits.
+
+**Quality before proposals**  
+Normalisation collapses whitespace and canonicalises relation aliases. The filter removes pure questions, process chatter, repeated-token stutter, pseudo-edge syntax, invalid relations, and edges whose endpoints cannot resolve to this extract or the accepted graph. `limitKind` is retained only when the extract explicitly supplies it. Model/schema failure is visible in the capture reason and falls back without breaking the reply.
+
+**Rejected:** Store first and clean later; accept unresolved edge endpoints; turn open questions into permanent-looking claims by default; fail the main conversation when extraction is unavailable.
 
 **`limitKind` as property, not node type**  
 Classification `fundamental | technological | industrial | economic | regulatory` is stored on claim/concept description (e.g. `limitKind=technological`), keeping the graph general.

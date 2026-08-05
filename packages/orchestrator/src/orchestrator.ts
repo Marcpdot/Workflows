@@ -801,6 +801,14 @@ export class Orchestrator {
         { role: "user", content: prompt },
         { role: "assistant", content: reply },
       ];
+      const captureTier = kSettings.captureModelTier;
+      const captureTarget =
+        captureTier === "heuristic"
+          ? undefined
+          : {
+              client: this.local,
+              model: kSettings.captureModel ?? this.config.ollamaModel,
+            };
       const turnId = String(Date.now());
       const cap = await captureConversationSegment({
         store: this.knowledge,
@@ -818,6 +826,17 @@ export class Orchestrator {
             kSettings.minCaptureIntervalMs ??
             8000),
         lastExtractAt: options?.lastExtractAt,
+        model: captureTarget?.model,
+        complete: captureTarget
+          ? async (captureMessages) => {
+              const response = await captureTarget.client.complete({
+                messages: captureMessages,
+                model: captureTarget.model,
+                temperature: 0,
+              });
+              return response.content;
+            }
+          : undefined,
       });
       result.proposals = cap.summaries as KnowledgeProposalSummary[];
       result.capture = {
@@ -1027,6 +1046,9 @@ export function loadConfigFromEnv(
     env.KNOWLEDGE_CAPTURE_DISABLED
   );
   const knowledgeCaptureEnabled = !knowledgeCaptureDisabled;
+  const captureTierRaw = env.KNOWLEDGE_CAPTURE_TIER?.trim().toLowerCase();
+  const captureModelTier: "local" | "heuristic" =
+    captureTierRaw === "heuristic" ? "heuristic" : "local";
   const knowledgeDbPath = resolveKnowledgeDbPath(cwd, env);
   const defaultWorkspaceId =
     env.KNOWLEDGE_DEFAULT_WORKSPACE_ID?.trim() || workspace.id;
@@ -1098,6 +1120,8 @@ export function loadConfigFromEnv(
         env.KNOWLEDGE_CAPTURE_MIN_INTERVAL_MS,
         8000
       ),
+      captureModelTier,
+      captureModel: env.KNOWLEDGE_CAPTURE_MODEL?.trim() || undefined,
     },
     longTermSettings: {
       dbPath: longTermDbPath,

@@ -92,3 +92,9 @@ export {
   scoreProposalItem,
   type LimitKind,
 } from "./conversationExtract.js";
+export {
+  STRUCTURED_CAPTURE_SCHEMA,
+  extractStructuredConversation,
+  normalizeStructuredCapture,
+  type NormalizedCapture,
+} from "./structuredCapture.js";

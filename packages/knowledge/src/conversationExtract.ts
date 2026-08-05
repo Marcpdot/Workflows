@@ -238,6 +238,11 @@ export function scoreProposalItem(item: {
   }
   if (item.kind === "node") {
     const desc = String(item.payload.description ?? "");
+    if (item.payload.type === "claim") {
+      if (/limitKind=/.test(desc)) return 90;
+      if (/assumption=true/i.test(desc)) return 70;
+      return 50;
+    }
     if (/limitKind=|bottleneck/i.test(desc)) return 60;
     return 20;
   }
