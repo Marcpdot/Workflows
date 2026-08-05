@@ -1,20 +1,23 @@
 # Models and local runtime
 
-## Default local model: `llama3.2:3b` (weak machines)
+## Default local model: `llama3.1:8b`
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** commits `7d07643`, `6091db2` (PR #4); default in `packages/orchestrator/src/orchestrator.ts` and `packages/orchestrator/.env.example`  
-**Revisit when:** target hardware improves, eval shows 3B quality is blocking, or a better small default is adopted project-wide
+**Source:** maintainer request 2026-08-04; default in `packages/orchestrator/src/orchestrator.ts` and `packages/orchestrator/.env.example`  
+**Revisit when:** hardware or quality needs change; eval shows a better default
 
-The configured default Ollama model tag is **`llama3.2:3b`**, overridable via `OLLAMA_MODEL`.
+The configured default Ollama model tag is **`llama3.1:8b`**, overridable via `OLLAMA_MODEL`.
 
-**Reason:** Defaults should run on constrained local machines without requiring multi‑GB mid-size downloads as the first experience. A 3B-class model is the intentional “works on weak hardware” baseline; stronger tags remain available by env.
+**Reason:** `llama3.2:3b` is not usable enough for real dialogue (including active sparring / reasoning). An 8B-class Llama 3.1 model is the new baseline for local communication quality while still remaining Ollama-CLI local and env-overridable.
 
-**Rejected alternatives:**
+**Rejected / superseded:**
 
-- **`gemma4:12b` as project default** — briefly used when that model was installed on one machine; rejected as the shared default because a 12B tag is heavy for weak machines and is not portable as a repo-wide assumption.
+- **`llama3.2:3b` as project default** — chosen earlier for weak machines; superseded because quality is too low for intended use (conversation + knowledge capture coaching).
+- **`gemma4:12b` as project default** — briefly used when that model was installed on one machine; rejected as the shared default because a 12B tag is heavy and not portable as a repo-wide assumption.
 - **No default (always require explicit model)** — worse DX for first run; env override still covers power users.
+
+> Superseded 2026-08-04: previous active default was `llama3.2:3b` (weak-machine baseline).
 
 ---
 

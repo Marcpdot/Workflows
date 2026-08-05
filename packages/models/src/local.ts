@@ -13,7 +13,7 @@ import type {
 export interface OllamaCliConfig {
   /** Binary name or path. Default: "ollama" */
   bin?: string;
-  /** Default model tag, e.g. "llama3.2:3b" */
+  /** Default model tag, e.g. "llama3.1:8b" */
   defaultModel: string;
   /** Max time for a single completion (ms). Default: 120_000 */
   timeoutMs?: number;

@@ -11,7 +11,8 @@ This is a core capability of the system, not a thin add-on. The interface, sessi
 | Milestone | Commit / doc | State |
 |-----------|--------------|--------|
 | Foundation | `04415a5` | Delivered — mode, slash cmds, continuous capture→pending, response fields, basic panel |
-| Iteration (quality, queue, sparring, robustness) | [`INTERACTION_CAPTURE_ITERATION.md`](./INTERACTION_CAPTURE_ITERATION.md) | Delivered as shell — conversation extract, session queue API/UI, dual prompts, rate-limit |
+| Iteration (quality, queue, sparring, robustness) | `7d474bb`; [`INTERACTION_CAPTURE_ITERATION.md`](./INTERACTION_CAPTURE_ITERATION.md) | Delivered as shell — conversation extract, session queue API/UI, dual prompts, rate-limit |
+| Context (why) | [context/knowledge.md](../context/knowledge.md), [context/interface.md](../context/interface.md) | Decision log for product + iteration choices |
 
 Authoritative product design remains this document; iteration doc tracks gaps closed after foundation.
 

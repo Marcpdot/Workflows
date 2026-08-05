@@ -2,8 +2,9 @@
 
 ## Iteration delivery status
 
-**Status:** shell delivered (implementation following this doc)  
-**Evidence:** code + `smoke-interaction-capture.ts`  
+**Status:** shell delivered  
+**Evidence:** confirmed — commit `7d474bb`; `smoke-interaction-capture.ts`  
+**Context why:** [context/knowledge.md](../context/knowledge.md) § interaction mode; [context/interface.md](../context/interface.md)
 
 | Gap | Done |
 |-----|------|

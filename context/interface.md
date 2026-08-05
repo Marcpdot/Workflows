@@ -44,14 +44,14 @@ Speech enters as **transcript string** into the same orchestrator path as typed 
 - **Voice-owned knowledge or tool loop** — forks the brain; violates “one handle path”.
 - **Cloud STT/TTS as default** — audio/text leave the machine unless explicitly allowed.
 
-## Interaction mode + proposals as first-class UI (design)
+## Interaction mode + proposals as first-class UI
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** design + iteration docs; foundation `04415a5` + iteration implementation  
-**Revisit when:** web UI is preferred for multi-hour reasoning sessions
+**Source:** design + iteration docs; foundation `04415a5`; UI/queue iteration `7d474bb`  
+**Revisit when:** multi-hour sessions show the panel or mode chrome still get in the way
 
-**Decision:** The web surface (and CLI/REPL) treat **active vs neutral** mode and a **proposals panel** as primary workflow chrome — not optional widgets on a bare chat shell. Mode is persisted per session. Capture commands (`/mode`, `/capture`, `/accept`, `/reject`) work on CLI and UI so agents stay consistent.
+**Decision:** The web surface (and CLI/REPL) treat **active vs neutral** mode and a **proposals panel** as primary workflow chrome — not optional widgets on a bare chat shell. Mode is persisted per session (`session_state` in memory). Capture commands (`/mode`, `/capture`, `/accept`, `/reject`) work on CLI and UI so agents stay consistent.
 
 **Reason:** Continuous knowledge capture only succeeds if review/accept is low-friction and always visible; a thin M6 chat shell is not enough for that loop.
 
@@ -60,7 +60,28 @@ Speech enters as **transcript string** into the same orchestrator path as typed 
 - Keep M6 as “minimum chat only” and hope CLI accept is enough.
 - Wizard/forms as the only capture path (kills free-form reasoning).
 - Auto-accept so the UI never needs a proposals panel.
+- Drive the panel only from the last chat payload (stale after refresh/session switch).
 
-**Live UI behaviour (iteration):** Panel loads **full session pending queue** via `GET /v1/knowledge/proposals?sessionId=` (not only last-turn payload). Mode toggle changes capture *and* sparring system prompt. Refresh re-fetches store; accept/reject update the queue.
+**Live behaviour**
 
-**Related:** [knowledge.md](knowledge.md); [`docs/INTERACTION_CAPTURE_ITERATION.md`](../docs/INTERACTION_CAPTURE_ITERATION.md).
+| Surface | Behaviour |
+|---------|-----------|
+| Mode toggle | Persists `active`/`neutral`; next model turn uses matching system prompt (sparring vs quiet) |
+| Proposals panel | Full **session** pending queue via `GET /v1/knowledge/proposals?sessionId=` (namespaced id from chat response); refresh re-fetches; accept/reject update queue |
+| Capture | Continuous when active + proposals on; `/capture` forces extract; never auto-accept |
+| CLI/REPL | Same slash commands; response shows mode, pending count, new proposal summaries |
+
+**Related:** [knowledge.md](knowledge.md) (capture decisions); [memory.md](memory.md); [`docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md`](../docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md).
+
+## Accepted knowledge exploration in the reasoning UI
+
+**Status:** active
+**Evidence:** confirmed
+**Source:** [`docs/KNOWLEDGE_EXPLORE_UI.md`](../docs/KNOWLEDGE_EXPLORE_UI.md); web UI implementation 2026-08-05
+**Revisit when:** graph size makes the capped list insufficient or users need direct graph editing
+
+**Decision:** The existing web shell has `Chat | Graph` views while the right column remains the pending proposals queue. Graph reads accepted nodes through the existing same-origin `/v1/knowledge/*` surface, with label/type/workspace search, node detail, and a readable 1–2-hop edge list. Accept actions refresh the graph without changing the propose-to-accept gate.
+
+**Reason:** Accept/reject is hard to trust when permanent knowledge is invisible. Keeping exploration beside chat and proposals closes that feedback loop without creating a second frontend product or knowledge implementation.
+
+**Rejected alternatives:** a separate graph application; a heavy SPA/3D visualizer; frontend-owned database queries; combining pending proposals and accepted nodes into one ambiguous list.

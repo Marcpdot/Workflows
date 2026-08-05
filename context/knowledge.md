@@ -162,30 +162,61 @@ SQLite tables alongside existing DBs. No new infrastructure required for M11–M
 
 **Explicitly out of early roadmap (still rejected):** Neo4j-as-required, fully autonomous permanent writes, 3D UI, complete self-model of Workflows on day one.
 
-## Interaction mode + continuous knowledge capture (post-M18 design)
+## Interaction mode + continuous knowledge capture (post-M18)
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** [`docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md`](../docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md); iteration [`docs/INTERACTION_CAPTURE_ITERATION.md`](../docs/INTERACTION_CAPTURE_ITERATION.md); foundation `04415a5`  
-**Revisit when:** daily reasoning sessions show remaining quality gaps after iteration
+**Source:** design [`docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md`](../docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md); iteration [`docs/INTERACTION_CAPTURE_ITERATION.md`](../docs/INTERACTION_CAPTURE_ITERATION.md); foundation `04415a5`; iteration `7d474bb`  
+**Revisit when:** daily multi-hour sessions show extract quality, queue noise, or sparring tone still wrong
 
-**Decision:** Free-form reasoning sessions use a first-class session **`interactionMode`** (`active` | `neutral`, default **active**). In active mode the system continuously extracts **pending** knowledge proposals from the conversation (caps + substance heuristics + light dedupe); the human accepts/rejects. Explicit `/capture` works in any mode. Web UI gets a real proposals panel — still the same orchestrator/knowledge brain.
+### Product decision
+
+**Decision:** Free-form reasoning sessions use a first-class session **`interactionMode`** (`active` | `neutral`, default **active**). In active mode the system continuously extracts **pending** knowledge proposals from the conversation; the human accepts/rejects. Explicit `/capture` works in any mode. Web UI is a working surface (mode + proposals queue), not a bare chat shell. Same orchestrator/knowledge brain — no parallel system.
 
 **Reason:** Capture friction must be near-zero or the graph stays empty; mode must be remembered so deep sessions feel natural; FP and other analysis remain usage patterns on the general graph.
 
-**Rejected:** Auto-accept; FP-only graph types; treating UI as afterthought; a second capture brain outside orchestrator; every-turn extract without caps/mode.
+**Rejected:** Auto-accept; FP-only core node types; treating UI as afterthought; a second capture brain; every-turn extract without caps/mode.
 
-**Implementation status**
+### Delivery (what is live)
 
-| Layer | Live | Notes |
-|-------|------|--------|
-| Foundation (`04415a5`) | yes | Mode, slash cmds, continuous capture→pending, response fields, basic panel |
-| Capture quality (iteration) | yes | Conversation-optimised extract; pending+accepted dedupe; ranking; limitKind as property |
-| Panel as session queue | yes | `listPendingForSession` + `GET /v1/knowledge/proposals?sessionId=` |
-| Active sparring vs neutral | yes | Distinct system prompts per mode |
-| Robustness | yes | Rate-limit interval; capture never breaks reply; session-scoped pending count |
+| Layer | Commit | Notes |
+|-------|--------|--------|
+| Foundation | `04415a5` | `session_state` in memory; slash `/mode` `/proposals` `/capture` `/accept` `/reject`; continuous capture→pending; extended chat response; basic panel |
+| Iteration | `7d474bb` | Conversation-optimised extract; pending+accepted dedupe + ranking; `limitKind` as property (not new types); full session queue API/UI; active vs neutral sparring prompts; rate-limit; capture failures never break reply |
 
-**See also:** [interface.md](interface.md); design + iteration docs under `docs/`.
+### Iteration decisions (why of `7d474bb`)
+
+**Conversation extract over bag-of-words**  
+Generic word-bag ingest produced noise unsuitable for deep reasoning. Capture uses a dedicated conversation path that prioritises causal/limit chains, next-bottleneck language, assumptions/open questions, and typed edges already in the vocabulary.
+
+**Rejected:** Rely only on M14 `heuristicExtract` for continuous chat; invent FP-only graph types for limits.
+
+**`limitKind` as property, not node type**  
+Classification `fundamental | technological | industrial | economic | regulatory` is stored on claim/concept description (e.g. `limitKind=technological`), keeping the graph general.
+
+**Rejected:** Separate node types per limit class (would specialise the core model toward FP).
+
+**Dedupe against accepted *and* pending**  
+Continuous capture re-sees the same claims across turns. Skipping only accepted nodes still floods the queue with near-duplicates already pending.
+
+**Rejected:** Accept-only identity (M14 light dedupe alone).
+
+**Session queue, not last-turn list**  
+The proposals panel (and `pendingProposalCount`) are scoped by `sourceRef` prefix `conversation:<sessionId>` via `listPendingForSession` / `GET /v1/knowledge/proposals?sessionId=`.
+
+**Rejected:** Drive the panel only from the last chat response payload.
+
+**Active changes reply style, not only capture**  
+Active = sparring system prompt (challenge assumptions, classify limits, next bottleneck). Neutral = brief, non-coaching; capture only on explicit `/capture`.
+
+**Rejected:** Mode as a pure capture gate with identical model tone.
+
+**Rate-limit auto-extract**  
+Default min interval between auto captures (`KNOWLEDGE_CAPTURE_MIN_INTERVAL_MS`, 8s); `/capture` bypasses. Substance heuristic still skips short/process talk.
+
+**Rejected:** Extract on every turn regardless of length or recency.
+
+**See also:** [interface.md](interface.md); [memory.md](memory.md) (session_state); design + iteration docs under `docs/`.
 
 ## Decisions delivered with M11–M18 shells
 
@@ -324,6 +355,19 @@ Compact pointers to what exists in code (detail lives in AGENTS-M* specs):
 | **M16** | `firstPrinciples.ts`, `knowledge_first_principles`, `--knowledge fp` |
 | **M17** | `read.ts`, `render.ts`, `/v1/knowledge/*` |
 | **M18** | `packages/voice`, `--voice-once`, `smoke-voice` |
+
+## Accepted graph explore after M17
+
+**Status:** active
+**Evidence:** confirmed
+**Source:** [`docs/KNOWLEDGE_EXPLORE_UI.md`](../docs/KNOWLEDGE_EXPLORE_UI.md); `packages/orchestrator/src/ui/web/`
+**Revisit when:** more than 50 matching nodes is a normal browse case, or graph edits beyond proposal accept/reject are required
+
+**Decision:** `npm run ui` explicitly mounts the existing M17 read catalog on its own origin and presents accepted nodes, stable DTO details, and 1–2-hop neighborhoods in the main web shell. The ordinary integration server keeps the existing `KNOWLEDGE_HTTP_READ` gate; UI startup opts in through a server option. Reads continue through `createKnowledgeReader` and the same SQLite store.
+
+**Reason:** Accepted knowledge must be visible where capture decisions are made, and the one-process UI should work without a second env switch. An explicit server option preserves the integration server's prior opt-in boundary while avoiding duplicate routes or query logic.
+
+**Rejected alternatives:** require UI users to remember `KNOWLEDGE_HTTP_READ=true`; query SQLite directly from UI-specific code; create a second knowledge HTTP service; merge pending and accepted data into one truth view.
 
 ## First-principles root question (kept)
 

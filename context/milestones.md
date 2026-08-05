@@ -76,7 +76,8 @@ Semantic world model beyond `MemoryFact` text. Same shell-first rule: each row i
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** git through M10 + packaging A–F; knowledge M11–M18 shells through `6f11d1f` (voice)  
+**Source:** git through M10 + packaging A–F; knowledge M11–M18 through `6f11d1f`; interaction capture through `7d474bb`  
+ 
 
 | Range | State |
 |-------|--------|
@@ -93,10 +94,11 @@ Semantic world model beyond `MemoryFact` text. Same shell-first rule: each row i
 | **M16** | **Delivered as shell** — first-principles template/runner → proposals; tool+CLI; smoke-knowledge-fp |
 | **M17** | **Delivered as shell** — read helpers + renderers; CLI `--json`; optional HTTP `/v1/knowledge/*`; minimal HTML; smoke-knowledge-read |
 | **M18** | **Delivered as optional shell** — `@workflows/voice` STT/TTS adapters; `--voice-once` / `/voice`; mock smoke; same `handle()` |
+| **Post-M18** | **Interaction mode + continuous capture** — foundation `04415a5` + iteration `7d474bb` (session mode, conversation extract, session proposals queue, sparring prompts); design in `docs/INTERACTION_*` |
 
-Vertical **M0–M18** shells are in place (M18 is interface-only and default off).
+Vertical **M0–M18** shells are in place (M18 is interface-only and default off). Continuous capture is the next product surface on top of the knowledge track (propose→accept unchanged).
 
-Thin spots accepted under shell-first (e.g. heuristic score fusion, static UI, linear vector scan, repair-not-constrained-decoding) are documented per topic.
+Thin spots accepted under shell-first (e.g. heuristic score fusion, static UI, linear vector scan, repair-not-constrained-decoding; conversation extract still offline-heuristic until model path is daily-used) are documented per topic.
 
 ## Milestone 3 privacy cut
 

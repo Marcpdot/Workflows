@@ -45,8 +45,8 @@ See [packaging.md](packaging.md) and [milestones.md](milestones.md).
 **Evidence:** confirmed  
 **Source:** `packages/orchestrator/src/orchestrator.ts`  
 
-Typical `handle()` flow: resolve workspace/session (callers) → optional policy → route → retrieve/compress → optional knowledge inject → complete or tool loop (optional `knowledge_*` tools) → optional suggestions / optional chat-ingest proposals → observability emit. Optional steps are env-gated so the core chat path stays simple. Pipeline planner can use **structured** plan JSON (M10) without changing raw chat.
+Typical `handle()` flow: resolve workspace/session (callers) → load session interaction mode → optional policy → route → retrieve/compress → optional knowledge inject → system prompt shaped by **active/neutral** → complete or tool loop (optional `knowledge_*` tools) → optional suggestions → **continuous conversation capture** (pending proposals only, rate-limited) → observability emit. Optional steps are env-gated so the core chat path stays simple. Pipeline planner can use **structured** plan JSON (M10) without changing raw chat.
 
-Knowledge path (M12+): tools in the loop; optional neighborhood/project-status inject; ingest/FP produce **proposals** only; accept remains explicit. Voice (M18) is STT→string→same `handle()`; TTS optional and default off. Same brain; no second orchestrator in UI or HTTP.
+Knowledge path (M12+): tools in the loop; optional neighborhood/project-status inject; ingest/FP/continuous capture produce **proposals** only; accept remains explicit. Continuous capture uses conversation-optimised extract (post-M18 iteration `7d474bb`), not only generic batch ingest. Voice (M18) is STT→string→same `handle()`; TTS optional and default off. Same brain; no second orchestrator in UI or HTTP.
 
 **Reason:** One pipeline owns the vertical; features plug in without forking a second brain in UI or HTTP layers.

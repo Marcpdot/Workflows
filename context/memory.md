@@ -19,6 +19,21 @@ From **M9**, effective session ids are **namespaced per workspace** (`ws:<id>:<l
 - **In-memory only** — dies on restart.
 - **Full long-term structured memory in M0** — later milestone.
 
+## Session interaction state (post-M18 capture)
+
+**Status:** active  
+**Evidence:** confirmed  
+**Source:** foundation `04415a5`; table `session_state` in short-term memory DB  
+**Revisit when:** multi-device session sync is required
+
+Per-session **`interactionMode`** (`active` | `neutral`, default active), **`proposalsEnabled`**, extract caps, and last-extract timestamp live in SQLite beside messages — not only in the UI client.
+
+**Reason:** Mode and capture settings must survive process restart and be shared by CLI, HTTP, and web. Knowledge queue scoping uses the same namespaced `sessionId` as chat history.
+
+**Rejected:** Store mode only in browser localStorage; put interaction mode on knowledge DB (wrong ownership — mode is session/UI policy, not graph truth).
+
+See [knowledge.md](knowledge.md) (continuous capture) and [interface.md](interface.md).
+
 ## Long-term memory API (Milestone 3A)
 
 **Status:** active  
