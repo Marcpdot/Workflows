@@ -1050,7 +1050,7 @@ export function loadConfigFromEnv(
 
   return {
     ollamaBin: env.OLLAMA_BIN ?? "ollama",
-    ollamaModel: env.OLLAMA_MODEL ?? "llama3.2:3b",
+    ollamaModel: env.OLLAMA_MODEL ?? "llama3.1:8b",
     xaiApiKey: env.XAI_API_KEY ?? "",
     xaiBaseUrl: env.XAI_BASE_URL ?? "https://api.x.ai/v1",
     grokModel: env.GROK_MODEL ?? "grok-3",
