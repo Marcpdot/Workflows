@@ -128,7 +128,9 @@ body {
 
 .proposal-card .label {
   margin: 0.25rem 0 0.45rem;
-  word-break: break-word;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  hyphens: none;
 }
 
 .proposal-card .actions {
@@ -300,7 +302,9 @@ body {
   border-radius: 10px;
   border: 1px solid var(--border);
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  hyphens: none;
   line-height: 1.45;
 }
 
