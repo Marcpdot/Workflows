@@ -18,6 +18,17 @@ const pendingCountEl = $("pendingCount");
 const btnCapture = $("btnCapture");
 const btnRefreshProposals = $("btnRefreshProposals");
 const btnAcceptAll = $("btnAcceptAll");
+const viewTabs = document.querySelectorAll(".view-tab");
+const chatView = $("chatView");
+const graphView = $("graphView");
+const graphSearch = $("graphSearch");
+const graphLabel = $("graphLabel");
+const graphType = $("graphType");
+const graphWorkspace = $("graphWorkspace");
+const graphNodeList = $("graphNodeList");
+const graphNodeCount = $("graphNodeCount");
+const graphDetail = $("graphDetail");
+const graphRefresh = $("graphRefresh");
 
 /** @type {"active"|"neutral"} */
 let interactionMode = "active";
@@ -29,6 +40,212 @@ let queueError = "";
 
 /** @type {string|null} */
 let lastServerSessionId = null;
+let graphLoaded = false;
+let selectedGraphNodeId = null;
+
+function descriptionProperties(description) {
+  if (!description) return [];
+  const pairs = [];
+  const pattern = /\b([A-Za-z][\w-]*)=([^\s,;]+)/g;
+  let match;
+  while ((match = pattern.exec(description)) !== null) {
+    pairs.push([match[1], match[2]]);
+  }
+  return pairs;
+}
+
+function formatDate(timestamp) {
+  if (!Number.isFinite(timestamp)) return "â€”";
+  return new Date(timestamp).toLocaleString();
+}
+
+function renderGraphDetail(node, neighborhood) {
+  const nodesById = new Map((neighborhood.nodes || []).map((item) => [item.id, item]));
+  nodesById.set(node.id, node);
+  const properties = descriptionProperties(node.description);
+  const propertyRows = properties
+    .map(([key, value]) => `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd>`)
+    .join("");
+  const edges = neighborhood.edges || [];
+  const edgeHtml = edges.length
+    ? edges
+        .map((edge) => {
+          const from = nodesById.get(edge.fromNodeId);
+          const to = nodesById.get(edge.toNodeId);
+          const neighborId = edge.fromNodeId === node.id ? edge.toNodeId : edge.fromNodeId;
+          return `<button type="button" class="edge-row" data-node-id="${escapeHtml(neighborId)}">
+            ${escapeHtml(from?.label || edge.fromNodeId)}
+            <span class="edge-relation">â€”${escapeHtml(edge.relation)}â†’</span>
+            ${escapeHtml(to?.label || edge.toNodeId)}
+          </button>`;
+        })
+        .join("")
+    : '<div class="meta-empty">No accepted edges from this node yet.</div>';
+
+  graphDetail.innerHTML = `
+    <div class="graph-detail-head">
+      <div>
+        <div class="node-type muted">${escapeHtml(node.type)}</div>
+        <h2>${escapeHtml(node.label)}</h2>
+      </div>
+      <div class="graph-detail-actions">
+        <button type="button" id="copyNodeId">Copy id</button>
+        <label class="muted">Hops
+          <select id="graphHops" aria-label="Neighborhood hops">
+            <option value="1" ${neighborhood.hops === 1 ? "selected" : ""}>1</option>
+            <option value="2" ${neighborhood.hops === 2 ? "selected" : ""}>2</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    ${node.description ? `<p class="node-description">${escapeHtml(node.description)}</p>` : ""}
+    <dl class="node-facts">
+      <dt>id</dt><dd>${escapeHtml(node.id)}</dd>
+      <dt>status</dt><dd>${escapeHtml(node.status)}</dd>
+      <dt>workspace</dt><dd>${escapeHtml(node.workspaceId || "â€”")}</dd>
+      <dt>created</dt><dd>${escapeHtml(formatDate(node.createdAt))}</dd>
+      <dt>updated</dt><dd>${escapeHtml(formatDate(node.updatedAt))}</dd>
+      ${propertyRows}
+    </dl>
+    <section class="neighborhood">
+      <div class="neighborhood-head">
+        <strong>Neighborhood</strong>
+        <span class="muted">${neighborhood.nodeCount} nodes Â· ${neighborhood.edgeCount} edges</span>
+      </div>
+      <div class="edge-list">${edgeHtml}</div>
+    </section>
+  `;
+}
+
+async function selectGraphNode(nodeId, hops = 1) {
+  selectedGraphNodeId = nodeId;
+  for (const card of graphNodeList.querySelectorAll(".graph-node-card")) {
+    card.classList.toggle("selected", card.dataset.nodeId === nodeId);
+  }
+  graphDetail.innerHTML = '<div class="graph-placeholder"><span class="muted">Loading nodeâ€¦</span></div>';
+  try {
+    const [nodeRes, neighborhoodRes] = await Promise.all([
+      fetch(`/v1/knowledge/node?id=${encodeURIComponent(nodeId)}`),
+      fetch(`/v1/knowledge/neighborhood?nodeId=${encodeURIComponent(nodeId)}&hops=${hops}`),
+    ]);
+    const [nodeBody, neighborhoodBody] = await Promise.all([
+      nodeRes.json(),
+      neighborhoodRes.json(),
+    ]);
+    if (!nodeRes.ok) throw new Error(nodeBody.error || `HTTP ${nodeRes.status}`);
+    if (!neighborhoodRes.ok) {
+      throw new Error(neighborhoodBody.error || `HTTP ${neighborhoodRes.status}`);
+    }
+    renderGraphDetail(nodeBody.node, neighborhoodBody);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    graphDetail.innerHTML = `<div class="graph-placeholder" style="color:var(--error)">Failed to load node: ${escapeHtml(message)}</div>`;
+  }
+}
+
+function renderGraphNodes(nodes) {
+  graphNodeCount.textContent = `${nodes.length} node${nodes.length === 1 ? "" : "s"}`;
+  if (nodes.length === 0) {
+    graphNodeList.innerHTML =
+      '<div class="meta-empty">No accepted nodes match this search. Accepted proposals appear here; pending proposals remain in the right panel.</div>';
+    selectedGraphNodeId = null;
+    graphDetail.innerHTML = '<div class="graph-placeholder"><strong>No accepted knowledge yet</strong><p class="muted">Accept a node proposal, then refresh Graph.</p></div>';
+    return;
+  }
+  graphNodeList.innerHTML = "";
+  for (const node of nodes) {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "graph-node-card";
+    card.classList.toggle("selected", node.id === selectedGraphNodeId);
+    card.dataset.nodeId = node.id;
+    card.innerHTML = `
+      <div class="node-type">${escapeHtml(node.type || "node")}</div>
+      <div class="node-label">${escapeHtml(node.label || node.id)}</div>
+    `;
+    graphNodeList.appendChild(card);
+  }
+}
+
+async function refreshGraphNodes() {
+  graphRefresh.disabled = true;
+  graphNodeList.innerHTML = '<div class="meta-empty">Loading accepted nodesâ€¦</div>';
+  const params = new URLSearchParams({ status: "accepted", limit: "50" });
+  const label = graphLabel.value.trim();
+  const type = graphType.value;
+  const workspaceId = graphWorkspace.value.trim();
+  if (label) params.set("label", label);
+  if (type) params.set("type", type);
+  if (workspaceId) params.set("workspaceId", workspaceId);
+  try {
+    const res = await fetch(`/v1/knowledge/search?${params}`);
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+    graphLoaded = true;
+    renderGraphNodes(body.nodes || []);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    graphNodeCount.textContent = "unavailable";
+    graphNodeList.innerHTML = `<div class="meta-empty" style="color:var(--error)">Failed to load graph: ${escapeHtml(message)}</div>`;
+  } finally {
+    graphRefresh.disabled = false;
+  }
+}
+
+function setMainView(view) {
+  const graphActive = view === "graph";
+  chatView.hidden = graphActive;
+  graphView.hidden = !graphActive;
+  chatView.classList.toggle("active", !graphActive);
+  graphView.classList.toggle("active", graphActive);
+  for (const tab of viewTabs) {
+    const active = tab.dataset.view === (graphActive ? "graph" : "chat");
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", String(active));
+  }
+  if (graphActive && !graphLoaded) void refreshGraphNodes();
+}
+
+for (const tab of viewTabs) {
+  tab.addEventListener("click", () => setMainView(tab.dataset.view));
+}
+
+graphSearch.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void refreshGraphNodes();
+});
+
+graphType.addEventListener("change", () => void refreshGraphNodes());
+
+graphRefresh.addEventListener("click", () => {
+  void refreshGraphNodes();
+  if (selectedGraphNodeId) void selectGraphNode(selectedGraphNodeId);
+});
+
+graphNodeList.addEventListener("click", (event) => {
+  const card = event.target.closest(".graph-node-card");
+  if (card?.dataset.nodeId) void selectGraphNode(card.dataset.nodeId);
+});
+
+graphDetail.addEventListener("change", (event) => {
+  if (event.target.id === "graphHops" && selectedGraphNodeId) {
+    void selectGraphNode(selectedGraphNodeId, event.target.value === "2" ? 2 : 1);
+  }
+});
+
+graphDetail.addEventListener("click", async (event) => {
+  if (event.target.id === "copyNodeId" && selectedGraphNodeId) {
+    try {
+      await navigator.clipboard.writeText(selectedGraphNodeId);
+      event.target.textContent = "Copied";
+    } catch {
+      event.target.textContent = "Copy failed";
+    }
+    return;
+  }
+  const edge = event.target.closest(".edge-row");
+  if (edge?.dataset.nodeId) void selectGraphNode(edge.dataset.nodeId);
+});
 
 function appendBubble(role, text, isError) {
   const div = document.createElement("div");
@@ -275,6 +492,7 @@ btnAcceptAll.addEventListener("click", async () => {
     if (data.sessionId) lastServerSessionId = data.sessionId;
     renderMeta(data);
     await refreshSessionQueue();
+    if (graphLoaded) await refreshGraphNodes();
   } catch (err) {
     appendBubble("assistant", err.message || String(err), true);
   }
@@ -293,6 +511,7 @@ proposalsList.addEventListener("click", async (e) => {
     if (data.sessionId) lastServerSessionId = data.sessionId;
     renderMeta(data);
     await refreshSessionQueue();
+    if (act === "accept" && graphLoaded) await refreshGraphNodes();
   } catch (err) {
     appendBubble("assistant", err.message || String(err), true);
   }
@@ -326,6 +545,7 @@ form.addEventListener("submit", async (e) => {
     renderMeta(data);
     // Prefer full session queue over last-turn only
     await refreshSessionQueue();
+    if (prompt.startsWith("/accept") && graphLoaded) await refreshGraphNodes();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     appendBubble("assistant", msg, true);

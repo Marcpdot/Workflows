@@ -45,6 +45,8 @@ export interface HttpServerOptions {
   version?: string;
   /** Optional static files root (M6 web UI) */
   staticDir?: string;
+  /** Expose the accepted knowledge read catalog on this server. */
+  knowledgeReadEnabled?: boolean;
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -148,6 +150,8 @@ export function createIntegrationServer(
   const staticDir = options.staticDir
     ? resolve(options.staticDir)
     : undefined;
+  const knowledgeReadEnabled =
+    options.knowledgeReadEnabled ?? knowledgeHttpReadEnabled();
 
   const server = createServer(async (req, res) => {
     try {
@@ -185,7 +189,7 @@ export function createIntegrationServer(
       if (
         req.method === "GET" &&
         path.startsWith("/v1/knowledge") &&
-        (knowledgeHttpReadEnabled() ||
+        (knowledgeReadEnabled ||
           path === "/v1/knowledge/proposals" ||
           path === "/v1/knowledge" ||
           path === "/v1/knowledge/")
@@ -200,7 +204,7 @@ export function createIntegrationServer(
 
       // M17: minimal knowledge browse HTML (no auth for static shell; API still gated)
       if (
-        knowledgeHttpReadEnabled() &&
+        knowledgeReadEnabled &&
         req.method === "GET" &&
         (path === "/knowledge" || path === "/knowledge/")
       ) {

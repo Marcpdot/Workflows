@@ -45,6 +45,7 @@ async function main(): Promise<void> {
     port,
     token: process.env.INTEGRATION_HTTP_TOKEN,
     staticDir,
+    knowledgeReadEnabled: true,
   });
 
   console.error(`Orchestrator web UI (M6) at ${url}`);

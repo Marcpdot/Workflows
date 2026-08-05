@@ -25,6 +25,7 @@ async function main(): Promise<void> {
     host: "127.0.0.1",
     port: 18788,
     staticDir: publicDir,
+    knowledgeReadEnabled: true,
   });
 
   try {
@@ -38,6 +39,8 @@ async function main(): Promise<void> {
     assert(page.status === 200, `index status ${page.status}`);
     assert(html.includes("Orchestrator"), "index should mention Orchestrator");
     assert(html.includes("app.js"), "index should load app.js");
+    assert(html.includes('id="graphView"'), "index should include Graph view");
+    assert(html.includes('id="graphSearch"'), "Graph view should include search");
     console.log("OK: GET / serves UI");
 
     const css = await fetch(`${url}/styles.css`);
@@ -45,6 +48,19 @@ async function main(): Promise<void> {
     const js = await fetch(`${url}/app.js`);
     assert(js.status === 200, "app.js");
     console.log("OK: static css/js");
+
+    const knowledge = await fetch(`${url}/v1/knowledge`);
+    const knowledgeBody = (await knowledge.json()) as {
+      ok?: boolean;
+      service?: string;
+    };
+    assert(
+      knowledge.status === 200 &&
+        knowledgeBody.ok === true &&
+        knowledgeBody.service === "knowledge-read",
+      "knowledge read API should be available from the UI origin"
+    );
+    console.log("OK: same-origin knowledge read API");
 
     // API still on same origin
     const bad = await fetch(`${url}/v1/chat`, {

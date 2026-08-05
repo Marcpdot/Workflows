@@ -53,6 +53,11 @@
       </aside>
 
       <main class="main">
+        <nav class="view-tabs" aria-label="Main view">
+          <button type="button" class="view-tab active" data-view="chat" aria-selected="true">Chat</button>
+          <button type="button" class="view-tab" data-view="graph" aria-selected="false">Graph</button>
+        </nav>
+        <section id="chatView" class="main-view active">
         <div id="log" class="log" aria-live="polite"></div>
         <form id="form" class="composer">
           <textarea
@@ -67,6 +72,41 @@
           Active mode continuously proposes knowledge (pending only). Accept in the panel or via
           <code>/accept &lt;id&gt;</code>. Same brain as CLI — no second system.
         </p>
+        </section>
+        <section id="graphView" class="main-view" hidden>
+          <form id="graphSearch" class="graph-toolbar">
+            <input id="graphLabel" type="search" placeholder="Search accepted nodes" aria-label="Search node labels" />
+            <select id="graphType" aria-label="Filter by node type">
+              <option value="">All types</option>
+              <option value="concept">Concept</option>
+              <option value="claim">Claim</option>
+              <option value="event">Event</option>
+              <option value="source">Source</option>
+              <option value="project">Project</option>
+              <option value="artifact">Artifact</option>
+            </select>
+            <input id="graphWorkspace" type="search" placeholder="Workspace (optional)" aria-label="Filter by workspace" />
+            <button type="submit">Search</button>
+            <button type="button" id="graphRefresh">Refresh</button>
+          </form>
+          <div class="graph-browser">
+            <section class="graph-node-pane" aria-label="Accepted nodes">
+              <div class="panel-head">
+                <strong>Accepted nodes</strong>
+                <span id="graphNodeCount" class="muted">0 nodes</span>
+              </div>
+              <div id="graphNodeList" class="graph-node-list" aria-live="polite">
+                <div class="meta-empty">Open Graph to load accepted knowledge.</div>
+              </div>
+            </section>
+            <section id="graphDetail" class="graph-detail-pane" aria-label="Node details">
+              <div class="graph-placeholder">
+                <strong>Select a node</strong>
+                <p class="muted">Details and neighborhood will appear here.</p>
+              </div>
+            </section>
+          </div>
+        </section>
       </main>
 
       <aside class="proposals-panel" id="proposalsPanel">
