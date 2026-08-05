@@ -17,11 +17,16 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  min-height: 100vh;
+  overflow: hidden;
 }
 
 .app {
@@ -31,12 +36,20 @@ body {
   grid-template-areas:
     "top top top"
     "side main proposals";
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
 }
 
 @media (max-width: 960px) {
+  body {
+    overflow-y: auto;
+  }
+
   .app {
+    height: auto;
+    min-height: 100%;
     grid-template-columns: 1fr;
+    grid-template-rows: auto;
     grid-template-areas:
       "top"
       "side"
@@ -78,6 +91,7 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
   padding: 0.75rem;
 }
 
@@ -90,6 +104,7 @@ body {
 
 .proposals-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -195,6 +210,8 @@ body {
   background: var(--panel);
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
   gap: 0.85rem;
 }
 
@@ -263,11 +280,13 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
   padding: 1rem 1.25rem 0.75rem;
 }
 
 .log {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -312,6 +331,7 @@ body {
   grid-template-columns: 1fr auto;
   gap: 0.6rem;
   align-items: end;
+  flex-shrink: 0;
   padding: 0.75rem 0;
   border-top: 1px solid var(--border);
 }
