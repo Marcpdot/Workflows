@@ -1,5 +1,17 @@
 # Structured Capture + Knowledge Network Visualization
 
+## Implementation status
+
+**Status:** delivered
+
+- Structured capture pipeline: `00e5d39`
+- Subgraph read API and interactive Cytoscape network: `d16a54a`
+- Verification: orchestrator typecheck and all 27 offline smoke scripts pass (2026-08-06)
+
+The accepted-knowledge network is now the primary Graph view. The list and detail
+pane remain secondary navigation, and pending proposals remain outside the graph
+until a human accepts them.
+
 ## Purpose
 
 Two gaps block the knowledge system from matching the intended use:
