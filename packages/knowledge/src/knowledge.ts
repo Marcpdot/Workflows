@@ -209,6 +209,72 @@ class SqliteKnowledgeStore implements KnowledgeStore {
     };
   }
 
+  async getSubgraph(input?: {
+    rootId?: string;
+    nodeIds?: string[];
+    hops?: 1 | 2;
+    status?: KnowledgeStatus;
+    workspaceId?: string | null;
+    limit?: number;
+  }): Promise<{
+    nodes: KnowledgeNode[];
+    edges: KnowledgeEdge[];
+    truncated: boolean;
+  }> {
+    const status = input?.status ?? "accepted";
+    const requestedLimit =
+      input?.limit && Number.isFinite(input.limit) && input.limit > 0
+        ? Math.floor(input.limit)
+        : 250;
+    const limit = Math.min(requestedLimit, 1000);
+
+    let candidates: KnowledgeNode[];
+    if (input?.rootId) {
+      const root = this.store.getNode(input.rootId);
+      if (!root || root.status !== status) {
+        return { nodes: [], edges: [], truncated: false };
+      }
+      const neighborhood = await this.getNeighborhood(root.id, {
+        hops: input.hops === 2 ? 2 : 1,
+        status,
+      });
+      candidates = neighborhood.nodes;
+    } else if (input?.nodeIds?.length) {
+      const uniqueIds = [...new Set(input.nodeIds.map((id) => id.trim()).filter(Boolean))];
+      candidates = uniqueIds
+        .map((id) => this.store.getNode(id))
+        .filter(
+          (node): node is KnowledgeNode =>
+            node != null &&
+            node.status === status &&
+            (input.workspaceId === undefined ||
+              node.workspaceId === input.workspaceId)
+        );
+    } else {
+      candidates = this.store.findNodes({
+        status,
+        workspaceId: input?.workspaceId,
+        limit: limit + 1,
+      });
+    }
+
+    if (input?.workspaceId !== undefined) {
+      candidates = candidates.filter(
+        (node) => node.workspaceId === input.workspaceId
+      );
+    }
+
+    const truncated = candidates.length > limit;
+    const nodes = candidates.slice(0, limit);
+    const nodeIds = new Set(nodes.map((node) => node.id));
+    const edges = this.store
+      .getEdgesFromOrTo([...nodeIds], status)
+      .filter(
+        (edge) => nodeIds.has(edge.fromNodeId) && nodeIds.has(edge.toNodeId)
+      );
+    return { nodes, edges, truncated };
+  }
+
   async ensureProject(input: {
     label: string;
     description?: string;

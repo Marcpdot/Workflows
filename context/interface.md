@@ -77,11 +77,11 @@ Speech enters as **transcript string** into the same orchestrator path as typed 
 
 **Status:** active
 **Evidence:** confirmed
-**Source:** [`docs/KNOWLEDGE_EXPLORE_UI.md`](../docs/KNOWLEDGE_EXPLORE_UI.md); web UI implementation 2026-08-05
-**Revisit when:** graph size makes the capped list insufficient or users need direct graph editing
+**Source:** [`docs/KNOWLEDGE_EXPLORE_UI.md`](../docs/KNOWLEDGE_EXPLORE_UI.md); [`docs/STRUCTURED_CAPTURE_AND_NETWORK_VIZ.md`](../docs/STRUCTURED_CAPTURE_AND_NETWORK_VIZ.md); web UI implementation 2026-08-05
+**Revisit when:** hundreds of nodes no longer remain usable with the browser layout, or users need direct graph editing
 
-**Decision:** The existing web shell has `Chat | Graph` views while the right column remains the pending proposals queue. Graph reads accepted nodes through the existing same-origin `/v1/knowledge/*` surface, with label/type/workspace search, node detail, and a readable 1–2-hop edge list. Accept actions refresh the graph without changing the propose-to-accept gate.
+**Decision:** The existing web shell has `Chat | Graph` views while the right column remains the pending proposals queue. Graph is primarily an interactive Cytoscape network of accepted nodes and labelled relations, loaded through the stable same-origin `/v1/knowledge/subgraph` envelope. Search, type/relation filters, node and edge selection, and 1–2-hop focus operate on the canvas; the list and detail pane remain secondary navigation. Accept actions refresh the graph without changing the propose-to-accept gate.
 
 **Reason:** Accept/reject is hard to trust when permanent knowledge is invisible. Keeping exploration beside chat and proposals closes that feedback loop without creating a second frontend product or knowledge implementation.
 
-**Rejected alternatives:** a separate graph application; a heavy SPA/3D visualizer; frontend-owned database queries; combining pending proposals and accepted nodes into one ambiguous list.
+**Rejected alternatives:** keep the graph as only a list plus textual neighborhood; a separate graph application; a heavy SPA/3D visualizer; build a layout engine from scratch; frontend-owned database queries; combining pending proposals and accepted nodes into one ambiguous list.

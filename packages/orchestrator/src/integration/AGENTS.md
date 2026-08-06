@@ -134,6 +134,7 @@ When `KNOWLEDGE_HTTP_READ=true`, the integration server also serves:
 | GET | `/v1/knowledge/node?id=` |
 | GET | `/v1/knowledge/search?label=&type=&status=` |
 | GET | `/v1/knowledge/neighborhood?nodeId=&hops=` |
+| GET | `/v1/knowledge/subgraph?rootId=|nodeIds=&hops=&limit=` |
 | GET | `/v1/knowledge/project-status?label=` |
 | GET | `/v1/knowledge/contradictions` |
 | GET | `/v1/knowledge/proposals?status=` |

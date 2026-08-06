@@ -39,12 +39,18 @@ async function main(): Promise<void> {
   );
   const here = dirname(fileURLToPath(import.meta.url));
   const staticDir = resolve(here, "public");
+  const cytoscapeFile = resolve(
+    here,
+    "../../..",
+    "node_modules/cytoscape/dist/cytoscape.min.js"
+  );
 
   const { url } = await listenIntegrationServer({
     host,
     port,
     token: process.env.INTEGRATION_HTTP_TOKEN,
     staticDir,
+    staticFiles: { "/vendor/cytoscape.min.js": cytoscapeFile },
     knowledgeReadEnabled: true,
   });
 

@@ -85,25 +85,48 @@
               <option value="project">Project</option>
               <option value="artifact">Artifact</option>
             </select>
+            <select id="graphRelation" aria-label="Filter by relation">
+              <option value="">All relations</option>
+              <option value="requires">requires</option>
+              <option value="limits">limits</option>
+              <option value="causes">causes</option>
+              <option value="increases">increases</option>
+              <option value="reduces">reduces</option>
+              <option value="supports">supports</option>
+              <option value="contradicts">contradicts</option>
+              <option value="used_in">used_in</option>
+              <option value="part_of">part_of</option>
+              <option value="about">about</option>
+            </select>
             <input id="graphWorkspace" type="search" placeholder="Workspace (optional)" aria-label="Filter by workspace" />
-            <button type="submit">Search</button>
+            <button type="submit">Find</button>
             <button type="button" id="graphRefresh">Refresh</button>
+            <button type="button" id="graphReset">Reset view</button>
           </form>
           <div class="graph-browser">
-            <section class="graph-node-pane" aria-label="Accepted nodes">
+            <section class="graph-canvas-pane" aria-label="Accepted knowledge network">
               <div class="panel-head">
-                <strong>Accepted nodes</strong>
+                <strong>Accepted network</strong>
                 <span id="graphNodeCount" class="muted">0 nodes</span>
               </div>
-              <div id="graphNodeList" class="graph-node-list" aria-live="polite">
-                <div class="meta-empty">Open Graph to load accepted knowledge.</div>
+              <div class="graph-canvas-wrap">
+                <div id="graphCanvas" class="graph-canvas" aria-label="Interactive knowledge network"></div>
+                <div id="graphCanvasState" class="graph-canvas-state">
+                  Open Graph to load accepted knowledge.
+                </div>
               </div>
             </section>
             <section id="graphDetail" class="graph-detail-pane" aria-label="Node details">
-              <div class="graph-placeholder">
-                <strong>Select a node</strong>
-                <p class="muted">Details and neighborhood will appear here.</p>
+              <div id="graphDetailContent" class="graph-detail-content">
+                <div class="graph-placeholder">
+                  <strong>Select a node</strong>
+                  <p class="muted">Details and neighborhood will appear here.</p>
+                </div>
               </div>
+              <details class="graph-list-secondary">
+                <summary>Accepted node list</summary>
+                <div id="graphNodeList" class="graph-node-list" aria-live="polite"></div>
+              </details>
             </section>
           </div>
         </section>
@@ -122,6 +145,7 @@
         </div>
       </aside>
     </div>
+    <script src="/vendor/cytoscape.min.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

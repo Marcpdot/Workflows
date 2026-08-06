@@ -62,6 +62,7 @@ export {
   type KnowledgeNodeDto,
   type KnowledgeEdgeDto,
   type NeighborhoodRead,
+  type SubgraphRead,
   type SearchRead,
   type ContradictionsRead,
   type ProposalsRead,

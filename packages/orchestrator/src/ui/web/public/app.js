@@ -24,11 +24,16 @@ const graphView = $("graphView");
 const graphSearch = $("graphSearch");
 const graphLabel = $("graphLabel");
 const graphType = $("graphType");
+const graphRelation = $("graphRelation");
 const graphWorkspace = $("graphWorkspace");
 const graphNodeList = $("graphNodeList");
 const graphNodeCount = $("graphNodeCount");
 const graphDetail = $("graphDetail");
+const graphDetailContent = $("graphDetailContent");
+const graphCanvas = $("graphCanvas");
+const graphCanvasState = $("graphCanvasState");
 const graphRefresh = $("graphRefresh");
+const graphReset = $("graphReset");
 
 /** @type {"active"|"neutral"} */
 let interactionMode = "active";
@@ -42,6 +47,8 @@ let queueError = "";
 let lastServerSessionId = null;
 let graphLoaded = false;
 let selectedGraphNodeId = null;
+let network = null;
+let graphData = { nodes: [], edges: [], truncated: false };
 
 function descriptionProperties(description) {
   if (!description) return [];
@@ -82,7 +89,8 @@ function renderGraphDetail(node, neighborhood) {
         .join("")
     : '<div class="meta-empty">No accepted edges from this node yet.</div>';
 
-  graphDetail.innerHTML = `
+  const hops = neighborhood.query?.hops ?? neighborhood.hops ?? 1;
+  graphDetailContent.innerHTML = `
     <div class="graph-detail-head">
       <div>
         <div class="node-type muted">${escapeHtml(node.type)}</div>
@@ -92,8 +100,8 @@ function renderGraphDetail(node, neighborhood) {
         <button type="button" id="copyNodeId">Copy id</button>
         <label class="muted">Hops
           <select id="graphHops" aria-label="Neighborhood hops">
-            <option value="1" ${neighborhood.hops === 1 ? "selected" : ""}>1</option>
-            <option value="2" ${neighborhood.hops === 2 ? "selected" : ""}>2</option>
+            <option value="1" ${hops === 1 ? "selected" : ""}>1</option>
+            <option value="2" ${hops === 2 ? "selected" : ""}>2</option>
           </select>
         </label>
       </div>
@@ -117,16 +125,199 @@ function renderGraphDetail(node, neighborhood) {
   `;
 }
 
+function renderGraphEdgeDetail(edge) {
+  const from = graphData.nodes.find((node) => node.id === edge.fromNodeId);
+  const to = graphData.nodes.find((node) => node.id === edge.toNodeId);
+  graphDetailContent.innerHTML = `
+    <div class="graph-detail-head">
+      <div><div class="node-type muted">relation</div><h2>${escapeHtml(edge.relation)}</h2></div>
+    </div>
+    <p class="node-description">
+      ${escapeHtml(from?.label || edge.fromNodeId)}
+      <span class="edge-relation">â€”${escapeHtml(edge.relation)}â†’</span>
+      ${escapeHtml(to?.label || edge.toNodeId)}
+    </p>
+    <dl class="node-facts">
+      <dt>id</dt><dd>${escapeHtml(edge.id)}</dd>
+      <dt>status</dt><dd>${escapeHtml(edge.status)}</dd>
+      <dt>confidence</dt><dd>${escapeHtml(edge.confidence ?? "â€”")}</dd>
+      <dt>created</dt><dd>${escapeHtml(formatDate(edge.createdAt))}</dd>
+    </dl>
+  `;
+}
+
+function networkElements(data) {
+  return [
+    ...data.nodes.map((node) => ({
+      group: "nodes",
+      data: {
+        id: node.id,
+        label: node.label,
+        type: node.type,
+        workspaceId: node.workspaceId || "",
+      },
+    })),
+    ...data.edges.map((edge) => ({
+      group: "edges",
+      data: {
+        id: edge.id,
+        source: edge.fromNodeId,
+        target: edge.toNodeId,
+        relation: edge.relation,
+      },
+    })),
+  ];
+}
+
+function runNetworkLayout(fit = true) {
+  if (!network || network.nodes().length === 0) return;
+  network.layout({
+    name: "cose",
+    animate: false,
+    fit,
+    padding: 35,
+    nodeRepulsion: 7000,
+    idealEdgeLength: 110,
+    edgeElasticity: 90,
+  }).run();
+}
+
+function ensureNetwork() {
+  if (network) return network;
+  if (typeof window.cytoscape !== "function") {
+    throw new Error("Cytoscape.js did not load");
+  }
+  network = window.cytoscape({
+    container: graphCanvas,
+    elements: [],
+    minZoom: 0.15,
+    maxZoom: 3,
+    wheelSensitivity: 0.18,
+    style: [
+      {
+        selector: "node",
+        style: {
+          label: "data(label)",
+          color: "#e8ecf4",
+          "font-size": 10,
+          "text-wrap": "wrap",
+          "text-max-width": 100,
+          "text-valign": "bottom",
+          "text-margin-y": 7,
+          "background-color": "#6ea8fe",
+          width: 30,
+          height: 30,
+          "border-width": 2,
+          "border-color": "#171b24",
+        },
+      },
+      { selector: 'node[type = "claim"]', style: { "background-color": "#c084fc", shape: "round-rectangle" } },
+      { selector: 'node[type = "project"]', style: { "background-color": "#4ade80", shape: "diamond" } },
+      { selector: 'node[type = "source"]', style: { "background-color": "#fbbf24", shape: "rectangle" } },
+      { selector: 'node[type = "artifact"]', style: { "background-color": "#fb7185", shape: "hexagon" } },
+      {
+        selector: "edge",
+        style: {
+          label: "data(relation)",
+          color: "#8b95a8",
+          "font-size": 8,
+          width: 1.5,
+          "line-color": "#536179",
+          "target-arrow-color": "#6ea8fe",
+          "target-arrow-shape": "triangle",
+          "curve-style": "bezier",
+          "text-background-color": "#0f1218",
+          "text-background-opacity": 0.85,
+          "text-background-padding": 2,
+        },
+      },
+      { selector: ":selected", style: { "border-color": "#ffffff", "border-width": 4, "line-color": "#ffffff", "target-arrow-color": "#ffffff" } },
+      { selector: ".search-match", style: { "border-color": "#fbbf24", "border-width": 5, "z-index": 20 } },
+      { selector: ".focus-dimmed", style: { opacity: 0.12 } },
+    ],
+  });
+  network.on("tap", "node", (event) => void selectGraphNode(event.target.id()));
+  network.on("tap", "edge", (event) => {
+    const edge = graphData.edges.find((item) => item.id === event.target.id());
+    if (edge) renderGraphEdgeDetail(edge);
+  });
+  network.on("tap", (event) => {
+    if (event.target === network) network.elements().unselect();
+  });
+  return network;
+}
+
+function mergeNetworkData(data) {
+  const nodeMap = new Map(graphData.nodes.map((node) => [node.id, node]));
+  const edgeMap = new Map(graphData.edges.map((edge) => [edge.id, edge]));
+  for (const node of data.nodes || []) nodeMap.set(node.id, node);
+  for (const edge of data.edges || []) edgeMap.set(edge.id, edge);
+  graphData = {
+    nodes: [...nodeMap.values()],
+    edges: [...edgeMap.values()],
+    truncated: graphData.truncated || Boolean(data.truncated),
+  };
+  if (!network) return;
+  const existing = new Set(network.elements().map((element) => element.id()));
+  const additions = networkElements(data).filter((element) => !existing.has(element.data.id));
+  if (additions.length) {
+    network.add(additions);
+    runNetworkLayout(false);
+  }
+}
+
+function applyNetworkFilters(centerSearch = false) {
+  if (!network) return;
+  const type = graphType.value;
+  const relation = graphRelation.value;
+  const query = graphLabel.value.trim().toLowerCase();
+  network.batch(() => {
+    network.elements().removeClass("search-match");
+    network.nodes().forEach((node) => {
+      const visible = !type || node.data("type") === type;
+      node.style("display", visible ? "element" : "none");
+      if (query && String(node.data("label")).toLowerCase().includes(query)) {
+        node.addClass("search-match");
+      }
+    });
+    network.edges().forEach((edge) => {
+      const visible =
+        (!relation || edge.data("relation") === relation) &&
+        edge.source().style("display") !== "none" &&
+        edge.target().style("display") !== "none";
+      edge.style("display", visible ? "element" : "none");
+    });
+  });
+  const matches = network.nodes(".search-match:visible");
+  if (centerSearch && matches.length) {
+    network.animate({ fit: { eles: matches, padding: 90 }, duration: 250 });
+  }
+}
+
+function focusNetworkNeighborhood(neighborhood) {
+  if (!network) return;
+  const ids = new Set([
+    ...(neighborhood.nodes || []).map((node) => node.id),
+    ...(neighborhood.edges || []).map((edge) => edge.id),
+  ]);
+  network.elements().addClass("focus-dimmed");
+  network.elements().forEach((element) => {
+    if (ids.has(element.id())) element.removeClass("focus-dimmed");
+  });
+  const focused = network.elements().filter((element) => ids.has(element.id()));
+  if (focused.length) network.animate({ fit: { eles: focused, padding: 70 }, duration: 250 });
+}
+
 async function selectGraphNode(nodeId, hops = 1) {
   selectedGraphNodeId = nodeId;
   for (const card of graphNodeList.querySelectorAll(".graph-node-card")) {
     card.classList.toggle("selected", card.dataset.nodeId === nodeId);
   }
-  graphDetail.innerHTML = '<div class="graph-placeholder"><span class="muted">Loading nodeâ€¦</span></div>';
+  graphDetailContent.innerHTML = '<div class="graph-placeholder"><span class="muted">Loading nodeâ€¦</span></div>';
   try {
     const [nodeRes, neighborhoodRes] = await Promise.all([
       fetch(`/v1/knowledge/node?id=${encodeURIComponent(nodeId)}`),
-      fetch(`/v1/knowledge/neighborhood?nodeId=${encodeURIComponent(nodeId)}&hops=${hops}`),
+      fetch(`/v1/knowledge/subgraph?rootId=${encodeURIComponent(nodeId)}&hops=${hops}`),
     ]);
     const [nodeBody, neighborhoodBody] = await Promise.all([
       nodeRes.json(),
@@ -136,20 +327,24 @@ async function selectGraphNode(nodeId, hops = 1) {
     if (!neighborhoodRes.ok) {
       throw new Error(neighborhoodBody.error || `HTTP ${neighborhoodRes.status}`);
     }
+    mergeNetworkData(neighborhoodBody);
+    focusNetworkNeighborhood(neighborhoodBody);
+    network?.getElementById(nodeId).select();
     renderGraphDetail(nodeBody.node, neighborhoodBody);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    graphDetail.innerHTML = `<div class="graph-placeholder" style="color:var(--error)">Failed to load node: ${escapeHtml(message)}</div>`;
+    graphDetailContent.innerHTML = `<div class="graph-placeholder" style="color:var(--error)">Failed to load node: ${escapeHtml(message)}</div>`;
   }
 }
 
 function renderGraphNodes(nodes) {
-  graphNodeCount.textContent = `${nodes.length} node${nodes.length === 1 ? "" : "s"}`;
+  const suffix = graphData.truncated ? " (capped)" : "";
+  graphNodeCount.textContent = `${nodes.length} node${nodes.length === 1 ? "" : "s"} Â· ${graphData.edges.length} edges${suffix}`;
   if (nodes.length === 0) {
     graphNodeList.innerHTML =
       '<div class="meta-empty">No accepted nodes match this search. Accepted proposals appear here; pending proposals remain in the right panel.</div>';
     selectedGraphNodeId = null;
-    graphDetail.innerHTML = '<div class="graph-placeholder"><strong>No accepted knowledge yet</strong><p class="muted">Accept a node proposal, then refresh Graph.</p></div>';
+    graphDetailContent.innerHTML = '<div class="graph-placeholder"><strong>No accepted knowledge yet</strong><p class="muted">Only accepted proposals appear here. Pending proposals remain in the right panel.</p></div>';
     return;
   }
   graphNodeList.innerHTML = "";
@@ -169,24 +364,39 @@ function renderGraphNodes(nodes) {
 
 async function refreshGraphNodes() {
   graphRefresh.disabled = true;
-  graphNodeList.innerHTML = '<div class="meta-empty">Loading accepted nodesâ€¦</div>';
-  const params = new URLSearchParams({ status: "accepted", limit: "50" });
-  const label = graphLabel.value.trim();
-  const type = graphType.value;
+  graphNodeList.innerHTML = '<div class="meta-empty">Loading accepted networkâ€¦</div>';
+  graphCanvasState.hidden = false;
+  graphCanvasState.textContent = "Loading accepted networkâ€¦";
+  const params = new URLSearchParams({ status: "accepted", limit: "250" });
   const workspaceId = graphWorkspace.value.trim();
-  if (label) params.set("label", label);
-  if (type) params.set("type", type);
   if (workspaceId) params.set("workspaceId", workspaceId);
   try {
-    const res = await fetch(`/v1/knowledge/search?${params}`);
+    const res = await fetch(`/v1/knowledge/subgraph?${params}`);
     const body = await res.json();
     if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
     graphLoaded = true;
-    renderGraphNodes(body.nodes || []);
+    graphData = {
+      nodes: body.nodes || [],
+      edges: body.edges || [],
+      truncated: Boolean(body.truncated),
+    };
+    const cy = ensureNetwork();
+    cy.elements().remove();
+    cy.add(networkElements(graphData));
+    graphCanvasState.hidden = graphData.nodes.length > 0;
+    if (graphData.nodes.length === 0) {
+      graphCanvasState.textContent = "No accepted knowledge yet. Accept proposals to build the network.";
+    } else {
+      runNetworkLayout(true);
+    }
+    renderGraphNodes(graphData.nodes);
+    applyNetworkFilters(false);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     graphNodeCount.textContent = "unavailable";
     graphNodeList.innerHTML = `<div class="meta-empty" style="color:var(--error)">Failed to load graph: ${escapeHtml(message)}</div>`;
+    graphCanvasState.hidden = false;
+    graphCanvasState.textContent = `Failed to load accepted network: ${message}`;
   } finally {
     graphRefresh.disabled = false;
   }
@@ -204,6 +414,7 @@ function setMainView(view) {
     tab.setAttribute("aria-selected", String(active));
   }
   if (graphActive && !graphLoaded) void refreshGraphNodes();
+  if (graphActive && network) setTimeout(() => network.resize(), 0);
 }
 
 for (const tab of viewTabs) {
@@ -212,14 +423,25 @@ for (const tab of viewTabs) {
 
 graphSearch.addEventListener("submit", (event) => {
   event.preventDefault();
-  void refreshGraphNodes();
+  applyNetworkFilters(true);
 });
 
-graphType.addEventListener("change", () => void refreshGraphNodes());
+graphType.addEventListener("change", () => applyNetworkFilters(false));
+graphRelation.addEventListener("change", () => applyNetworkFilters(false));
+graphWorkspace.addEventListener("change", () => void refreshGraphNodes());
 
 graphRefresh.addEventListener("click", () => {
   void refreshGraphNodes();
-  if (selectedGraphNodeId) void selectGraphNode(selectedGraphNodeId);
+});
+
+graphReset.addEventListener("click", () => {
+  graphLabel.value = "";
+  graphType.value = "";
+  graphRelation.value = "";
+  selectedGraphNodeId = null;
+  network?.elements().removeClass("focus-dimmed search-match").unselect();
+  applyNetworkFilters(false);
+  network?.fit(network.elements(":visible"), 45);
 });
 
 graphNodeList.addEventListener("click", (event) => {

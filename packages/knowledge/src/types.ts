@@ -177,6 +177,20 @@ export interface KnowledgeStore {
     options?: { hops?: 1 | 2; status?: KnowledgeStatus }
   ): Promise<{ nodes: KnowledgeNode[]; edges: KnowledgeEdge[] }>;
 
+  /** Bulk/induced subgraph for network clients. Defaults to accepted nodes, capped. */
+  getSubgraph(input?: {
+    rootId?: string;
+    nodeIds?: string[];
+    hops?: 1 | 2;
+    status?: KnowledgeStatus;
+    workspaceId?: string | null;
+    limit?: number;
+  }): Promise<{
+    nodes: KnowledgeNode[];
+    edges: KnowledgeEdge[];
+    truncated: boolean;
+  }>;
+
   /** M13: find or create accepted project node */
   ensureProject(input: {
     label: string;

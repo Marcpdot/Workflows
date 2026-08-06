@@ -45,6 +45,8 @@ export interface HttpServerOptions {
   version?: string;
   /** Optional static files root (M6 web UI) */
   staticDir?: string;
+  /** Explicit URL-to-file aliases for vendored browser dependencies. */
+  staticFiles?: Record<string, string>;
   /** Expose the accepted knowledge read catalog on this server. */
   knowledgeReadEnabled?: boolean;
 }
@@ -150,6 +152,12 @@ export function createIntegrationServer(
   const staticDir = options.staticDir
     ? resolve(options.staticDir)
     : undefined;
+  const staticFiles = Object.fromEntries(
+    Object.entries(options.staticFiles ?? {}).map(([urlPath, filePath]) => [
+      urlPath,
+      resolve(filePath),
+    ])
+  );
   const knowledgeReadEnabled =
     options.knowledgeReadEnabled ?? knowledgeHttpReadEnabled();
 
@@ -165,6 +173,17 @@ export function createIntegrationServer(
         !path.startsWith("/v1/") &&
         path !== "/health"
       ) {
+        const staticFile = staticFiles[path];
+        if (staticFile && existsSync(staticFile) && statSync(staticFile).isFile()) {
+          const body = readFileSync(staticFile);
+          const type = MIME[extname(staticFile).toLowerCase()] ?? "application/octet-stream";
+          res.writeHead(200, {
+            "Content-Type": type,
+            "Content-Length": body.length,
+          });
+          res.end(body);
+          return;
+        }
         if (tryServeStatic(res, staticDir, path)) return;
         // SPA-style fallback to index.html for unknown GETs under UI
         if (tryServeStatic(res, staticDir, "/index.html")) return;
@@ -413,7 +432,7 @@ export function listenIntegrationServer(
 }
 
 /**
- * GET /v1/knowledge/node|search|neighborhood|project-status|contradictions|proposals
+ * GET /v1/knowledge/node|search|neighborhood|subgraph|project-status|contradictions|proposals
  */
 async function handleKnowledgeRead(
   _req: IncomingMessage,
@@ -467,6 +486,25 @@ async function handleKnowledgeRead(
       const hops = q.get("hops") === "2" ? 2 : 1;
       const result = await reader.getNeighborhood(nodeId, {
         hops: hops as 1 | 2,
+      });
+      sendJson(res, 200, { ok: true, ...result });
+      return;
+    }
+
+    if (path === "/v1/knowledge/subgraph") {
+      const nodeIds = (q.get("nodeIds") ?? "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean);
+      const result = await reader.getSubgraph({
+        rootId: q.get("rootId")?.trim() || undefined,
+        nodeIds: nodeIds.length ? nodeIds : undefined,
+        hops: q.get("hops") === "2" ? 2 : 1,
+        status: (q.get("status") as KnowledgeStatus | null) ?? "accepted",
+        workspaceId: q.has("workspaceId")
+          ? q.get("workspaceId")
+          : undefined,
+        limit: q.get("limit") ? Number(q.get("limit")) : 250,
       });
       sendJson(res, 200, { ok: true, ...result });
       return;
@@ -542,6 +580,7 @@ async function handleKnowledgeRead(
           "GET /v1/knowledge/node?id=",
           "GET /v1/knowledge/search?label=&type=&status=",
           "GET /v1/knowledge/neighborhood?nodeId=&hops=1|2",
+          "GET /v1/knowledge/subgraph?rootId=|nodeIds=&hops=1|2&limit=250",
           "GET /v1/knowledge/project-status?label=|projectId=",
           "GET /v1/knowledge/contradictions?nodeId=",
           "GET /v1/knowledge/proposals?status=pending",

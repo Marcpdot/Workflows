@@ -368,14 +368,16 @@ Compact pointers to what exists in code (detail lives in AGENTS-M* specs):
 
 **Status:** active
 **Evidence:** confirmed
-**Source:** [`docs/KNOWLEDGE_EXPLORE_UI.md`](../docs/KNOWLEDGE_EXPLORE_UI.md); `packages/orchestrator/src/ui/web/`
+**Source:** [`docs/KNOWLEDGE_EXPLORE_UI.md`](../docs/KNOWLEDGE_EXPLORE_UI.md); [`docs/STRUCTURED_CAPTURE_AND_NETWORK_VIZ.md`](../docs/STRUCTURED_CAPTURE_AND_NETWORK_VIZ.md); `packages/orchestrator/src/ui/web/`
 **Revisit when:** more than 50 matching nodes is a normal browse case, or graph edits beyond proposal accept/reject are required
 
 **Decision:** `npm run ui` explicitly mounts the existing M17 read catalog on its own origin and presents accepted nodes, stable DTO details, and 1–2-hop neighborhoods in the main web shell. The ordinary integration server keeps the existing `KNOWLEDGE_HTTP_READ` gate; UI startup opts in through a server option. Reads continue through `createKnowledgeReader` and the same SQLite store.
 
+Network clients use the stable `getSubgraph` / `GET /v1/knowledge/subgraph` envelope rather than stitching many neighborhood calls together. It supports a root with 1–2 hops, an explicit node-ID set, or a capped accepted-node window; returned edges are induced by the returned nodes. The default cap is 250 nodes (hard maximum 1000), and truncation is explicit.
+
 **Reason:** Accepted knowledge must be visible where capture decisions are made, and the one-process UI should work without a second env switch. An explicit server option preserves the integration server's prior opt-in boundary while avoiding duplicate routes or query logic.
 
-**Rejected alternatives:** require UI users to remember `KNOWLEDGE_HTTP_READ=true`; query SQLite directly from UI-specific code; create a second knowledge HTTP service; merge pending and accepted data into one truth view.
+**Rejected alternatives:** require UI users to remember `KNOWLEDGE_HTTP_READ=true`; query SQLite directly from UI-specific code; create a second knowledge HTTP service; make the network issue one request per node; return dangling edges whose endpoints are outside the node envelope; merge pending and accepted data into one truth view.
 
 ## First-principles root question (kept)
 

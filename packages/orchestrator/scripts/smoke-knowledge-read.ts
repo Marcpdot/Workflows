@@ -68,6 +68,13 @@ async function main(): Promise<void> {
       projectId: project.id,
       relation: "used_in",
     });
+    const pendingEvent = await store.createEvent({
+      sourceType: "manual",
+      sourceRef: "smoke-read-pending",
+    });
+    await store.addProposals(pendingEvent.id, [
+      { kind: "node", payload: { type: "concept", label: "pending-only" } },
+    ]);
 
     // 1. search envelope stable
     const s1 = await reader.search({ label: "heat", status: "accepted" });
@@ -103,7 +110,39 @@ async function main(): Promise<void> {
     assert(text.includes("heat") && text.includes("limits"), "subgraph render");
     console.log("OK: neighborhood envelope + render");
 
-    // 3. project status
+    // 3. bulk subgraph defaults to accepted and returns induced edges only
+    const subgraph = await reader.getSubgraph({ limit: 50 });
+    assert(subgraph.query.status === "accepted", "subgraph accepted default");
+    assert(subgraph.nodes.some((n) => n.id === heat.id), "subgraph includes heat");
+    assert(
+      !subgraph.nodes.some((n) => n.label === "pending-only"),
+      "pending proposals never appear as graph nodes"
+    );
+    assert(subgraph.edgeCount >= 1, "subgraph includes accepted edges");
+    const subgraphIds = new Set(subgraph.nodes.map((n) => n.id));
+    assert(
+      subgraph.edges.every(
+        (edge) =>
+          subgraphIds.has(edge.fromNodeId) && subgraphIds.has(edge.toNodeId)
+      ),
+      "subgraph edges are induced by returned nodes"
+    );
+    assert(!subgraph.truncated, "small graph is not truncated");
+
+    const rooted = await reader.getSubgraph({ rootId: heat.id, hops: 1 });
+    assert(rooted.query.rootId === heat.id, "rooted query echoed");
+    assert(rooted.nodes.some((n) => n.id === heat.id), "rooted graph has root");
+    assert(rooted.edgeCount >= 1, "rooted graph has neighborhood edge");
+
+    const bulk = await reader.getSubgraph({ nodeIds: [heat.id], limit: 10 });
+    assert(bulk.nodeCount === 1, "bulk ids select exact accepted nodes");
+    assert(bulk.edgeCount === 0, "induced edge omitted without both endpoints");
+
+    const capped = await reader.getSubgraph({ limit: 1 });
+    assert(capped.nodeCount === 1 && capped.truncated, "subgraph cap reported");
+    console.log("OK: accepted subgraph bulk/root/cap envelopes");
+
+    // 4. project status
     const st = await reader.getProjectStatus({ label: "read-demo" });
     assert(st.project.label === "read-demo", "project");
     assert(st.summaryLines.length >= 2, "summaryLines");
@@ -111,27 +150,27 @@ async function main(): Promise<void> {
     assert(report.includes("read-demo"), "status report");
     console.log("OK: project status read + report");
 
-    // 4. node get
+    // 5. node get
     const node = await reader.getNode(heat.id);
     assert(node?.label === "heat", "getNode");
     console.log("OK: getNode");
 
-    // 5. contradictions envelope (may be empty)
+    // 6. contradictions envelope (may be empty)
     const c = await reader.findContradictions();
     assert("pairs" in c && "count" in c, "contradictions shape");
     console.log("OK: contradictions envelope");
 
-    // 6. search render
+    // 7. search render
     const listText = renderSearchRead(s1);
     assert(listText.includes("heat"), "search render");
 
-    // 7. HTML browse shell is self-contained
+    // 8. HTML browse shell is self-contained
     const html = renderKnowledgeBrowseHtml({ apiBase: "" });
     assert(html.includes("/v1/knowledge/search"), "html has search route");
     assert(html.includes("<!DOCTYPE html>"), "html doctype");
     console.log("OK: browse HTML");
 
-    // 8. HTTP read (optional path)
+    // 9. HTTP read (optional path)
     process.env.KNOWLEDGE_HTTP_READ = "true";
     const httpPort = 19000 + Math.floor(Math.random() * 1000);
     const { server, url: base } = await listenIntegrationServer({
@@ -163,6 +202,21 @@ async function main(): Promise<void> {
       };
       assert(neighBody.rootId === heat.id, "http rootId");
       assert((neighBody.edgeCount ?? 0) >= 1, "http edges");
+
+      const subgraphRes = await fetch(
+        `${base}/v1/knowledge/subgraph?rootId=${encodeURIComponent(heat.id)}&hops=1`
+      );
+      assert(subgraphRes.ok, "http subgraph");
+      const subgraphBody = (await subgraphRes.json()) as {
+        ok?: boolean;
+        nodeCount?: number;
+        edgeCount?: number;
+        query?: { status?: string; rootId?: string };
+      };
+      assert(subgraphBody.ok === true, "http subgraph ok");
+      assert(subgraphBody.query?.status === "accepted", "http accepted default");
+      assert(subgraphBody.query?.rootId === heat.id, "http subgraph root");
+      assert((subgraphBody.nodeCount ?? 0) >= 2, "http subgraph nodes");
 
       const idx = await fetch(`${base}/v1/knowledge`);
       assert(idx.ok, "http knowledge index");

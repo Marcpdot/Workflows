@@ -38,6 +38,7 @@
     "@workflows/tools": "file:../tools",
     "@workflows/voice": "file:../voice",
     "@workflows/workspace": "file:../workspace",
-    "better-sqlite3": "^13.0.2"
+    "better-sqlite3": "^13.0.2",
+    "cytoscape": "^3.33.1"
   }
 }

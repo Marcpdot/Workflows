@@ -16,6 +16,10 @@ async function main(): Promise<void> {
     dirname(fileURLToPath(import.meta.url)),
     "../src/ui/web/public"
   );
+  const cytoscapeFile = resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    "../node_modules/cytoscape/dist/cytoscape.min.js"
+  );
   assert(existsSync(resolve(publicDir, "index.html")), "index.html missing");
   assert(existsSync(resolve(publicDir, "app.js")), "app.js missing");
   assert(existsSync(resolve(publicDir, "styles.css")), "styles.css missing");
@@ -25,6 +29,7 @@ async function main(): Promise<void> {
     host: "127.0.0.1",
     port: 18788,
     staticDir: publicDir,
+    staticFiles: { "/vendor/cytoscape.min.js": cytoscapeFile },
     knowledgeReadEnabled: true,
   });
 
@@ -41,12 +46,15 @@ async function main(): Promise<void> {
     assert(html.includes("app.js"), "index should load app.js");
     assert(html.includes('id="graphView"'), "index should include Graph view");
     assert(html.includes('id="graphSearch"'), "Graph view should include search");
+    assert(html.includes("/vendor/cytoscape.min.js"), "Graph view should load Cytoscape");
     console.log("OK: GET / serves UI");
 
     const css = await fetch(`${url}/styles.css`);
     assert(css.status === 200, "styles.css");
     const js = await fetch(`${url}/app.js`);
     assert(js.status === 200, "app.js");
+    const cytoscape = await fetch(`${url}/vendor/cytoscape.min.js`);
+    assert(cytoscape.status === 200, "cytoscape vendor asset");
     console.log("OK: static css/js");
 
     const knowledge = await fetch(`${url}/v1/knowledge`);

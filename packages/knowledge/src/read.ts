@@ -58,6 +58,22 @@ export interface SearchRead {
   count: number;
 }
 
+export interface SubgraphRead {
+  query: {
+    rootId?: string;
+    nodeIds?: string[];
+    hops: 1 | 2;
+    status: KnowledgeStatus;
+    workspaceId?: string | null;
+    limit: number;
+  };
+  nodes: KnowledgeNodeDto[];
+  edges: KnowledgeEdgeDto[];
+  nodeCount: number;
+  edgeCount: number;
+  truncated: boolean;
+}
+
 export interface ContradictionsRead {
   nodeId?: string;
   pairs: Array<{
@@ -166,6 +182,46 @@ export function createKnowledgeReader(store: KnowledgeStore) {
         edges: neigh.edges.map(toEdgeDto),
         nodeCount: neigh.nodes.length,
         edgeCount: neigh.edges.length,
+      };
+    },
+
+    async getSubgraph(input?: {
+      rootId?: string;
+      nodeIds?: string[];
+      hops?: 1 | 2;
+      status?: KnowledgeStatus;
+      workspaceId?: string | null;
+      limit?: number;
+    }): Promise<SubgraphRead> {
+      const hops = input?.hops === 2 ? 2 : 1;
+      const status = input?.status ?? "accepted";
+      const requestedLimit =
+        input?.limit && Number.isFinite(input.limit) && input.limit > 0
+          ? Math.floor(input.limit)
+          : 250;
+      const limit = Math.min(requestedLimit, 1000);
+      const graph = await store.getSubgraph({
+        rootId: input?.rootId,
+        nodeIds: input?.nodeIds,
+        hops,
+        status,
+        workspaceId: input?.workspaceId,
+        limit,
+      });
+      return {
+        query: {
+          rootId: input?.rootId,
+          nodeIds: input?.nodeIds,
+          hops,
+          status,
+          workspaceId: input?.workspaceId,
+          limit,
+        },
+        nodes: graph.nodes.map(toNodeDto),
+        edges: graph.edges.map(toEdgeDto),
+        nodeCount: graph.nodes.length,
+        edgeCount: graph.edges.length,
+        truncated: graph.truncated,
       };
     },
 
