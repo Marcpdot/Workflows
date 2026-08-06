@@ -115,11 +115,9 @@ async function main(): Promise<void> {
   const seedEdges = process.env.SEED_EDGES !== "0";
   const dbPath =
     process.env.KNOWLEDGE_DB_PATH?.trim() ||
-    resolveKnowledgeDbPath({
-      cwd: process.cwd(),
-    });
+    resolveKnowledgeDbPath(process.cwd(), process.env);
 
-  mkdirSync(dirname(dbPath), { recursive: true });
+  mkdirSync(dirname(resolve(dbPath)), { recursive: true });
   console.log(`Knowledge DB: ${dbPath}`);
 
   const fixture: ExtractionResult = {
