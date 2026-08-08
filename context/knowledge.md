@@ -126,7 +126,7 @@ See decision log below and [interface.md](interface.md).
 
 ## Storage choice for first shell
 
-**Status:** active  
+**Status:** superseded by Knowledge Infrastructure v2 (2026-08)
 **Evidence:** confirmed  
 **Source:** M11 AGENTS + delivery  
 
@@ -135,6 +135,42 @@ SQLite tables alongside existing DBs. No new infrastructure required for M11–M
 **Reason:** Zero ops tax for a personal machine; schema can migrate later. Graph *objects* matter more than graph *engine* early.
 
 **Rejected:** Neo4j/Graphiti as hard dependency for M11; one DB file per project as default (see M13 decision on workspaceId filters).
+
+## Knowledge Infrastructure v2 storage boundaries
+
+**Status:** active
+**Evidence:** confirmed
+**Source:** PR #32 implementation specification; foundational contracts and migration `0001_canonical_postgis.sql`
+**Revisit when:** canonical PostgreSQL parity testing invalidates a domain mapping, or an auxiliary backend cannot be rebuilt from canonical state
+
+**Decision:** `@workflows/knowledge` exposes storage-independent canonical,
+graph, vector, and spatial repository contracts. PostgreSQL/PostGIS is the
+authoritative structured/spatial store. Graph topology and pgvector similarity
+are derived, reconstructable projections keyed by the same canonical UUIDs.
+The existing `KnowledgeStore` remains a compatibility service contract while
+SQLite and PostgreSQL adapters coexist during migration.
+
+Canonical writes retain the existing proposal/approval, provenance, workspace,
+identity/alias/merge, contradiction, and supersession semantics. PostgreSQL
+schema changes are ordered SQL migrations with checksums, an advisory lock, and
+per-migration transactions. A canonical outbox records graph/vector projection
+work so auxiliary failure cannot invalidate a successful truth-store write.
+
+**Reason:** The shell proved the domain, but SQLite tables and application-side
+indexes do not provide the integrity, spatial capability, traversal ceiling, or
+indexed semantic retrieval required for a knowledge system expected to outgrow
+direct inspection. Separating contracts from adapters prevents database vendors
+from redefining the ontology and permits incremental, reversible cutover.
+
+**Rejected alternatives:** destructive big-bang replacement; PostgreSQL/graph
+types leaking into orchestrator callers; graph or vector stores as competing
+truth; fragile cross-database pseudo-transactions; changing IDs during migration;
+retaining startup schema strings as the long-term migration mechanism.
+
+**Identity convention:** Canonical identities are UUIDs. Existing UUID strings
+are preserved during import; new records may be generated application-side or
+by PostgreSQL. Workspace IDs remain scoped text identifiers because they are an
+external partition key, not graph-local identity.
 
 ## Knowledge milestone roadmap (M11–M18)
 
@@ -260,6 +296,8 @@ Cross-cutting choices that apply across the whole track:
 **Rejected:** Knowledge tools always registered; inject always on; ambient voice always listening.
 
 ### One knowledge.db + metadata filters (not multi-DB per project)
+
+> Superseded 2026-08 by **Knowledge Infrastructure v2 storage boundaries** above. The workspace-filtering rationale remains active; the single SQLite file does not.
 
 **Decision:** Single SQLite knowledge DB; isolation via `workspaceId` on nodes and project edges — same *idea* as M9 session namespace in one memory.db.
 

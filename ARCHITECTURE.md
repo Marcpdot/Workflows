@@ -19,13 +19,24 @@ Dette er det viktigste laget for å ikke miste progresjon når du bytter modell.
 
 Personlig innhold (profil, private preferanser) lagres utenfor public repo (f.eks. `PERSONAL_CONTEXT_DIR` / gitignored DB).
 
-## Knowledge (planlagt, M11–M18)
+## Knowledge
 Semantisk verdensmodell over plain facts: konsepter, påstander (claims), relasjoner, hendelser, proveniens og usikkerhet.  
 Rå samtaler/analyser → structured extraction → forslag → godkjenning → store.  
 Støtter first-principles-resonnering og prosjektstatus uten å erstatte short-term/LTM.
 
+Knowledge Infrastructure v2 skiller domenet fra lagringen:
+
+- **PostgreSQL/PostGIS** er canonical store for strukturert og romlig kunnskap.
+- **pgvector** er en rekonstruerbar semantisk indeks.
+- En dedikert **graph backend** er en rekonstruerbar topologi-/traverseringsprojeksjon.
+- Alle lag bruker samme canonical UUID-er; graph/vector er aldri konkurrerende truth stores.
+- `@workflows/knowledge` eier repository/service-kontraktene og domenereglene. Orchestrator er fortsatt tynn wiring.
+
+Migrering skjer trinnvis fra SQLite-adapteren; proposal/approval, provenance,
+workspace-isolasjon, identity/merge og contradiction/supersession beholdes gjennom cutover.
+
 Roadmap (shell-first):
-- **M11** Semantic knowledge shell (SQLite + extract → approve → neighborhood)
+- **M11** Semantic knowledge shell (historisk SQLite-adapter + extract → approve → neighborhood)
 - **M12** Knowledge tools + orchestrator wire
 - **M13** Project & workspace binding
 - **M14** Continuous / batch ingest (proposals, not blind write)

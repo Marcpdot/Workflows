@@ -21,6 +21,10 @@ import type {
   ProjectLinkRelation,
   ProjectStatus,
 } from "./types.js";
+import type {
+  CanonicalKnowledgeRepository,
+  RepositoryHealth,
+} from "./storage/contracts.js";
 
 const PROJECT_LINK_RELATIONS: ProjectLinkRelation[] = [
   "used_in",
@@ -36,7 +40,8 @@ function mergePayload(
   return { ...base, ...edits };
 }
 
-class SqliteKnowledgeStore implements KnowledgeStore {
+class SqliteKnowledgeStore implements CanonicalKnowledgeRepository {
+  readonly backend = "sqlite" as const;
   private readonly store: KnowledgeSqliteStore;
   private readonly defaultWorkspaceId: string | null | undefined;
 
@@ -67,6 +72,19 @@ class SqliteKnowledgeStore implements KnowledgeStore {
     };
     this.store.insertEvent(ev);
     return ev;
+  }
+
+  async healthCheck(): Promise<RepositoryHealth> {
+    try {
+      this.store.db.prepare("SELECT 1").get();
+      return { backend: this.backend, ok: true };
+    } catch (error) {
+      return {
+        backend: this.backend,
+        ok: false,
+        detail: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   async getEvent(id: string): Promise<KnowledgeEvent | null> {
@@ -930,6 +948,12 @@ class SqliteKnowledgeStore implements KnowledgeStore {
 export function createKnowledgeStore(
   config: KnowledgeStoreConfig
 ): KnowledgeStore {
+  return new SqliteKnowledgeStore(config);
+}
+
+export function createSqliteKnowledgeRepository(
+  config: KnowledgeStoreConfig
+): CanonicalKnowledgeRepository {
   return new SqliteKnowledgeStore(config);
 }
 

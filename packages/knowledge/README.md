@@ -1,6 +1,34 @@
 # @workflows/knowledge
 
-Semantic knowledge model shell (M11–M17): graph, ingest, identity, first-principles, **read surface**.
+Semantic knowledge domain, storage contracts, ingest, identity, first-principles, and read surface.
+
+## Knowledge Infrastructure v2 foundation
+
+`KnowledgeStore` remains the backwards-compatible domain/service API. New code
+should depend on `CanonicalKnowledgeRepository`, `GraphRepository`,
+`VectorRepository`, or `SpatialRepository` rather than a concrete database.
+SQLite remains available through `createSqliteKnowledgeRepository()` during
+the migration; PostgreSQL/PostGIS is the canonical target.
+
+Local PostgreSQL/PostGIS:
+
+```bash
+docker compose -f compose.knowledge.yml up -d
+cd packages/orchestrator
+npm run knowledge:migrate
+```
+
+Configuration:
+
+- `KNOWLEDGE_DATABASE_URL` (default `postgresql://workflows:workflows@127.0.0.1:5432/workflows`)
+- `KNOWLEDGE_DATABASE_SSL=true|false` (default `false`)
+- `KNOWLEDGE_DATABASE_APPLICATION_NAME` (default `workflows-knowledge`)
+- `KNOWLEDGE_MIGRATIONS_DIR` (normally auto-resolved)
+
+Migrations live in `packages/knowledge/migrations`, are checksum-verified, run
+under a PostgreSQL advisory lock, and apply one transaction per migration.
+The initial migration enables PostGIS and creates the canonical schema plus a
+projection outbox. It does not switch application traffic away from SQLite yet.
 
 ```bash
 cd packages/knowledge
