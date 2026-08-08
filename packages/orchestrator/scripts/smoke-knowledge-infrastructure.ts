@@ -1,5 +1,4 @@
 import {
-  createSqliteKnowledgeRepository,
   loadKnowledgeMigrations,
   resolveKnowledgeMigrationsDir,
   resolvePostgresKnowledgeConfig,
@@ -7,10 +6,8 @@ import {
   type PostgresMigrationClient,
   type PostgresQueryResult,
 } from "@workflows/knowledge";
-import { randomUUID } from "node:crypto";
-import { existsSync, unlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`ASSERT: ${message}`);
@@ -77,6 +74,10 @@ async function main(): Promise<void> {
     migrations.some((migration) => migration.sql.includes("CREATE EXTENSION IF NOT EXISTS vector")),
     "pgvector extension migration"
   );
+  assert(
+    migrations.some((migration) => migration.name.includes("universal_canonical_identity")),
+    "universal canonical identity migration"
+  );
 
   const client = new FakeMigrationClient();
   const initial = await runKnowledgeMigrations(client, migrations);
@@ -95,18 +96,14 @@ async function main(): Promise<void> {
     "applied versions reported"
   );
 
-  const dbPath = join(tmpdir(), `workflows-contract-${randomUUID()}.db`);
-  const sqlite = createSqliteKnowledgeRepository({ dbPath });
-  try {
-    assert(sqlite.backend === "sqlite", "compatibility adapter identifies backend");
-    assert((await sqlite.healthCheck()).ok, "compatibility adapter health");
-  } finally {
-    sqlite.close();
-    for (const suffix of ["", "-wal", "-shm"]) {
-      const path = `${dbPath}${suffix}`;
-      if (existsSync(path)) unlinkSync(path);
-    }
-  }
+  const packageRoot = dirname(config.migrationsDir);
+  const packageJson = JSON.parse(
+    await readFile(join(packageRoot, "package.json"), "utf8")
+  ) as { dependencies?: Record<string, string> };
+  assert(!packageJson.dependencies?.["better-sqlite3"], "knowledge package has no SQLite runtime dependency");
+  const publicIndex = await readFile(join(packageRoot, "src", "index.ts"), "utf8");
+  assert(!publicIndex.includes("createSqliteKnowledgeRepository"), "no SQLite canonical factory export");
+  assert(!publicIndex.includes("importSqliteKnowledge"), "no SQLite import export");
 
   console.log("All knowledge infrastructure foundation smoke checks passed.");
 }

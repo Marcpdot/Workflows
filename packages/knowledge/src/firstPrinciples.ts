@@ -110,6 +110,8 @@ export interface RunFirstPrinciplesInput {
   goal?: string;
   /** M13: ensure project + propose used_in edges from key nodes (still proposals/edges only) */
   projectLabel?: string;
+  /** Existing project identity; avoids inferring sameness from label/context. */
+  projectId?: string;
   workspaceId?: string | null;
   /** Live model path; omit for offline fixture shell */
   complete?: (
@@ -345,6 +347,7 @@ export async function runFirstPrinciplesAnalysis(
   const projectLabel = input.projectLabel?.trim();
   if (projectLabel) {
     const project = await input.store.ensureProject({
+      canonicalId: input.projectId,
       label: projectLabel,
       createAccepted: true,
       workspaceId: input.workspaceId,

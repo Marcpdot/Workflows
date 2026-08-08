@@ -147,28 +147,25 @@ SQLite tables alongside existing DBs. No new infrastructure required for M11–M
 graph, vector, and spatial repository contracts. PostgreSQL/PostGIS is the
 authoritative structured/spatial store. Graph topology and pgvector similarity
 are derived, reconstructable projections keyed by the same canonical UUIDs.
-The existing `KnowledgeStore` remains a compatibility service contract while
-SQLite and PostgreSQL adapters coexist during migration.
+`KnowledgeStore` remains the storage-independent domain/service contract, while
+`createKnowledgeStore()` now selects PostgreSQL as the sole canonical runtime.
 
 Canonical writes retain the existing proposal/approval, provenance, workspace,
 identity/alias/merge, contradiction, and supersession semantics. PostgreSQL
 schema changes are ordered SQL migrations with checksums, an advisory lock, and
 per-migration transactions. A canonical outbox records graph/vector projection
 work so auxiliary failure cannot invalidate a successful truth-store write.
-Normalized labels are indexed lookup signals rather than database identities;
-the domain layer decides reuse and merge so distinct claims, events, and sources
-are not collapsed. Self-relations are permitted unless a specific relation's
-domain invariant rejects them. The local PostgreSQL runtime loads PostGIS and
-pgvector together and defaults to conflict-safe host port `55432`.
+Normalized labels are indexed lookup signals rather than database identities.
+Self-relations are permitted unless a specific relation's domain invariant
+rejects them. The local PostgreSQL runtime loads PostGIS and pgvector together
+and defaults to conflict-safe host port `55432`.
 
 The PostgreSQL canonical adapter implements the existing storage-independent
 domain contract rather than exposing SQL to orchestrator callers. Proposal
 materialization and merge operations are transactional, and accepted writes
 append retryable projection-outbox work without coupling canonical success to a
-graph/vector backend. SQLite cutover uses a transactional, retry-safe snapshot
-import that preserves canonical UUIDs, timestamps, proposal state, provenance,
-workspace scope and aliases. SQLite remains available as rollback/export input
-until parity and application cutover are complete.
+graph/vector backend. There is no SQLite canonical adapter/import/cutover path;
+knowledge moves forward from PostgreSQL canonical truth.
 
 **Reason:** The shell proved the domain, but SQLite tables and application-side
 indexes do not provide the integrity, spatial capability, traversal ceiling, or
@@ -178,13 +175,38 @@ from redefining the ontology and permits incremental, reversible cutover.
 
 **Rejected alternatives:** destructive big-bang replacement; PostgreSQL/graph
 types leaking into orchestrator callers; graph or vector stores as competing
-truth; fragile cross-database pseudo-transactions; changing IDs during migration;
-retaining startup schema strings as the long-term migration mechanism.
+truth; fragile cross-database pseudo-transactions; retaining startup schema
+strings as the long-term migration mechanism; preserving obsolete SQLite
+knowledge data at the cost of a permanent dual-backend surface.
 
-**Identity convention:** Canonical identities are UUIDs. Existing UUID strings
-are preserved during import; new records may be generated application-side or
-by PostgreSQL. Workspace IDs remain scoped text identifiers because they are an
-external partition key, not graph-local identity.
+### Universal canonical identity
+
+**Decision:** Every independently referable thing may have one stable canonical
+UUID, regardless of whether today's ontology calls it a concept, claim, source,
+project, physical component, CAD version, test, idea or observation. PostgreSQL,
+PostGIS, future graph/vector projections, source references, agents and tools use
+that same ID. The current node vocabulary is an initial ontology, not a closed
+identity universe.
+
+Identity means sameness of referent. Labels, workspace, provenance, repeated
+observation and semantic similarity are evidence for resolution, not identity
+keys. The same referent observed in another source normally keeps its canonical
+ID while adding evidence/provenance/state/relationships. Two different motors
+may share `Motor`; two claims may share wording while differing in assumptions,
+conditions or temporal validity. One identity can participate in multiple
+project/workspace contexts without being duplicated solely for context.
+
+Explicit canonical IDs and aliases provide confident reuse. Label discovery may
+offer candidates, but ambiguous candidates remain separate/reviewable. Explicit
+merge transactionally consolidates IDs only after sameness is established,
+retains the retired record/history, rewires its references and cleans only
+conflicts created by that merge.
+
+**Reason:** Treating identity as label dedupe collapses distinct referents and
+confuses observations/context with things. Treating every mention as new identity
+fragments provenance and makes cross-store references unstable. A universal ID
+with conservative domain resolution supports both precision and later Curator
+assistance without SQL uniqueness guessing ontology.
 
 ## Knowledge milestone roadmap (M11–M18)
 
@@ -423,13 +445,13 @@ Compact pointers to what exists in code (detail lives in AGENTS-M* specs):
 **Source:** [`docs/KNOWLEDGE_EXPLORE_UI.md`](../docs/KNOWLEDGE_EXPLORE_UI.md); [`docs/STRUCTURED_CAPTURE_AND_NETWORK_VIZ.md`](../docs/STRUCTURED_CAPTURE_AND_NETWORK_VIZ.md); `packages/orchestrator/src/ui/web/`
 **Revisit when:** more than 50 matching nodes is a normal browse case, or graph edits beyond proposal accept/reject are required
 
-**Decision:** `npm run ui` explicitly mounts the existing M17 read catalog on its own origin and presents accepted nodes, stable DTO details, and 1–2-hop neighborhoods in the main web shell. The ordinary integration server keeps the existing `KNOWLEDGE_HTTP_READ` gate; UI startup opts in through a server option. Reads continue through `createKnowledgeReader` and the same SQLite store.
+**Decision:** `npm run ui` explicitly mounts the existing M17 read catalog on its own origin and presents accepted nodes, stable DTO details, and 1–2-hop neighborhoods in the main web shell. The ordinary integration server keeps the existing `KNOWLEDGE_HTTP_READ` gate; UI startup opts in through a server option. Reads continue through `createKnowledgeReader` and the canonical PostgreSQL repository.
 
 Network clients use the stable `getSubgraph` / `GET /v1/knowledge/subgraph` envelope rather than stitching many neighborhood calls together. It supports a root with 1–2 hops, an explicit node-ID set, or a capped accepted-node window; returned edges are induced by the returned nodes. The default cap is 250 nodes (hard maximum 1000), and truncation is explicit.
 
 **Reason:** Accepted knowledge must be visible where capture decisions are made, and the one-process UI should work without a second env switch. An explicit server option preserves the integration server's prior opt-in boundary while avoiding duplicate routes or query logic.
 
-**Rejected alternatives:** require UI users to remember `KNOWLEDGE_HTTP_READ=true`; query SQLite directly from UI-specific code; create a second knowledge HTTP service; make the network issue one request per node; return dangling edges whose endpoints are outside the node envelope; merge pending and accepted data into one truth view.
+**Rejected alternatives:** require UI users to remember `KNOWLEDGE_HTTP_READ=true`; query storage directly from UI-specific code; create a second knowledge HTTP service; make the network issue one request per node; return dangling edges whose endpoints are outside the node envelope; merge pending and accepted data into one truth view.
 
 ## First-principles root question (kept)
 

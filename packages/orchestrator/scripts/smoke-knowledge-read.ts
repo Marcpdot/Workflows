@@ -14,6 +14,7 @@ import {
   renderSearchRead,
 } from "@workflows/knowledge";
 import { listenIntegrationServer } from "../src/integration/index.js";
+import { startKnowledgePostgresTest } from "./knowledge-postgres-test-runtime.js";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);
@@ -25,12 +26,11 @@ function stableKeys(obj: unknown): string[] {
 }
 
 async function main(): Promise<void> {
+  const postgres = await startKnowledgePostgresTest();
   const dataDir = resolve(process.cwd(), "data");
   mkdirSync(dataDir, { recursive: true });
   const dbPath = resolve(dataDir, `_smoke_knowledge_read_${Date.now()}.db`);
-  process.env.KNOWLEDGE_DB_PATH = dbPath;
-
-  const store = createKnowledgeStore({ dbPath });
+  const store = createKnowledgeStore();
   const reader = createKnowledgeReader(store);
 
   try {
@@ -232,8 +232,8 @@ async function main(): Promise<void> {
     }
   } finally {
     store.close();
+    await postgres.dispose();
     delete process.env.KNOWLEDGE_HTTP_READ;
-    delete process.env.KNOWLEDGE_DB_PATH;
     try {
       if (existsSync(dbPath)) rmSync(dbPath);
       for (const s of ["-shm", "-wal"]) {

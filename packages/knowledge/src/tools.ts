@@ -410,8 +410,13 @@ export function createKnowledgeTools(store: KnowledgeStore): Tool[] {
   const knowledge_ensure_project: Tool = {
     name: "knowledge_ensure_project",
     description:
-      "Find or create an accepted project node by label. Use ensure_project then link_project after accepting relevant claims; use project_status for status questions.",
+      "Reuse an accepted project by canonicalId, or create a distinct project identity. A label alone is not an identity key.",
     parameters: [
+      {
+        name: "canonicalId",
+        type: "string",
+        description: "Existing canonical project UUID to reuse",
+      },
       {
         name: "label",
         type: "string",
@@ -434,6 +439,7 @@ export function createKnowledgeTools(store: KnowledgeStore): Tool[] {
       if (!label) return fail("knowledge_ensure_project: label is required");
       try {
         const project = await store.ensureProject({
+          canonicalId: str(args.canonicalId),
           label,
           description: str(args.description),
           workspaceId: str(args.workspaceId),

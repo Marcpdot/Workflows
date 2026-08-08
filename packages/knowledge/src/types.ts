@@ -8,7 +8,8 @@ export type KnowledgeNodeType =
   | "event"
   | "source"
   | "project"
-  | "artifact";
+  | "artifact"
+  | (string & {});
 
 export type KnowledgeStatus =
   | "proposed"
@@ -83,12 +84,6 @@ export interface KnowledgeProposal {
   status: "pending" | "accepted" | "rejected";
   createdAt: number;
   resolvedAt?: number;
-}
-
-export interface KnowledgeStoreConfig {
-  dbPath: string;
-  /** Applied to new nodes on accept when payload omits workspaceId (M13) */
-  defaultWorkspaceId?: string | null;
 }
 
 /** Project status summary for tools/CLI (M13) */
@@ -193,6 +188,8 @@ export interface KnowledgeStore {
 
   /** M13: find or create accepted project node */
   ensureProject(input: {
+    /** Explicit identity to reuse; label alone never proves sameness. */
+    canonicalId?: string;
     label: string;
     description?: string;
     workspaceId?: string | null;

@@ -15,12 +15,14 @@ import {
 } from "@workflows/knowledge";
 import { tryHandleSessionCommand } from "../src/sessionCommands.js";
 import { loadConfigFromEnv } from "../src/orchestrator.js";
+import { startKnowledgePostgresTest } from "./knowledge-postgres-test-runtime.js";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);
 }
 
 async function main(): Promise<void> {
+  const postgres = await startKnowledgePostgresTest();
   const dataDir = resolve(process.cwd(), "data");
   mkdirSync(dataDir, { recursive: true });
   const stamp = Date.now();
@@ -28,7 +30,7 @@ async function main(): Promise<void> {
   const knowPath = resolve(dataDir, `_smoke_know_cap_${stamp}.db`);
 
   const memory = createMemory({ dbPath: memPath });
-  const knowledge = createKnowledgeStore({ dbPath: knowPath });
+  const knowledge = createKnowledgeStore();
   const sessionId = "ws:test:smoke-capture";
 
   try {
@@ -208,7 +210,7 @@ async function main(): Promise<void> {
     );
     console.log(`OK: listPendingForSession count=${queue.length}`);
 
-    // 7. second identical structured capture dedupes pending
+    // 7. repeated labels stay reviewable without an explicit canonical ID.
     const cap2 = await captureConversationSegment({
       store: knowledge,
       sessionId,
@@ -227,15 +229,15 @@ async function main(): Promise<void> {
       cap2.skippedDuplicateNodes >= 0,
       "dedupe field present"
     );
-    // Should not explode queue with identical nodes
     const queue2 = await listPendingForSession(knowledge, sessionId);
     assert(
-      queue2.length < queue.length + cap.proposals.length,
-      "pending dedupe limits growth"
+      queue2.length === queue.length + cap2.proposals.length,
+      "pending ambiguity is preserved instead of label-deduped"
     );
     console.log(
       `OK: second capture skipped=${cap2.skippedDuplicateNodes} queue=${queue2.length}`
     );
+    for (const proposal of cap2.proposals) await knowledge.rejectProposal(proposal.id);
 
     // 8. noisy structured result creates no graph debris
     const noisy = await captureConversationSegment({
@@ -289,11 +291,19 @@ async function main(): Promise<void> {
     assert(!still.some((p) => p.id === id), "accepted removed from pending");
     console.log("OK: /accept removes from pending");
 
-    // Accept remaining nodes before remaining edges, then verify accepted dedupe.
+    // Accept remaining nodes before remaining edges, then verify labels alone do
+    // not suppress potentially distinct referents.
     for (const kind of ["node", "edge"] as const) {
-      const pending = await knowledge.listProposals({ status: "pending" });
-      for (const proposal of pending.filter((p) => p.kind === kind)) {
-        await knowledge.acceptProposal(proposal.id);
+      const pendingIds = new Set((await knowledge.listProposals({ status: "pending" })).map((proposal) => proposal.id));
+      for (const proposal of cap.proposals.filter((p) => p.kind === kind && pendingIds.has(p.id))) {
+        if (kind === "edge") {
+          const full = (await knowledge.listProposals({ status: "pending" })).find((item) => item.id === proposal.id)!;
+          const from = (await knowledge.findNodes({ label: String(full.payload.from), status: "accepted", limit: 10 }))[0]!;
+          const to = (await knowledge.findNodes({ label: String(full.payload.to), status: "accepted", limit: 10 }))[0]!;
+          await knowledge.acceptProposal(proposal.id, { fromId: from.id, toId: to.id });
+        } else {
+          await knowledge.acceptProposal(proposal.id);
+        }
       }
     }
     const acceptedDedupe = await captureConversationSegment({
@@ -311,10 +321,10 @@ async function main(): Promise<void> {
       complete: async () => structuredFixture,
     });
     assert(
-      acceptedDedupe.proposals.length === 0,
-      `accepted identity should suppress duplicates, got ${acceptedDedupe.proposals.length}`
+      acceptedDedupe.proposals.some((proposal) => proposal.kind === "node"),
+      "accepted labels do not silently suppress new referents"
     );
-    console.log("OK: accepted nodes and edges dedupe structured capture");
+    console.log("OK: accepted labels remain identity-ambiguous proposals");
 
     // 11. proposals off
     await tryHandleSessionCommand("/proposals off", {
@@ -361,6 +371,7 @@ async function main(): Promise<void> {
   } finally {
     memory.close();
     knowledge.close();
+    await postgres.dispose();
     for (const p of [memPath, knowPath]) {
       try {
         if (existsSync(p)) rmSync(p);

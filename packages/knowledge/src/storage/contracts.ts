@@ -6,7 +6,6 @@ import type {
 } from "../types.js";
 
 export type KnowledgeRepositoryBackend =
-  | "sqlite"
   | "postgresql"
   | "graph"
   | "vector"

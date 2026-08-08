@@ -36,7 +36,7 @@ Forutsetter: M11 store. M12 tools er ønsket wire-path; hvis M12 ikke er merget 
 - First-principles template (M16)
 - UI (M17), stemme (M18)
 - Automatisk «alt i denne workspace er dette git-repo-prosjektet» uten eksplisitt project-node
-- Multi-DB per workspace (én knowledge.db; filtrering på `workspaceId` — samme mønster som M9 session namespace, ikke separat fil per prosjekt med mindre senere behov)
+- Database-per-workspace (canonical PostgreSQL bruker stabile identiteter og eksplisitte kontekstrelasjoner; workspace er ikke identity)
 - Erstatte M9 workspace path safety (tools filesystem) — knowledge binding er metadata, ikke path root
 
 ## Begreper
@@ -172,7 +172,7 @@ No change to path safety / M9 session keys.
 
 ```
 # existing
-KNOWLEDGE_DB_PATH=
+KNOWLEDGE_DATABASE_URL=
 KNOWLEDGE_TOOLS_ENABLED=false
 KNOWLEDGE_INJECT_ENABLED=false
 

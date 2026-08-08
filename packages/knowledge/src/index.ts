@@ -11,16 +11,14 @@ export type {
   KnowledgeRelation,
   KnowledgeStatus,
   KnowledgeStore,
-  KnowledgeStoreConfig,
   MergeNodesResult,
   ProjectLinkRelation,
   ProjectStatus,
 } from "./types.js";
 export {
   createKnowledgeStore,
-  createSqliteKnowledgeRepository,
-  resolveKnowledgeDbPath,
   hashInput,
+  type KnowledgeStoreConfig,
 } from "./knowledge.js";
 export type {
   CanonicalKnowledgeRepository,
@@ -60,11 +58,6 @@ export {
   PostgresCanonicalKnowledgeRepository,
   type PostgresCanonicalRepositoryConfig,
 } from "./postgres/repository.js";
-export {
-  importSqliteKnowledge,
-  type SqliteKnowledgeImportOptions,
-  type SqliteKnowledgeImportResult,
-} from "./postgres/importSqlite.js";
 export {
   EXTRACTION_SCHEMA,
   extractionToProposalItems,

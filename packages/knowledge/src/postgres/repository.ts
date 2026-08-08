@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient, QueryResultRow } from "pg";
-import { labelsMatch, normalizeLabel } from "../identity.js";
+import { normalizeLabel } from "../identity.js";
 import type {
   ContradictionPair,
   KnowledgeAlias,
@@ -217,12 +217,22 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     return result.rows.map(node);
   }
 
-  private async findNodeByTypeLabel(db: Queryable, type: KnowledgeNodeType, labelValue: string, status?: KnowledgeStatus): Promise<KnowledgeNode | null> {
+  private async findIdentityCandidates(
+    db: Queryable,
+    labelValue: string,
+    type?: KnowledgeNodeType,
+    status: KnowledgeStatus = "accepted"
+  ): Promise<KnowledgeNode[]> {
+    const params: unknown[] = [normalizeLabel(labelValue), status];
+    const typeClause = type ? "AND type = $3" : "";
+    if (type) params.push(type);
     const result = await db.query(
-      `SELECT * FROM knowledge_nodes WHERE type = $1 AND lower(label) = lower($2) ${status ? "AND status = $3" : ""} ORDER BY created_at ASC LIMIT 1`,
-      status ? [type, labelValue, status] : [type, labelValue]
+      `SELECT * FROM knowledge_nodes
+       WHERE normalized_label = $1 AND status = $2 ${typeClause}
+       ORDER BY created_at ASC`,
+      params
     );
-    return result.rows[0] ? node(result.rows[0]) : null;
+    return result.rows.map(node);
   }
 
   private async edgesFor(db: Queryable, ids: string[], status: KnowledgeStatus): Promise<KnowledgeEdge[]> {
@@ -270,9 +280,18 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     return { nodes, edges, truncated };
   }
 
-  async ensureProject(input: { label: string; description?: string; workspaceId?: string | null; createAccepted?: boolean }): Promise<KnowledgeNode> {
+  async ensureProject(input: { canonicalId?: string; label: string; description?: string; workspaceId?: string | null; createAccepted?: boolean }): Promise<KnowledgeNode> {
     const labelValue = input.label?.trim(); if (!labelValue) throw new Error("ensureProject: label is required");
-    const existing = await this.findNodeByTypeLabel(this.pool, "project", labelValue, "accepted"); if (existing) return existing;
+    if (input.canonicalId) {
+      const existing = await this.getNode(input.canonicalId);
+      if (!existing || existing.type !== "project" || existing.status === "rejected") throw new Error("ensureProject: canonicalId must reference a non-rejected project");
+      return existing;
+    }
+    if (input.createAccepted === false) {
+      const candidates = await this.findIdentityCandidates(this.pool, labelValue, "project");
+      if (candidates.length === 1) return candidates[0];
+      if (candidates.length > 1) throw new Error(`ensureProject: label "${labelValue}" is ambiguous; provide canonicalId`);
+    }
     if (input.createAccepted === false) throw new Error(`ensureProject: no accepted project "${labelValue}" and createAccepted=false`);
     const workspaceId = input.workspaceId !== undefined ? input.workspaceId : this.defaultWorkspaceId ?? null;
     const result = await this.pool.query(
@@ -300,7 +319,7 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
   }
 
   async getProjectStatus(input: { projectId?: string; label?: string; workspaceId?: string | null; hops?: 1 | 2 }): Promise<ProjectStatus> {
-    const project = input.projectId ? await this.getNode(input.projectId) : input.label ? await this.findNodeByTypeLabel(this.pool, "project", input.label, "accepted") : null;
+    const project = input.projectId ? await this.getNode(input.projectId) : input.label ? await this.resolveCanonical({ label: input.label, type: "project" }) : null;
     if (!project || project.type !== "project") throw new Error("getProjectStatus: provide projectId or label of an existing project");
     if (input.workspaceId != null && project.workspaceId && project.workspaceId !== input.workspaceId) throw new Error(`getProjectStatus: project workspace mismatch (want ${input.workspaceId})`);
     const graph = await this.getNeighborhood(project.id, { hops: input.hops === 2 ? 2 : 1, status: "accepted" });
@@ -327,12 +346,8 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     const raw = input.label?.trim(); if (!raw) return null;
     const direct = UUID.test(raw) ? await this.getNode(raw) : null; if (direct && direct.status !== "rejected") return direct;
     const knownAlias = await this.getAlias(this.pool, normalizeLabel(raw)); if (knownAlias) { const target = await this.getNode(knownAlias.canonicalNodeId); if (target && target.status !== "rejected") return target; }
-    if (input.type) {
-      const exact = await this.findNodeByTypeLabel(this.pool, input.type, raw, "accepted"); if (exact) return exact;
-      return (await this.findNodes({ type: input.type, status: "accepted", limit: 100 })).find((item) => labelsMatch(item.label, raw)) ?? null;
-    }
-    for (const type of ["concept", "claim", "project", "artifact", "source", "event"] as KnowledgeNodeType[]) { const exact = await this.findNodeByTypeLabel(this.pool, type, raw, "accepted"); if (exact) return exact; }
-    return (await this.findNodes({ status: "accepted", limit: 200 })).find((item) => labelsMatch(item.label, raw)) ?? null;
+    const candidates = await this.findIdentityCandidates(this.pool, raw, input.type);
+    return candidates.length === 1 ? candidates[0] : null;
   }
 
   async mergeNodes(input: { fromId: string; intoId: string }): Promise<MergeNodesResult> {
@@ -341,9 +356,24 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     try {
       await client.query("BEGIN"); const from = await this.getNodeWith(client, input.fromId); const into = await this.getNodeWith(client, input.intoId);
       if (!from) throw new Error(`mergeNodes: unknown fromId ${input.fromId}`); if (!into) throw new Error(`mergeNodes: unknown intoId ${input.intoId}`); if (into.status === "rejected") throw new Error("mergeNodes: into node is rejected");
+      const affected = await client.query<{ id: string; from_node_id: string; to_node_id: string }>(
+        "SELECT id, from_node_id::text, to_node_id::text FROM knowledge_edges WHERE from_node_id = $1 OR to_node_id = $1 FOR UPDATE",
+        [from.id]
+      );
       const first = await client.query("UPDATE knowledge_edges SET from_node_id = $1 WHERE from_node_id = $2", [into.id, from.id]);
       const second = await client.query("UPDATE knowledge_edges SET to_node_id = $1 WHERE to_node_id = $2", [into.id, from.id]);
-      await client.query("DELETE FROM knowledge_edges WHERE from_node_id = to_node_id");
+      const mergeConflictIds = affected.rows
+        .filter((row) =>
+          (row.from_node_id === from.id && row.to_node_id === into.id) ||
+          (row.from_node_id === into.id && row.to_node_id === from.id)
+        )
+        .map((row) => row.id);
+      if (mergeConflictIds.length) {
+        await client.query(
+          "DELETE FROM knowledge_edges WHERE id = ANY($1::uuid[]) AND from_node_id = to_node_id",
+          [mergeConflictIds]
+        );
+      }
       const evidenceA = await client.query("UPDATE knowledge_evidence SET claim_node_id = $1 WHERE claim_node_id = $2", [into.id, from.id]);
       const evidenceB = await client.query("UPDATE knowledge_evidence SET source_node_id = $1 WHERE source_node_id = $2", [into.id, from.id]);
       const retarget = await client.query("UPDATE knowledge_aliases SET canonical_node_id = $1 WHERE canonical_node_id = $2", [into.id, from.id]);
@@ -424,9 +454,14 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
 
   private async materializeNode(db: Queryable, payload: Record<string, unknown>, eventId: string): Promise<KnowledgeNode> {
     const type = String(payload.type ?? "concept") as KnowledgeNodeType; const labelValue = String(payload.label ?? "").trim(); if (!labelValue) throw new Error("acceptProposal node: label is required");
+    const canonicalId = String(payload.canonicalId ?? payload.identityId ?? "").trim();
+    if (canonicalId) {
+      if (!UUID.test(canonicalId)) throw new Error("acceptProposal node: canonicalId must be a UUID");
+      const existing = await this.getNodeWith(db, canonicalId);
+      if (!existing || existing.status === "rejected") throw new Error(`acceptProposal node: canonicalId ${canonicalId} is not reusable`);
+      return existing;
+    }
     const knownAlias = await this.getAlias(db, normalizeLabel(labelValue)); if (knownAlias) { const target = await this.getNodeWith(db, knownAlias.canonicalNodeId); if (target && target.status !== "rejected") return target; }
-    const exact = await this.findNodeByTypeLabel(db, type, labelValue, "accepted"); if (exact) return exact;
-    const fuzzy = (await this.findNodesWith(db, { type, status: "accepted", limit: 100 })).find((item) => labelsMatch(item.label, labelValue)); if (fuzzy) return fuzzy;
     const result = await db.query(
       `INSERT INTO knowledge_nodes (id, type, label, normalized_label, description, status, workspace_id)
        VALUES ($1, $2, $3, $4, $5, 'accepted', $6) RETURNING *`,
@@ -442,21 +477,33 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     const key = value.trim(); if (!key) throw new Error("edge endpoint is empty");
     const direct = UUID.test(key) ? await this.getNodeWith(db, key) : null; if (direct) return direct.id;
     const knownAlias = await this.getAlias(db, normalizeLabel(key)); if (knownAlias) { const target = await this.getNodeWith(db, knownAlias.canonicalNodeId); if (target && target.status !== "rejected") return target.id; }
-    for (const type of ["concept", "claim", "project", "artifact", "source", "event"] as KnowledgeNodeType[]) { const exact = await this.findNodeByTypeLabel(db, type, key, "accepted"); if (exact) return exact.id; }
-    const fuzzy = (await this.findNodesWith(db, { status: "accepted", limit: 200 })).find((item) => labelsMatch(item.label, key)); if (fuzzy) return fuzzy.id;
+    const candidates = await this.findIdentityCandidates(db, key);
+    if (candidates.length === 1) return candidates[0].id;
+    if (candidates.length > 1) throw new Error(`edge endpoint "${key}" is ambiguous; provide a canonical UUID or alias`);
     return (await this.materializeNode(db, { type: "concept", label: key }, eventId)).id;
   }
 
   private async materializeEdge(db: Queryable, payload: Record<string, unknown>, eventId: string): Promise<KnowledgeEdge> {
-    const from = String(payload.from ?? payload.fromLabel ?? "").trim(); const to = String(payload.to ?? payload.toLabel ?? "").trim(); if (!from || !to) throw new Error("acceptProposal edge: from and to are required");
+    const from = String(payload.fromId ?? payload.from ?? payload.fromLabel ?? "").trim(); const to = String(payload.toId ?? payload.to ?? payload.toLabel ?? "").trim(); if (!from || !to) throw new Error("acceptProposal edge: from and to are required");
     const confidence = payload.confidence == null ? undefined : Number(payload.confidence);
     return this.insertEdge(db, { id: randomUUID(), fromNodeId: await this.resolveEndpoint(db, from, eventId), relation: String(payload.relation ?? "about").trim() || "about", toNodeId: await this.resolveEndpoint(db, to, eventId), confidence: Number.isFinite(confidence) ? confidence : undefined, sourceEventId: eventId, status: "accepted", createdAt: Date.now() });
   }
 
   private async materializeEvidence(db: Queryable, payload: Record<string, unknown>, eventId: string): Promise<void> {
     const claimLabel = String(payload.claimLabel ?? payload.claim ?? "").trim(); if (!claimLabel) throw new Error("acceptProposal evidence: claimLabel is required"); const excerpt = String(payload.excerpt ?? "").trim();
-    let claim = await this.findNodeByTypeLabel(db, "claim", claimLabel, "accepted") ?? await this.findNodeByTypeLabel(db, "claim", claimLabel); if (!claim) claim = await this.materializeNode(db, { type: "claim", label: claimLabel }, eventId);
-    const sourceLabel = excerpt.slice(0, 80) || `source-${claimLabel}`; let source = await this.findNodeByTypeLabel(db, "source", sourceLabel, "accepted"); if (!source) source = await this.materializeNode(db, { type: "source", label: sourceLabel, description: excerpt || undefined }, eventId);
+    const claimId = String(payload.claimId ?? "").trim();
+    let claim = claimId && UUID.test(claimId) ? await this.getNodeWith(db, claimId) : null;
+    if (!claim) {
+      const candidates = await this.findIdentityCandidates(db, claimLabel, "claim");
+      if (candidates.length > 1) throw new Error(`evidence claim "${claimLabel}" is ambiguous; provide claimId`);
+      claim = candidates[0] ?? await this.materializeNode(db, { type: "claim", label: claimLabel }, eventId);
+    }
+    const sourceId = String(payload.sourceId ?? "").trim();
+    let source = sourceId && UUID.test(sourceId) ? await this.getNodeWith(db, sourceId) : null;
+    if (!source) {
+      const sourceLabel = String(payload.sourceLabel ?? (excerpt.slice(0, 80) || `source-${claimLabel}`));
+      source = await this.materializeNode(db, { type: "source", label: sourceLabel, description: excerpt || undefined }, eventId);
+    }
     await db.query(
       `INSERT INTO knowledge_evidence (id, claim_node_id, source_node_id, source_event_id, excerpt, stance, confidence)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,

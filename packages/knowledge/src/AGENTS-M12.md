@@ -122,15 +122,15 @@ KNOWLEDGE_TOOLS_ENABLED=false   # register knowledge tools into tool registry
 KNOWLEDGE_INJECT_ENABLED=false  # inject compact neighborhood/facts into context
 KNOWLEDGE_INJECT_MAX_CHARS=2000
 KNOWLEDGE_INJECT_HOPS=1
-KNOWLEDGE_DB_PATH=...           # already from M11
+KNOWLEDGE_DATABASE_URL=...      # canonical PostgreSQL runtime
 ```
 
 When `TOOLS_ENABLED` is false, knowledge tools are also unavailable (same global gate), unless you explicitly document a knowledge-only path — prefer one gate: tools on + `KNOWLEDGE_TOOLS_ENABLED`.
 
 ### Startup
 
-1. Resolve db path (`resolveKnowledgeDbPath`)
-2. `createKnowledgeStore({ dbPath })` — long-lived for process, or per-request if simpler (document choice; prefer one store per CLI/HTTP process)
+1. Resolve canonical PostgreSQL configuration (`resolvePostgresKnowledgeConfig`)
+2. `createKnowledgeStore()` — long-lived for process, or per-request if simpler (prefer one store per CLI/HTTP process)
 3. If `KNOWLEDGE_TOOLS_ENABLED`: `registry.register` each knowledge tool
 4. Tool closures capture `store` (or resolve store inside execute from process-level singleton)
 
