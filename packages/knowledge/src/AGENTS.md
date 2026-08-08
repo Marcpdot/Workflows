@@ -1,5 +1,27 @@
 # Milestone 11 — Semantic knowledge model (shell)
 
+## Knowledge Infrastructure v2 — current storage contract
+
+The M11 domain objects and proposal/approval invariants below remain active.
+The SQLite schema and factory are now a compatibility adapter during migration,
+not the long-term canonical architecture.
+
+- Consumers depend on storage-independent contracts from `storage/contracts.ts`.
+- PostgreSQL/PostGIS is the canonical structured/spatial target.
+- Schema changes use ordered SQL files in `packages/knowledge/migrations` and
+  the checksum/lock/transaction runner in `postgres/migrations.ts`.
+- Canonical IDs are UUIDs shared by SQL, graph, vector, source and audit records.
+- Graph/vector backends are reconstructable projections, never competing truth.
+- Do not bypass proposal acceptance, provenance, workspace, identity/merge, or
+  contradiction/supersession semantics in a database adapter.
+- Keep PostgreSQL/PostGIS/graph-specific APIs inside adapters; orchestrator stays
+  thin and existing `KnowledgeStore` callers remain compatible during cutover.
+- PostgreSQL canonical writes that affect accepted projections append outbox
+  work in the same transaction; adapters never synchronously depend on graph or
+  vector availability.
+- SQLite import preserves canonical UUIDs and provenance, is safe to retry, and
+  must fail visibly on real identity/alias conflicts rather than guessing.
+
 ## Mål
 
 Gi en **minimal, utskiftbar semantisk verdensmodell** over plain `MemoryFact`:
@@ -158,7 +180,7 @@ export interface KnowledgeProposal {
 }
 ```
 
-## Schema (SQLite)
+## Compatibility schema (SQLite; historical M11 adapter)
 
 ```sql
 CREATE TABLE IF NOT EXISTS knowledge_nodes (

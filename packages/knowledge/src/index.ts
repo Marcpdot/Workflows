@@ -18,9 +18,53 @@ export type {
 } from "./types.js";
 export {
   createKnowledgeStore,
+  createSqliteKnowledgeRepository,
   resolveKnowledgeDbPath,
   hashInput,
 } from "./knowledge.js";
+export type {
+  CanonicalKnowledgeRepository,
+  GeoJsonGeometry,
+  GraphPath,
+  GraphRepository,
+  GraphTraversalOptions,
+  KnowledgeRepositories,
+  KnowledgeRepositoryBackend,
+  RepositoryHealth,
+  SemanticVectorHit,
+  SemanticVectorRecord,
+  SpatialHit,
+  SpatialRecord,
+  SpatialRepository,
+  VectorRepository,
+} from "./storage/contracts.js";
+export {
+  resolveKnowledgeMigrationsDir,
+  resolvePostgresKnowledgeConfig,
+  type PostgresKnowledgeConfig,
+} from "./postgres/config.js";
+export {
+  loadKnowledgeMigrations,
+  runKnowledgeMigrations,
+  type KnowledgeMigration,
+  type MigrationResult,
+  type PostgresMigrationClient,
+  type PostgresQueryResult,
+} from "./postgres/migrations.js";
+export {
+  createKnowledgePostgresPool,
+  migratePostgresKnowledge,
+} from "./postgres/runtime.js";
+export {
+  createPostgresCanonicalKnowledgeRepository,
+  PostgresCanonicalKnowledgeRepository,
+  type PostgresCanonicalRepositoryConfig,
+} from "./postgres/repository.js";
+export {
+  importSqliteKnowledge,
+  type SqliteKnowledgeImportOptions,
+  type SqliteKnowledgeImportResult,
+} from "./postgres/importSqlite.js";
 export {
   EXTRACTION_SCHEMA,
   extractionToProposalItems,

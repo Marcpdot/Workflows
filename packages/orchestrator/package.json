@@ -10,6 +10,10 @@
     "dev": "tsx src/index.ts",
     "serve": "tsx src/integration/serverMain.ts",
     "ui": "tsx src/ui/web/main.ts",
+    "knowledge:migrate": "tsx scripts/migrate-knowledge-postgres.ts",
+    "knowledge:import:sqlite": "tsx scripts/import-knowledge-sqlite.ts",
+    "knowledge:test:postgres": "tsx scripts/integration-knowledge-postgres.ts",
+    "knowledge:test:canonical": "tsx scripts/integration-knowledge-canonical.ts",
     "typecheck": "tsc --noEmit",
     "eval": "tsx scripts/run-eval.ts"
   },

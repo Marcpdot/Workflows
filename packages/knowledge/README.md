@@ -1,6 +1,61 @@
 # @workflows/knowledge
 
-Semantic knowledge model shell (M11–M17): graph, ingest, identity, first-principles, **read surface**.
+Semantic knowledge domain, storage contracts, ingest, identity, first-principles, and read surface.
+
+## Knowledge Infrastructure v2 foundation
+
+`KnowledgeStore` remains the backwards-compatible domain/service API. New code
+should depend on `CanonicalKnowledgeRepository`, `GraphRepository`,
+`VectorRepository`, or `SpatialRepository` rather than a concrete database.
+SQLite remains available through `createSqliteKnowledgeRepository()` during
+the migration; PostgreSQL/PostGIS is the canonical target.
+
+`createPostgresCanonicalKnowledgeRepository()` implements the same
+`CanonicalKnowledgeRepository` / `KnowledgeStore` domain contract against
+PostgreSQL, including proposal transactions, workspace filtering, projects,
+aliases/merge history, contradictions and supersession. Accepted canonical
+writes enqueue graph/vector projection work; they do not call auxiliary stores
+inline.
+
+Local PostgreSQL with PostGIS and pgvector in the same instance:
+
+```bash
+docker compose -f compose.knowledge.yml up -d
+cd packages/orchestrator
+npm run knowledge:migrate
+npm run knowledge:import:sqlite  # optional, retry-safe canonical snapshot import
+```
+
+Configuration:
+
+- `KNOWLEDGE_POSTGRES_PORT` controls the Compose host port (default `55432`;
+  container port remains `5432`)
+- `KNOWLEDGE_DATABASE_URL` (default `postgresql://workflows:workflows@127.0.0.1:55432/workflows`)
+- `KNOWLEDGE_DATABASE_SSL=true|false` (default `false`)
+- `KNOWLEDGE_DATABASE_APPLICATION_NAME` (default `workflows-knowledge`)
+- `KNOWLEDGE_MIGRATIONS_DIR` (normally auto-resolved)
+
+Migrations live in `packages/knowledge/migrations`, are checksum-verified, run
+under a PostgreSQL advisory lock, and apply one transaction per migration.
+The migrations enable PostGIS and pgvector, create the canonical schema plus a
+projection outbox, and keep label-based identity resolution in the domain layer.
+They do not switch application traffic away from SQLite yet.
+
+The real database integration check creates an isolated temporary database,
+runs migrations twice, exercises canonical and spatial reads/writes, and drops
+the database in a `finally` cleanup:
+
+```bash
+cd packages/orchestrator
+npm run knowledge:test:postgres
+npm run knowledge:test:canonical
+```
+
+The SQLite importer reads `KNOWLEDGE_DB_PATH` (or the normal resolved private
+knowledge path), preserves canonical UUIDs, provenance and timestamps, and
+loads all tables in one transaction. Primary-key upserts make an identical
+snapshot safe to retry. Alias/identity conflicts still fail visibly. Keep the
+SQLite file as rollback/export source until application cutover is validated.
 
 ```bash
 cd packages/knowledge
