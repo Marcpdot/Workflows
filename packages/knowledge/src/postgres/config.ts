@@ -18,7 +18,7 @@ export function resolvePostgresKnowledgeConfig(
   return {
     connectionString:
       env.KNOWLEDGE_DATABASE_URL?.trim() ||
-      "postgresql://workflows:workflows@127.0.0.1:5432/workflows",
+      "postgresql://workflows:workflows@127.0.0.1:55432/workflows",
     applicationName:
       env.KNOWLEDGE_DATABASE_APPLICATION_NAME?.trim() ||
       "workflows-knowledge",

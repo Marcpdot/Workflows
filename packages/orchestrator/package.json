@@ -11,6 +11,7 @@
     "serve": "tsx src/integration/serverMain.ts",
     "ui": "tsx src/ui/web/main.ts",
     "knowledge:migrate": "tsx scripts/migrate-knowledge-postgres.ts",
+    "knowledge:test:postgres": "tsx scripts/integration-knowledge-postgres.ts",
     "typecheck": "tsc --noEmit",
     "eval": "tsx scripts/run-eval.ts"
   },

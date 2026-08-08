@@ -155,6 +155,11 @@ identity/alias/merge, contradiction, and supersession semantics. PostgreSQL
 schema changes are ordered SQL migrations with checksums, an advisory lock, and
 per-migration transactions. A canonical outbox records graph/vector projection
 work so auxiliary failure cannot invalidate a successful truth-store write.
+Normalized labels are indexed lookup signals rather than database identities;
+the domain layer decides reuse and merge so distinct claims, events, and sources
+are not collapsed. Self-relations are permitted unless a specific relation's
+domain invariant rejects them. The local PostgreSQL runtime loads PostGIS and
+pgvector together and defaults to conflict-safe host port `55432`.
 
 **Reason:** The shell proved the domain, but SQLite tables and application-side
 indexes do not provide the integrity, spatial capability, traversal ceiling, or

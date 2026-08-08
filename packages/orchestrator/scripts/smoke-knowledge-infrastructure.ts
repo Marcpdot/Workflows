@@ -48,6 +48,10 @@ async function main(): Promise<void> {
   assert(config.connectionString === "postgresql://test/db", "database URL config");
   assert(config.ssl, "database SSL config");
   assert(config.migrationsDir === resolveKnowledgeMigrationsDir(), "migration path");
+  assert(
+    resolvePostgresKnowledgeConfig({}).connectionString.includes(":55432/"),
+    "conflict-safe local database port"
+  );
 
   const migrations = await loadKnowledgeMigrations(config.migrationsDir);
   assert(migrations.length >= 1, "at least one migration");
@@ -69,6 +73,10 @@ async function main(): Promise<void> {
   }
   assert(first.sql.includes("timestamptz"), "PostgreSQL temporal types");
   assert(first.sql.includes("REFERENCES knowledge_nodes"), "canonical foreign keys");
+  assert(
+    migrations.some((migration) => migration.sql.includes("CREATE EXTENSION IF NOT EXISTS vector")),
+    "pgvector extension migration"
+  );
 
   const client = new FakeMigrationClient();
   const initial = await runKnowledgeMigrations(client, migrations);

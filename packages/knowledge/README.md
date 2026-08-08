@@ -10,7 +10,7 @@ should depend on `CanonicalKnowledgeRepository`, `GraphRepository`,
 SQLite remains available through `createSqliteKnowledgeRepository()` during
 the migration; PostgreSQL/PostGIS is the canonical target.
 
-Local PostgreSQL/PostGIS:
+Local PostgreSQL with PostGIS and pgvector in the same instance:
 
 ```bash
 docker compose -f compose.knowledge.yml up -d
@@ -20,15 +20,27 @@ npm run knowledge:migrate
 
 Configuration:
 
-- `KNOWLEDGE_DATABASE_URL` (default `postgresql://workflows:workflows@127.0.0.1:5432/workflows`)
+- `KNOWLEDGE_POSTGRES_PORT` controls the Compose host port (default `55432`;
+  container port remains `5432`)
+- `KNOWLEDGE_DATABASE_URL` (default `postgresql://workflows:workflows@127.0.0.1:55432/workflows`)
 - `KNOWLEDGE_DATABASE_SSL=true|false` (default `false`)
 - `KNOWLEDGE_DATABASE_APPLICATION_NAME` (default `workflows-knowledge`)
 - `KNOWLEDGE_MIGRATIONS_DIR` (normally auto-resolved)
 
 Migrations live in `packages/knowledge/migrations`, are checksum-verified, run
 under a PostgreSQL advisory lock, and apply one transaction per migration.
-The initial migration enables PostGIS and creates the canonical schema plus a
-projection outbox. It does not switch application traffic away from SQLite yet.
+The migrations enable PostGIS and pgvector, create the canonical schema plus a
+projection outbox, and keep label-based identity resolution in the domain layer.
+They do not switch application traffic away from SQLite yet.
+
+The real database integration check creates an isolated temporary database,
+runs migrations twice, exercises canonical and spatial reads/writes, and drops
+the database in a `finally` cleanup:
+
+```bash
+cd packages/orchestrator
+npm run knowledge:test:postgres
+```
 
 ```bash
 cd packages/knowledge
