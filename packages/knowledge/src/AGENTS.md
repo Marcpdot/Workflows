@@ -16,6 +16,11 @@ not the long-term canonical architecture.
   contradiction/supersession semantics in a database adapter.
 - Keep PostgreSQL/PostGIS/graph-specific APIs inside adapters; orchestrator stays
   thin and existing `KnowledgeStore` callers remain compatible during cutover.
+- PostgreSQL canonical writes that affect accepted projections append outbox
+  work in the same transaction; adapters never synchronously depend on graph or
+  vector availability.
+- SQLite import preserves canonical UUIDs and provenance, is safe to retry, and
+  must fail visibly on real identity/alias conflicts rather than guessing.
 
 ## Mål
 

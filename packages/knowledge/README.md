@@ -10,12 +10,20 @@ should depend on `CanonicalKnowledgeRepository`, `GraphRepository`,
 SQLite remains available through `createSqliteKnowledgeRepository()` during
 the migration; PostgreSQL/PostGIS is the canonical target.
 
+`createPostgresCanonicalKnowledgeRepository()` implements the same
+`CanonicalKnowledgeRepository` / `KnowledgeStore` domain contract against
+PostgreSQL, including proposal transactions, workspace filtering, projects,
+aliases/merge history, contradictions and supersession. Accepted canonical
+writes enqueue graph/vector projection work; they do not call auxiliary stores
+inline.
+
 Local PostgreSQL with PostGIS and pgvector in the same instance:
 
 ```bash
 docker compose -f compose.knowledge.yml up -d
 cd packages/orchestrator
 npm run knowledge:migrate
+npm run knowledge:import:sqlite  # optional, retry-safe canonical snapshot import
 ```
 
 Configuration:
@@ -40,7 +48,14 @@ the database in a `finally` cleanup:
 ```bash
 cd packages/orchestrator
 npm run knowledge:test:postgres
+npm run knowledge:test:canonical
 ```
+
+The SQLite importer reads `KNOWLEDGE_DB_PATH` (or the normal resolved private
+knowledge path), preserves canonical UUIDs, provenance and timestamps, and
+loads all tables in one transaction. Primary-key upserts make an identical
+snapshot safe to retry. Alias/identity conflicts still fail visibly. Keep the
+SQLite file as rollback/export source until application cutover is validated.
 
 ```bash
 cd packages/knowledge

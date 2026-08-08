@@ -161,6 +161,15 @@ are not collapsed. Self-relations are permitted unless a specific relation's
 domain invariant rejects them. The local PostgreSQL runtime loads PostGIS and
 pgvector together and defaults to conflict-safe host port `55432`.
 
+The PostgreSQL canonical adapter implements the existing storage-independent
+domain contract rather than exposing SQL to orchestrator callers. Proposal
+materialization and merge operations are transactional, and accepted writes
+append retryable projection-outbox work without coupling canonical success to a
+graph/vector backend. SQLite cutover uses a transactional, retry-safe snapshot
+import that preserves canonical UUIDs, timestamps, proposal state, provenance,
+workspace scope and aliases. SQLite remains available as rollback/export input
+until parity and application cutover are complete.
+
 **Reason:** The shell proved the domain, but SQLite tables and application-side
 indexes do not provide the integrity, spatial capability, traversal ceiling, or
 indexed semantic retrieval required for a knowledge system expected to outgrow
