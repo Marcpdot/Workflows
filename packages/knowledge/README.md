@@ -78,6 +78,27 @@ Local defaults from `compose.knowledge.yml` are Bolt
 `KNOWLEDGE_NEO4J_USER`, `KNOWLEDGE_NEO4J_PASSWORD` and
 `KNOWLEDGE_NEO4J_DATABASE`.
 
+## Hybrid retrieval
+
+`HybridKnowledgeRetrievalService` is the deterministic retrieval substrate over
+canonical PostgreSQL, Neo4j, pgvector and optional PostGIS candidates. Requests
+can combine explicit canonical IDs/aliases, project or graph roots, workspace
+and entity filters, relation/hop constraints, a caller-supplied query vector and
+model/version, and bounded evidence/observation/source hydration.
+
+Exact lookup skips graph/vector when unnecessary. Root/project graph results can
+narrow pgvector candidate IDs; unconstrained semantic discovery can optionally
+request bounded graph enrichment. Ranking is transparent: exact/project and
+explicit candidate signals, graph/spatial membership, then semantic cosine
+score. Every discovery hit is rehydrated from canonical PostgreSQL, so an
+unattributed graph/vector object cannot become a result.
+
+Results report which strategies ran, skipped, degraded or were unavailable.
+Missing graph/vector layers degrade independently, but a requested narrowing
+scope never silently widens to global semantic search. Hard limits cover results,
+hops, edges, semantic candidates, provenance rows, sources and a deterministic
+context-unit budget.
+
 ## Identity
 
 Every independently referable thing may have one stable canonical UUID. A label,
@@ -106,6 +127,7 @@ npm run knowledge:test:postgres
 npm run knowledge:test:canonical
 npm run knowledge:test:vector
 npm run knowledge:test:graph
+npm run knowledge:test:hybrid
 ```
 
 Knowledge smoke scripts create isolated PostgreSQL databases and clean them up.

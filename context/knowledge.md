@@ -209,6 +209,23 @@ Merge similarly rebuilds graph topology and deletes the retired vector identity;
 direct canonical edge deletion enqueues graph deletion. These outbox writes are
 part of the canonical PostgreSQL transaction, while execution remains decoupled.
 
+Hybrid retrieval is a storage-independent domain service over these layers, not
+an agent planner. It composes only the strategies requested: exact canonical
+resolution, Neo4j expansion, pgvector similarity and optional spatial candidate
+narrowing. Graph/project/explicit candidate sets can constrain semantic search;
+semantic discovery can request bounded graph enrichment. All candidates are
+rehydrated and status-checked in PostgreSQL before return.
+
+Fusion is deterministic and inspectable: exact/project identity, explicit
+candidate membership and graph/spatial membership are structural signals, while
+cosine similarity is an additive ranking signal and never an identity decision.
+Results retain discovery origins, canonical edges, evidence, observations,
+source nodes and source events within hard per-layer and context-unit budgets.
+Strategy metadata reports ran/skipped/unavailable/degraded. Missing projections
+degrade independently, but failure of a requested narrowing scope never widens
+semantic retrieval silently. This is substrate for a later Knowledge Agent; it
+contains no LLM planning or autonomous strategy selection.
+
 **Reason:** The shell proved the domain, but SQLite tables and application-side
 indexes do not provide the integrity, spatial capability, traversal ceiling, or
 indexed semantic retrieval required for a knowledge system expected to outgrow

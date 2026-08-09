@@ -33,6 +33,9 @@ contracts. PostgreSQL/PostGIS is the sole canonical knowledge runtime.
   direction/relation values, accepted-only visibility and valid self-relations.
 - Run expansion/path logic in Cypher. Graph proximity never establishes
   identity, and graph failure never participates in a canonical transaction.
+- Hybrid retrieval must canonical-hydrate every graph/vector candidate, report
+  strategy degradation, enforce hard context bounds and never widen a failed
+  requested scope silently. Keep agent planning outside this service.
 - Keep PostgreSQL-specific code inside adapters and the orchestrator thin.
 - Expose controlled domain/tools contracts, not unrestricted SQL access.
 

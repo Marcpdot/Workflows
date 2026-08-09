@@ -171,9 +171,9 @@ export interface KnowledgeStore {
 
   rejectProposal(id: string): Promise<void>;
 
-  listEvidence(targetNodeId: string): Promise<KnowledgeEvidence[]>;
+  listEvidence(targetNodeId: string, limit?: number): Promise<KnowledgeEvidence[]>;
 
-  listObservations(targetNodeId: string): Promise<KnowledgeObservation[]>;
+  listObservations(targetNodeId: string, limit?: number): Promise<KnowledgeObservation[]>;
 
   getNode(id: string): Promise<KnowledgeNode | null>;
 

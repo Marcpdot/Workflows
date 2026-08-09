@@ -259,13 +259,13 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     }
   }
 
-  async listEvidence(targetNodeId: string): Promise<KnowledgeEvidence[]> {
-    const result = await this.pool.query("SELECT * FROM knowledge_evidence WHERE target_node_id = $1 ORDER BY created_at ASC", [targetNodeId]);
+  async listEvidence(targetNodeId: string, limit = 50): Promise<KnowledgeEvidence[]> {
+    const result = await this.pool.query("SELECT * FROM knowledge_evidence WHERE target_node_id = $1 ORDER BY created_at DESC LIMIT $2", [targetNodeId, Math.min(Math.max(Math.floor(limit), 0), 1000)]);
     return result.rows.map(evidence);
   }
 
-  async listObservations(targetNodeId: string): Promise<KnowledgeObservation[]> {
-    const result = await this.pool.query("SELECT * FROM knowledge_observations WHERE target_node_id = $1 ORDER BY observed_at ASC, id ASC", [targetNodeId]);
+  async listObservations(targetNodeId: string, limit = 100): Promise<KnowledgeObservation[]> {
+    const result = await this.pool.query("SELECT * FROM knowledge_observations WHERE target_node_id = $1 ORDER BY observed_at DESC, id ASC LIMIT $2", [targetNodeId, Math.min(Math.max(Math.floor(limit), 0), 1000)]);
     return result.rows.map(observation);
   }
 

@@ -156,6 +156,18 @@ export {
   type GraphProjectionResult,
 } from "./graphProjection.js";
 export {
+  CanonicalRetrievalUnavailableError,
+  createHybridKnowledgeRetrievalService,
+  HybridKnowledgeRetrievalService,
+  type HybridRetrievalDependencies,
+  type HybridRetrievalItem,
+  type HybridRetrievalRequest,
+  type HybridRetrievalResult,
+  type RetrievalOrigin,
+  type RetrievalStrategyReport,
+  type RetrievalStrategyState,
+} from "./hybridRetrieval.js";
+export {
   STRUCTURED_CAPTURE_SCHEMA,
   extractStructuredConversation,
   normalizeStructuredCapture,

@@ -15,6 +15,7 @@
     "knowledge:test:canonical": "tsx scripts/integration-knowledge-canonical.ts",
     "knowledge:test:vector": "tsx scripts/integration-knowledge-vector.ts",
     "knowledge:test:graph": "tsx scripts/integration-knowledge-graph.ts",
+    "knowledge:test:hybrid": "tsx scripts/integration-knowledge-hybrid.ts",
     "typecheck": "tsc --noEmit",
     "eval": "tsx scripts/run-eval.ts"
   },
