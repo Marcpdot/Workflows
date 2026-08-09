@@ -79,7 +79,7 @@ export class PostgresVectorRepository implements VectorRepository {
 
   private async upsertWith(db: Queryable, item: SemanticVectorRecord): Promise<void> {
     const embedding = validate(item);
-    await db.query(
+    const result = await db.query(
       `INSERT INTO knowledge_semantic_vectors
          (id, canonical_id, source_id, chunk_id, embedding, embedding_model,
           embedding_model_version, embedding_dimension, workspace_id, entity_type,
@@ -94,12 +94,16 @@ export class PostgresVectorRepository implements VectorRepository {
          embedding_dimension = excluded.embedding_dimension,
          workspace_id = excluded.workspace_id, entity_type = excluded.entity_type,
          content_hash = excluded.content_hash, metadata = excluded.metadata,
-         updated_at = excluded.updated_at`,
+         updated_at = excluded.updated_at
+       WHERE knowledge_semantic_vectors.canonical_id = excluded.canonical_id
+         AND knowledge_semantic_vectors.embedding_model = excluded.embedding_model
+         AND knowledge_semantic_vectors.embedding_model_version = excluded.embedding_model_version`,
       [item.id, item.canonicalId, item.sourceId ?? null, item.chunkId ?? null, embedding,
        item.model.trim(), item.modelVersion.trim(), item.dimension, item.workspaceId ?? null,
        item.entityType ?? null, item.contentHash ?? null, JSON.stringify(item.metadata ?? {}),
        item.createdAt, item.updatedAt]
     );
+    if ((result.rowCount ?? 0) !== 1) throw new Error(`vector record ${item.id} already belongs to another canonical identity or model/version projection`);
   }
 
   async get(id: string): Promise<SemanticVectorRecord | null> {
@@ -112,12 +116,15 @@ export class PostgresVectorRepository implements VectorRepository {
     return result.rowCount ?? 0;
   }
 
-  async replaceAll(records: readonly SemanticVectorRecord[]): Promise<void> {
+  async replaceProjection(input: { model: string; modelVersion: string; records: readonly SemanticVectorRecord[] }): Promise<void> {
+    const model = input.model.trim(); const modelVersion = input.modelVersion.trim();
+    if (!model || !modelVersion) throw new Error("projection model and modelVersion are required");
+    for (const item of input.records) if (item.model !== model || item.modelVersion !== modelVersion) throw new Error("replacement record model/version does not match projection scope");
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query("DELETE FROM knowledge_semantic_vectors");
-      for (const item of records) await this.upsertWith(client, item);
+      await client.query("DELETE FROM knowledge_semantic_vectors WHERE embedding_model = $1 AND embedding_model_version = $2", [model, modelVersion]);
+      for (const item of input.records) await this.upsertWith(client, item);
       await client.query("COMMIT");
     } catch (error) { await client.query("ROLLBACK"); throw error; }
     finally { client.release(); }

@@ -60,11 +60,13 @@ export async function rebuildSemanticVectorProjection(input: {
   canonical: CanonicalKnowledgeRepository;
   vector: VectorRepository;
   embedder: SemanticEmbeddingProvider;
+  pageSize?: number;
 }): Promise<VectorProjectionResult> {
-  const nodes = await input.canonical.findNodes({ status: "accepted", limit: 100_000 });
-  nodes.sort((a, b) => a.id.localeCompare(b.id));
-  const records = await embedNodes(nodes, input.embedder);
-  await input.vector.replaceAll(records);
+  const records: SemanticVectorRecord[] = [];
+  for await (const page of input.canonical.scanAcceptedNodes({ pageSize: input.pageSize })) {
+    records.push(...await embedNodes(page, input.embedder));
+  }
+  await input.vector.replaceProjection({ model: input.embedder.model, modelVersion: input.embedder.modelVersion, records });
   return { projected: records.length, model: input.embedder.model, modelVersion: input.embedder.modelVersion };
 }
 

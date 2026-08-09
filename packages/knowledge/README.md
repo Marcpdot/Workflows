@@ -43,8 +43,10 @@ The active schema uses `vector(1536)` with an HNSW cosine index. Providers must
 declare model, model version and dimension, and searches require the matching
 model/version so incompatible embedding spaces are not mixed. A different
 dimension requires a forward schema/index migration rather than silent coercion.
-`rebuildSemanticVectorProjection()` embeds canonical state before atomically
-replacing the projection. `processVectorProjectionOutbox()` handles only vector
+`rebuildSemanticVectorProjection()` scans the complete accepted canonical state
+with keyset pagination in one repeatable-read snapshot, embeds it, then
+atomically replaces only the selected model/version projection. Other embedding
+spaces remain intact. `processVectorProjectionOutbox()` handles only vector
 jobs, serializes workers with an advisory lock, and leaves failed jobs retryable.
 Embedding generation remains behind `SemanticEmbeddingProvider`; the repository
 never invents embeddings and similarity results never merge identities.

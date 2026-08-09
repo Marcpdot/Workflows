@@ -25,6 +25,8 @@ export interface RepositoryHealth {
 export interface CanonicalKnowledgeRepository extends KnowledgeStore {
   readonly backend: KnowledgeRepositoryBackend;
   healthCheck(): Promise<RepositoryHealth>;
+  /** Repeatable-read, keyset-paginated traversal of the complete accepted state. */
+  scanAcceptedNodes(options?: { pageSize?: number }): AsyncIterable<readonly KnowledgeNode[]>;
 }
 
 export interface GraphTraversalOptions {
@@ -90,8 +92,12 @@ export interface VectorRepository {
   upsert(record: SemanticVectorRecord): Promise<void>;
   get(id: string): Promise<SemanticVectorRecord | null>;
   deleteByCanonicalId(canonicalId: string): Promise<number>;
-  /** Atomically replace the entire derived projection after embeddings exist. */
-  replaceAll(records: readonly SemanticVectorRecord[]): Promise<void>;
+  /** Atomically replace one model/version projection after embeddings exist. */
+  replaceProjection(input: {
+    model: string;
+    modelVersion: string;
+    records: readonly SemanticVectorRecord[];
+  }): Promise<void>;
   search(
     queryVector: readonly number[],
     options: {

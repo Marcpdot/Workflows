@@ -124,6 +124,31 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     }
   }
 
+  async *scanAcceptedNodes(options: { pageSize?: number } = {}): AsyncIterable<readonly KnowledgeNode[]> {
+    const pageSize = Math.min(Math.max(Math.floor(options.pageSize ?? 1000), 1), 10_000);
+    const client = await this.pool.connect();
+    let completed = false;
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      let afterId: string | null = null;
+      while (true) {
+        const rows: QueryResultRow[] = afterId
+          ? (await client.query("SELECT * FROM knowledge_nodes WHERE status = 'accepted' AND id > $1 ORDER BY id ASC LIMIT $2", [afterId, pageSize])).rows
+          : (await client.query("SELECT * FROM knowledge_nodes WHERE status = 'accepted' ORDER BY id ASC LIMIT $1", [pageSize])).rows;
+        if (!rows.length) break;
+        const page: KnowledgeNode[] = rows.map(node);
+        yield page;
+        afterId = page[page.length - 1]!.id;
+        if (page.length < pageSize) break;
+      }
+      await client.query("COMMIT");
+      completed = true;
+    } finally {
+      if (!completed) await client.query("ROLLBACK");
+      client.release();
+    }
+  }
+
   async createEvent(input: { sourceType: KnowledgeEvent["sourceType"]; sourceRef: string; model?: string; inputHash?: string }): Promise<KnowledgeEvent> {
     if (!input.sourceRef?.trim()) throw new Error("createEvent: sourceRef is required");
     const result = await this.pool.query(

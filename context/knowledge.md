@@ -173,8 +173,10 @@ Each row retains a stable projection ID, canonical target UUID, optional
 canonical source/chunk UUIDs, embedding model/version/dimension, filter metadata
 and timestamps. It does not copy canonical text. Accepted nodes of any present
 or future type are embeddable from type + label + optional description when an
-explicit embedding provider is configured. Rebuild generates all embeddings
-before atomically replacing the derived table; vector outbox failures remain
+explicit embedding provider is configured. Rebuild traverses the complete
+accepted state through a keyset-paginated repeatable-read snapshot, generates
+all embeddings, then atomically replaces only that model/version projection;
+coexisting embedding spaces are preserved. Vector outbox failures remain
 retryable and cannot invalidate canonical commits. Search is executed in
 PostgreSQL, requires a matching model/version and returns candidates rather than
 making identity decisions.

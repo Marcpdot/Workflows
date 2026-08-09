@@ -3,6 +3,7 @@ import {
   KNOWLEDGE_VECTOR_DIMENSION, processVectorProjectionOutbox,
   rebuildSemanticVectorProjection, resolvePostgresKnowledgeConfig,
   semanticVectorRecordId, type SemanticEmbeddingProvider, type SemanticVectorRecord,
+  type CanonicalKnowledgeRepository, type KnowledgeNode, type VectorRepository,
 } from "@workflows/knowledge";
 import { randomUUID } from "node:crypto";
 import { startKnowledgePostgresTest } from "./knowledge-postgres-test-runtime.js";
@@ -10,9 +11,9 @@ import { startKnowledgePostgresTest } from "./knowledge-postgres-test-runtime.js
 function assert(condition: unknown, message: string): asserts condition { if (!condition) throw new Error(`ASSERT: ${message}`); }
 function vector(...entries: Array<[number, number]>): number[] { const value = Array<number>(KNOWLEDGE_VECTOR_DIMENSION).fill(0); for (const [index, number] of entries) value[index] = number; return value; }
 
-function fixtureEmbedder(fail = false): SemanticEmbeddingProvider {
+function fixtureEmbedder(fail = false, model = "fixture-semantic", modelVersion = "v1"): SemanticEmbeddingProvider {
   return {
-    model: "fixture-semantic", modelVersion: "v1", dimension: KNOWLEDGE_VECTOR_DIMENSION,
+    model, modelVersion, dimension: KNOWLEDGE_VECTOR_DIMENSION,
     async embed(texts) {
       if (fail) throw new Error("fixture embedding failure");
       return texts.map((text) => { const index = [...text].reduce((sum, char) => sum + char.charCodeAt(0), 0) % 32; return vector([index, 1], [(index + 1) % 32, 0.25]); });
@@ -26,7 +27,34 @@ async function acceptedNode(store: ReturnType<typeof createKnowledgeStore>, even
   return (await store.findNodes({ type, label, status: "accepted" }))[0];
 }
 
+async function verifyRebuildBeyondLegacyLimit(): Promise<void> {
+  const total = 100_001; const sharedVector = vector([0, 1]); let replaced = 0;
+  const canonical = {
+    async *scanAcceptedNodes(options: { pageSize?: number } = {}) {
+      const pageSize = options.pageSize ?? 1000;
+      for (let offset = 0; offset < total; offset += pageSize) {
+        const page: KnowledgeNode[] = [];
+        for (let index = offset; index < Math.min(offset + pageSize, total); index++) {
+          const suffix = String(index).padStart(12, "0");
+          page.push({ id: `00000000-0000-4000-8000-${suffix}`, type: "fixture", label: `fixture-${index}`, status: "accepted", createdAt: index, updatedAt: index });
+        }
+        yield page;
+      }
+    },
+  } as unknown as CanonicalKnowledgeRepository;
+  const vectorRepository = {
+    async replaceProjection(input: { records: readonly SemanticVectorRecord[] }) { replaced = input.records.length; },
+  } as unknown as VectorRepository;
+  const embedder: SemanticEmbeddingProvider = {
+    model: "limit-fixture", modelVersion: "v1", dimension: KNOWLEDGE_VECTOR_DIMENSION,
+    async embed(texts) { return texts.map(() => sharedVector); },
+  };
+  const result = await rebuildSemanticVectorProjection({ canonical, vector: vectorRepository, embedder, pageSize: 997 });
+  assert(result.projected === total && replaced === total, "rebuild processes more than the former 100,000-record limit");
+}
+
 async function main(): Promise<void> {
+  await verifyRebuildBeyondLegacyLimit();
   const runtime = await startKnowledgePostgresTest();
   const base = resolvePostgresKnowledgeConfig();
   const pool = createKnowledgePostgresPool({ ...base, connectionString: runtime.connectionString, applicationName: `${base.applicationName}-vector-test` });
@@ -71,9 +99,19 @@ async function main(): Promise<void> {
     assert(modelFailed, "missing embedding model version fails clearly");
 
     assert(await vectors.deleteByCanonicalId(alpha.id) === 1 && await vectors.get(alphaId) === null, "vector delete lifecycle works");
-    const rebuilt = await rebuildSemanticVectorProjection({ canonical, vector: vectors, embedder: fixtureEmbedder() });
-    assert(rebuilt.projected >= 5, "projection rebuild embeds accepted canonical state");
+    const acceptedCount = await pool.query<{ count: number }>("SELECT count(*)::int AS count FROM knowledge_nodes WHERE status = 'accepted'");
+    const rebuildPageSize = 2;
+    assert(acceptedCount.rows[0].count > rebuildPageSize, "fixture exceeds one rebuild page");
+    const rebuilt = await rebuildSemanticVectorProjection({ canonical, vector: vectors, embedder: fixtureEmbedder(), pageSize: rebuildPageSize });
+    assert(rebuilt.projected === acceptedCount.rows[0].count, "paginated rebuild embeds the complete accepted canonical state without truncation");
     assert(await vectors.get(semanticVectorRecordId(alpha.id, "fixture-semantic", "v1")) !== null, "deleted projection rebuilds deterministically from canonical state");
+
+    const staleB = randomUUID();
+    await vectors.upsert(make(staleB, gamma.id, vector([4, 1]), { model: "fixture-semantic-b", modelVersion: "v2", entityType: "artifact" }));
+    const rebuiltB = await rebuildSemanticVectorProjection({ canonical, vector: vectors, embedder: fixtureEmbedder(false, "fixture-semantic-b", "v2"), pageSize: rebuildPageSize });
+    assert(rebuiltB.projected === acceptedCount.rows[0].count, "second model/version also traverses every accepted page");
+    assert(await vectors.get(semanticVectorRecordId(alpha.id, "fixture-semantic", "v1")) !== null, "rebuilding model/version B preserves model/version A");
+    assert(await vectors.get(staleB) === null && await vectors.get(semanticVectorRecordId(gamma.id, "fixture-semantic-b", "v2")) !== null, "same model/version rebuild removes stale records and replaces them deterministically");
 
     await pool.query(
       `INSERT INTO knowledge_projection_outbox (id, canonical_id, projection, operation)
