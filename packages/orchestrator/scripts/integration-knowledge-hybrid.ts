@@ -10,7 +10,7 @@ import { startKnowledgePostgresTest } from "./knowledge-postgres-test-runtime.js
 
 function assert(condition: unknown, message: string): asserts condition { if (!condition) throw new Error(`ASSERT: ${message}`); }
 function vector(...values: Array<[number, number]>): number[] { const result = Array<number>(KNOWLEDGE_VECTOR_DIMENSION).fill(0); for (const [index, value] of values) result[index] = value; return result; }
-async function node(store: ReturnType<typeof createKnowledgeStore>, eventId: string, type: string, label: string, workspaceId?: string) { const before = new Set((await store.findNodes({ type, label, status: "accepted", limit: 100 })).map((item) => item.id)); const proposal = (await store.addProposals(eventId, [{ kind: "node", payload: { type, label, workspaceId } }]))[0]; await store.acceptProposal(proposal.id); return (await store.findNodes({ type, label, status: "accepted", limit: 100 })).find((item) => !before.has(item.id))!; }
+async function node(store: ReturnType<typeof createKnowledgeStore>, eventId: string, type: string, label: string, workspaceId?: string | null) { const before = new Set((await store.findNodes({ type, label, status: "accepted", limit: 100 })).map((item) => item.id)); const proposal = (await store.addProposals(eventId, [{ kind: "node", payload: { type, label, workspaceId } }]))[0]; await store.acceptProposal(proposal.id); return (await store.findNodes({ type, label, status: "accepted", limit: 100 })).find((item) => !before.has(item.id))!; }
 async function edge(store: ReturnType<typeof createKnowledgeStore>, eventId: string, fromId: string, relation: string, toId: string) { const proposal = (await store.addProposals(eventId, [{ kind: "edge", payload: { fromId, relation, toId } }]))[0]; await store.acceptProposal(proposal.id); }
 
 async function main(): Promise<void> {
@@ -25,18 +25,20 @@ async function main(): Promise<void> {
     const alpha = await node(canonical, event.id, "idea", "Thermal control", "workspace-a");
     const beta = await node(canonical, event.id, "concept", "Cooling loop", "workspace-a");
     const deep = await node(canonical, event.id, "artifact", "Heat sink", "workspace-a");
+    const global = await node(canonical, event.id, "concept", "Global thermal principle", null);
     const outside = await node(canonical, event.id, "idea", "Unrelated workspace thermal", "workspace-b");
     const sameA = await node(canonical, event.id, "artifact", "Motor", "workspace-a"); const sameB = await node(canonical, event.id, "artifact", "Motor", "workspace-a");
     const source = await node(canonical, event.id, "source", "hybrid-fixture.md", "workspace-a");
-    await edge(canonical, event.id, project.id, "about", alpha.id); await edge(canonical, event.id, alpha.id, "requires", beta.id); await edge(canonical, event.id, beta.id, "part_of", deep.id); await edge(canonical, event.id, alpha.id, "cross_workspace", outside.id);
+    await edge(canonical, event.id, project.id, "about", alpha.id); await edge(canonical, event.id, alpha.id, "requires", beta.id); await edge(canonical, event.id, beta.id, "part_of", deep.id); await edge(canonical, event.id, alpha.id, "uses", global.id); await edge(canonical, event.id, alpha.id, "cross_workspace", outside.id);
     const provenance = await canonical.addProposals(event.id, [
       { kind: "evidence", payload: { targetId: alpha.id, sourceId: source.id, stance: "supports", excerpt: "Source supports thermal control" } },
       { kind: "observation", payload: { targetId: alpha.id, sourceId: source.id, observationKind: "references", observationMetadata: { section: 2 } } },
     ]); for (const proposal of provenance) await canonical.acceptProposal(proposal.id);
     await rebuildGraphProjection({ canonical, graph, pageSize: 2 });
-    const now = Date.now(); const records: Array<[string, number[], string, string]> = [
+    const now = Date.now(); const records: Array<[string, number[], string, string | null]> = [
       [alpha.id, vector([0, 1]), "idea", "workspace-a"], [beta.id, vector([0, 0.85], [1, 0.15]), "concept", "workspace-a"],
       [deep.id, vector([0, 0.6], [2, 0.4]), "artifact", "workspace-a"], [outside.id, vector([0, 0.99], [3, 0.01]), "idea", "workspace-b"],
+      [global.id, vector([0, 0.98], [6, 0.02]), "concept", null],
       [sameA.id, vector([4, 1]), "artifact", "workspace-a"], [sameB.id, vector([4, 0.99], [5, 0.01]), "artifact", "workspace-a"],
     ];
     for (const [canonicalId, embedding, entityType, workspaceId] of records) { const record: SemanticVectorRecord = { id: randomUUID(), canonicalId, vector: embedding, dimension: KNOWLEDGE_VECTOR_DIMENSION, model: "hybrid-fixture", modelVersion: "v1", entityType, workspaceId, createdAt: now, updatedAt: now }; await vectors.upsert(record); }
@@ -49,7 +51,11 @@ async function main(): Promise<void> {
     const graphOnly = await service.retrieve({ graphRootIds: [alpha.id], graphHops: 2, overallLimit: 10 });
     assert(graphOnly.items.some((item) => item.node.id === deep.id) && graphOnly.edges.some((item) => item.relation === "part_of"), "graph-root retrieval returns multi-hop canonical topology");
     const narrowed = await service.retrieve({ projectId: project.id, graphHops: 2, queryVector: vector([0, 1]), embeddingModel: "hybrid-fixture", embeddingModelVersion: "v1", workspaceId: "workspace-a", semanticLimit: 5, overallLimit: 5 });
-    assert(narrowed.strategies.graph.state === "ran" && narrowed.strategies.semantic.state === "ran" && narrowed.items.some((item) => item.node.id === alpha.id) && !narrowed.items.some((item) => item.node.id === outside.id), "graph/project scope narrows pgvector candidates and preserves workspace");
+    assert(narrowed.strategies.graph.state === "ran" && narrowed.strategies.semantic.state === "ran" && narrowed.items.some((item) => item.node.id === global.id) && !narrowed.items.some((item) => item.node.id === outside.id), "graph/project scope preserves global visibility while excluding another workspace during vector narrowing");
+    const workspaceExact = await service.retrieve({ canonicalIds: [global.id, outside.id], workspaceId: "workspace-a", overallLimit: 5 });
+    const workspaceGraph = await service.retrieve({ graphRootIds: [alpha.id], graphHops: 1, workspaceId: "workspace-a", overallLimit: 10 });
+    const workspaceVector = await service.retrieve({ candidateCanonicalIds: [global.id, outside.id], queryVector: vector([0, 1]), embeddingModel: "hybrid-fixture", embeddingModelVersion: "v1", workspaceId: "workspace-a", overallLimit: 5 });
+    assert(workspaceExact.items.some((item) => item.node.id === global.id) && !workspaceExact.items.some((item) => item.node.id === outside.id) && workspaceGraph.items.some((item) => item.node.id === global.id) && !workspaceGraph.items.some((item) => item.node.id === outside.id) && workspaceVector.items.some((item) => item.node.id === global.id) && !workspaceVector.items.some((item) => item.node.id === outside.id), "exact, graph and vector retrieval agree on named-workspace global visibility");
     const semanticFirst = await service.retrieve({ queryVector: vector([0, 1]), embeddingModel: "hybrid-fixture", embeddingModelVersion: "v1", semanticLimit: 1, semanticGraphHops: 1, overallLimit: 5 });
     assert(semanticFirst.items.some((item) => item.node.id === beta.id && item.origins.includes("graph")), "semantic discovery supports graph enrichment");
     const hydrated = await service.retrieve({ canonicalIds: [alpha.id], includeEvidence: true, includeObservations: true, includeSources: true, evidencePerIdentity: 2, observationsPerIdentity: 3, sourcesPerIdentity: 2, contextBudget: 100 });

@@ -86,8 +86,16 @@ async function main(): Promise<void> {
     const ranked = await vectors.search(vector([0, 1]), { model: "fixture-semantic", modelVersion: "v1", limit: 3 });
     assert(ranked[0]?.record.canonicalId === alpha.id && ranked[1]?.record.canonicalId === beta.id, "pgvector cosine search ranks similar vectors");
     assert(new Set(ranked.slice(0, 2).map((hit) => hit.record.canonicalId)).size === 2, "similar vectors do not merge canonical identities");
+    const globalId = randomUUID();
+    await vectors.upsert(make(globalId, source.id, vector([0, 0.95]), { entityType: "source", workspaceId: null }));
     const filtered = await vectors.search(vector([0, 1]), { model: "fixture-semantic", modelVersion: "v1", canonicalIds: [beta.id], entityTypes: ["idea"], workspaceId: "workspace-a", metadata: { language: "en" } });
     assert(filtered.length === 1 && filtered[0].record.canonicalId === beta.id, "canonical and metadata filters execute in vector search");
+    const namedWorkspace = await vectors.search(vector([0, 1]), { model: "fixture-semantic", modelVersion: "v1", workspaceId: "workspace-a", limit: 10 });
+    assert(namedWorkspace.some((hit) => hit.record.id === globalId) && !namedWorkspace.some((hit) => hit.record.id === gammaId), "named workspace includes global vectors and excludes another workspace");
+    const explicitGlobal = await vectors.search(vector([0, 1]), { model: "fixture-semantic", modelVersion: "v1", workspaceId: null, limit: 10 });
+    assert(explicitGlobal.length === 1 && explicitGlobal[0].record.id === globalId, "explicit null workspace selects only global vectors");
+    const unscoped = await vectors.search(vector([0, 1]), { model: "fixture-semantic", modelVersion: "v1", limit: 10 });
+    assert(unscoped.some((hit) => hit.record.id === gammaId), "undefined workspace applies no vector workspace filter");
     const sourceFiltered = await vectors.search(vector([0, 1]), { model: "fixture-semantic", modelVersion: "v1", sourceIds: [source.id], chunkIds: [chunk.id] });
     assert(sourceFiltered.length === 1 && sourceFiltered[0].record.id === alphaId, "source/chunk candidate filters work");
 

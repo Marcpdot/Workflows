@@ -139,7 +139,9 @@ export class PostgresVectorRepository implements VectorRepository {
     const params: unknown[] = [embedding, model];
     const add = (sql: string, value: unknown) => { params.push(value); clauses.push(sql.replace("?", `$${params.length}`)); };
     add("embedding_model_version = ?", modelVersion);
-    if (options.workspaceId !== undefined) options.workspaceId === null ? clauses.push("workspace_id IS NULL") : add("workspace_id = ?", options.workspaceId);
+    if (options.workspaceId !== undefined) options.workspaceId === null
+      ? clauses.push("workspace_id IS NULL")
+      : add("(workspace_id = ? OR workspace_id IS NULL)", options.workspaceId);
     if (options.canonicalIds?.length) add("canonical_id = ANY(?::uuid[])", options.canonicalIds);
     if (options.sourceIds?.length) add("source_id = ANY(?::uuid[])", options.sourceIds);
     if (options.chunkIds?.length) add("chunk_id = ANY(?::uuid[])", options.chunkIds);
