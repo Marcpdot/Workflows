@@ -244,7 +244,8 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
       else if (current.kind === "evidence") await this.materializeEvidence(client, payload, current.eventId);
       else if (current.kind === "observation") await this.materializeObservation(client, payload, current.eventId);
       else if (current.kind === "merge") await this.mergeNodesWith(client, { fromId: requiredString(payload.fromId, "merge fromId"), intoId: requiredString(payload.intoId, "merge intoId") });
-      else await this.supersedeClaimWith(client, { oldClaimId: requiredString(payload.oldClaimId, "supersede oldClaimId"), newClaimId: requiredString(payload.newClaimId, "supersede newClaimId"), markOldDisputed: payload.markOldDisputed !== false });
+      else if (current.kind === "supersede") await this.supersedeClaimWith(client, { oldClaimId: requiredString(payload.oldClaimId, "supersede oldClaimId"), newClaimId: requiredString(payload.newClaimId, "supersede newClaimId"), markOldDisputed: payload.markOldDisputed !== false });
+      else throw new Error(`acceptProposal: unsupported proposal kind ${String(current.kind)}`);
       await client.query("UPDATE knowledge_proposals SET status = 'accepted', resolved_at = now() WHERE id = $1", [id]);
       await client.query("COMMIT");
     } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }

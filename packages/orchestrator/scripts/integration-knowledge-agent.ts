@@ -3,7 +3,8 @@ import {
   createKnowledgeStore, createNeo4jGraphRepository, createPostgresVectorRepository,
   KNOWLEDGE_VECTOR_DIMENSION, rebuildGraphProjection, resolvePostgresKnowledgeConfig,
   type GraphRepository, type KnowledgeAgentAuditEvent, type KnowledgeAgentDecision,
-  type KnowledgeAgentModelAdapter, type KnowledgeAgentModelInput, type SemanticVectorRecord,
+  type KnowledgeAgentModelAdapter, type KnowledgeAgentModelInput, type KnowledgeProposal,
+  type SemanticVectorRecord,
 } from "@workflows/knowledge";
 import { randomUUID } from "node:crypto";
 import { startKnowledgeNeo4jTest } from "./knowledge-neo4j-test-runtime.js";
@@ -62,6 +63,12 @@ async function main() {
     assert(audit.some((e) => e.phase === "start") && audit.some((e) => e.phase === "tool" && e.canonicalIds?.length) && audit.some((e) => e.phase === "finish"), "audit records run/mode, tools, canonical IDs and outcome without prompts");
     await canonical.acceptProposal(mergeProposal.id); assert((await canonical.getNode(sameA.id))?.status === "rejected", "separate approval executes a pending merge transactionally");
     await canonical.acceptProposal(supersede.result.proposalIds[0]); assert((await canonical.getNode(claimA.id))?.status === "disputed", "separate approval executes pending supersession");
+    await pool.query("ALTER TABLE knowledge_proposals DROP CONSTRAINT knowledge_proposals_kind_check");
+    const unknown = (await canonical.addProposals(event.id, [{ kind: "unknown" as KnowledgeProposal["kind"], payload: { oldClaimId: claimA.id, newClaimId: claimB.id } }]))[0];
+    let unknownRejected = false;
+    try { await canonical.acceptProposal(unknown.id); } catch (error) { unknownRejected = error instanceof Error && error.message.includes("unsupported proposal kind unknown"); }
+    assert(unknownRejected, "unknown proposal kinds fail closed instead of dispatching to supersession");
+    assert((await canonical.listProposals({ status: "pending" })).some((proposal) => proposal.id === unknown.id), "failed unknown proposal remains pending after rollback");
     console.log("Knowledge Agent controlled navigation/curation checks passed.");
   } finally { await graph.close(); await vectors.close(); await pool.end(); await neo4jRuntime.dispose(); await postgresRuntime.dispose(); }
 }

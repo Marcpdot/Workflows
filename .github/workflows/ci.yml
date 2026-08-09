@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: packages/orchestrator
+    env:
+      KNOWLEDGE_DOCKER_EXE: docker
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/*/package-lock.json
+
+      - name: Install dependencies
+        working-directory: .
+        run: |
+          for lockfile in packages/*/package-lock.json; do
+            package_dir="$(dirname "$lockfile")"
+            echo "Installing $package_dir"
+            npm ci --prefix "$package_dir"
+          done
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Start knowledge infrastructure
+        working-directory: .
+        run: docker compose -f compose.knowledge.yml up --detach --build --wait
+
+      - name: Run smoke tests
+        run: |
+          for test in scripts/smoke-*.ts; do
+            echo "Running $test"
+            npx tsx "$test"
+          done
+
+      - name: Run PostgreSQL integration test
+        run: npm run knowledge:test:postgres
+
+      - name: Run canonical integration test
+        run: npm run knowledge:test:canonical
+
+      - name: Run vector integration test
+        run: npm run knowledge:test:vector
+
+      - name: Run graph integration test
+        run: npm run knowledge:test:graph
+
+      - name: Run hybrid retrieval integration test
+        run: npm run knowledge:test:hybrid
+
+      - name: Run Knowledge Agent integration test
+        run: npm run knowledge:test:agent
+
+      - name: Stop knowledge infrastructure
+        if: always()
+        working-directory: .
+        run: |
+          docker ps --all --quiet --filter name=workflows-neo4j- | xargs --no-run-if-empty docker rm --force
+          docker compose -f compose.knowledge.yml down --volumes --remove-orphans
