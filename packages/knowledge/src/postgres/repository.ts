@@ -149,6 +149,38 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     }
   }
 
+  async *scanAcceptedTopology(options: { pageSize?: number } = {}): AsyncIterable<{ nodes?: readonly KnowledgeNode[]; edges?: readonly KnowledgeEdge[] }> {
+    const pageSize = Math.min(Math.max(Math.floor(options.pageSize ?? 1000), 1), 10_000);
+    const client = await this.pool.connect(); let completed = false;
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      let afterNodeId: string | null = null;
+      while (true) {
+        const rows: QueryResultRow[] = afterNodeId
+          ? (await client.query("SELECT * FROM knowledge_nodes WHERE status = 'accepted' AND id > $1 ORDER BY id ASC LIMIT $2", [afterNodeId, pageSize])).rows
+          : (await client.query("SELECT * FROM knowledge_nodes WHERE status = 'accepted' ORDER BY id ASC LIMIT $1", [pageSize])).rows;
+        if (!rows.length) break;
+        const nodes: KnowledgeNode[] = rows.map(node); yield { nodes };
+        afterNodeId = nodes[nodes.length - 1]!.id; if (nodes.length < pageSize) break;
+      }
+      let afterEdgeId: string | null = null;
+      while (true) {
+        const rows: QueryResultRow[] = afterEdgeId
+          ? (await client.query("SELECT * FROM knowledge_edges WHERE status = 'accepted' AND id > $1 ORDER BY id ASC LIMIT $2", [afterEdgeId, pageSize])).rows
+          : (await client.query("SELECT * FROM knowledge_edges WHERE status = 'accepted' ORDER BY id ASC LIMIT $1", [pageSize])).rows;
+        if (!rows.length) break;
+        const edges: KnowledgeEdge[] = rows.map(edge); yield { edges };
+        afterEdgeId = edges[edges.length - 1]!.id; if (edges.length < pageSize) break;
+      }
+      await client.query("COMMIT"); completed = true;
+    } finally { if (!completed) await client.query("ROLLBACK"); client.release(); }
+  }
+
+  async getEdge(id: string): Promise<KnowledgeEdge | null> {
+    const result = await this.pool.query("SELECT * FROM knowledge_edges WHERE id = $1", [id]);
+    return result.rows[0] ? edge(result.rows[0]) : null;
+  }
+
   async createEvent(input: { sourceType: KnowledgeEvent["sourceType"]; sourceRef: string; model?: string; inputHash?: string }): Promise<KnowledgeEvent> {
     if (!input.sourceRef?.trim()) throw new Error("createEvent: sourceRef is required");
     const result = await this.pool.query(
@@ -360,8 +392,14 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
   }
 
   async unlinkFromProject(input: { nodeId: string; projectId: string }): Promise<boolean> {
-    const result = await this.pool.query("DELETE FROM knowledge_edges WHERE from_node_id = $1 AND to_node_id = $2 AND relation = ANY($3::text[])", [input.nodeId, input.projectId, PROJECT_RELATIONS]);
-    return (result.rowCount ?? 0) > 0;
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const removed = await client.query<{ id: string }>("DELETE FROM knowledge_edges WHERE from_node_id = $1 AND to_node_id = $2 AND relation = ANY($3::text[]) RETURNING id::text", [input.nodeId, input.projectId, PROJECT_RELATIONS]);
+      for (const row of removed.rows) await this.queueProjection(client, row.id, "graph", "delete");
+      await client.query("COMMIT"); return (removed.rowCount ?? 0) > 0;
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
   }
 
   async getProjectStatus(input: { projectId?: string; label?: string; workspaceId?: string | null; hops?: 1 | 2 }): Promise<ProjectStatus> {

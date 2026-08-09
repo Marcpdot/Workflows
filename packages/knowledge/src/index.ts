@@ -66,6 +66,8 @@ export {
   PostgresVectorRepository,
   type PostgresVectorRepositoryConfig,
 } from "./postgres/vectorRepository.js";
+export { resolveNeo4jGraphConfig, type Neo4jGraphConfig } from "./graph/config.js";
+export { createNeo4jGraphRepository, Neo4jGraphRepository } from "./graph/neo4jRepository.js";
 export {
   EXTRACTION_SCHEMA,
   extractionToProposalItems,
@@ -147,6 +149,12 @@ export {
   type VectorOutboxResult,
   type VectorProjectionResult,
 } from "./semanticProjection.js";
+export {
+  processGraphProjectionOutbox,
+  rebuildGraphProjection,
+  type GraphOutboxResult,
+  type GraphProjectionResult,
+} from "./graphProjection.js";
 export {
   STRUCTURED_CAPTURE_SCHEMA,
   extractStructuredConversation,

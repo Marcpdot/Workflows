@@ -27,6 +27,11 @@ export interface CanonicalKnowledgeRepository extends KnowledgeStore {
   healthCheck(): Promise<RepositoryHealth>;
   /** Repeatable-read, keyset-paginated traversal of the complete accepted state. */
   scanAcceptedNodes(options?: { pageSize?: number }): AsyncIterable<readonly KnowledgeNode[]>;
+  scanAcceptedTopology(options?: { pageSize?: number }): AsyncIterable<{
+    nodes?: readonly KnowledgeNode[];
+    edges?: readonly KnowledgeEdge[];
+  }>;
+  getEdge(id: string): Promise<KnowledgeEdge | null>;
 }
 
 export interface GraphTraversalOptions {
@@ -50,6 +55,10 @@ export interface GraphRepository {
     nodes: KnowledgeNode[];
     edges: KnowledgeEdge[];
   }): Promise<void>;
+  upsertNode(node: KnowledgeNode): Promise<void>;
+  upsertEdge(input: { edge: KnowledgeEdge; from: KnowledgeNode; to: KnowledgeNode }): Promise<void>;
+  deleteCanonicalId(canonicalId: string): Promise<void>;
+  getNode(canonicalNodeId: string): Promise<KnowledgeNode | null>;
   expand(
     canonicalNodeId: string,
     options?: GraphTraversalOptions

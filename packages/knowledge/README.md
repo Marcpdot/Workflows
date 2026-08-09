@@ -51,6 +51,28 @@ jobs, serializes workers with an advisory lock, and leaves failed jobs retryable
 Embedding generation remains behind `SemanticEmbeddingProvider`; the repository
 never invents embeddings and similarity results never merge identities.
 
+## Graph projection
+
+`Neo4jGraphRepository` is the dedicated, rebuildable topology projection.
+Canonical nodes become `:CanonicalNode` nodes keyed by PostgreSQL UUIDs;
+canonical edges become directed `:CANONICAL_RELATION` relationships keyed by
+their PostgreSQL edge UUIDs with exact canonical `relation` values. The stable
+shape supports future type/relation vocabulary without a second graph ontology.
+Only accepted nodes and edges with accepted endpoints are projected, and valid
+self-relations are retained.
+
+`rebuildGraphProjection()` scans complete accepted topology through a keyset-
+paginated repeatable-read PostgreSQL snapshot and replaces Neo4j topology in one
+Neo4j transaction. `processGraphProjectionOutbox()` handles node/edge upsert,
+delete and rebuild with advisory-lock serialization and retryable errors.
+Expansion, relation filtering and directed shortest paths execute in Cypher.
+
+Local defaults from `compose.knowledge.yml` are Bolt
+`bolt://127.0.0.1:57687` and HTTP `http://127.0.0.1:57474`, configurable through
+`KNOWLEDGE_NEO4J_BOLT_PORT`, `KNOWLEDGE_NEO4J_HTTP_PORT`,
+`KNOWLEDGE_NEO4J_USER`, `KNOWLEDGE_NEO4J_PASSWORD` and
+`KNOWLEDGE_NEO4J_DATABASE`.
+
 ## Identity
 
 Every independently referable thing may have one stable canonical UUID. A label,
@@ -77,6 +99,8 @@ From `packages/orchestrator`:
 npm run typecheck
 npm run knowledge:test:postgres
 npm run knowledge:test:canonical
+npm run knowledge:test:vector
+npm run knowledge:test:graph
 ```
 
 Knowledge smoke scripts create isolated PostgreSQL databases and clean them up.

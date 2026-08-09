@@ -29,6 +29,10 @@ contracts. PostgreSQL/PostGIS is the sole canonical knowledge runtime.
   returned candidates never establish or merge canonical identity.
 - Embedding generation stays behind an explicit provider. Never invent vectors
   or let projection failure invalidate a canonical transaction.
+- Neo4j is derived topology only. Preserve canonical node/edge UUIDs, exact
+  direction/relation values, accepted-only visibility and valid self-relations.
+- Run expansion/path logic in Cypher. Graph proximity never establishes
+  identity, and graph failure never participates in a canonical transaction.
 - Keep PostgreSQL-specific code inside adapters and the orchestrator thin.
 - Expose controlled domain/tools contracts, not unrestricted SQL access.
 

@@ -186,6 +186,22 @@ training phase and gives strong query-time recall/latency for the local semantic
 index. Fixed dimension keeps the ANN operator class indexable and makes model
 incompatibility fail explicitly; dimension changes use forward migrations.
 
+The dedicated topology projection uses Neo4j 5 Community behind the
+storage-independent `GraphRepository`. Neo4j is appropriate because
+variable-depth expansion and directed shortest paths execute natively in
+Cypher; PostgreSQL remains authoritative and no graph transaction participates
+in a canonical commit. Graph nodes and relationships retain canonical node and
+edge UUIDs. A stable `CanonicalNode` / `CANONICAL_RELATION` shape stores exact
+canonical type/relation values as properties, so future vocabulary and
+self-relations require no second ontology or graph-schema redesign.
+
+Full reconciliation reads all accepted nodes and edges from one keyset-
+paginated repeatable-read PostgreSQL snapshot and replaces Neo4j topology in one
+Neo4j transaction. Pending/rejected records and edges with non-accepted
+endpoints are excluded. Incremental outbox jobs support node/edge upsert, delete
+and rebuild; merge uses rebuild when local rewiring is unsafe. Failures remain
+retryable and never invalidate canonical PostgreSQL writes.
+
 **Reason:** The shell proved the domain, but SQLite tables and application-side
 indexes do not provide the integrity, spatial capability, traversal ceiling, or
 indexed semantic retrieval required for a knowledge system expected to outgrow
