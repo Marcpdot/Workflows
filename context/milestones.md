@@ -70,8 +70,6 @@ Semantic world model beyond `MemoryFact` text. Same shell-first rule: each row i
 
 **Out of early roadmap (unchanged):** Neo4j as hard dependency, fully autonomous permanent writes, 3D Stark UI, full Workflows self-model on day one.
 
-**Decision log (why of delivery):** [knowledge.md](knowledge.md) § “Decisions delivered with M11–M18 shells”.
-
 ## Implementation status (shells)
 
 **Status:** active  
@@ -99,6 +97,51 @@ Semantic world model beyond `MemoryFact` text. Same shell-first rule: each row i
 Vertical **M0–M18** shells are in place (M18 is interface-only and default off). Continuous capture is the next product surface on top of the knowledge track (propose→accept unchanged).
 
 Thin spots accepted under shell-first (e.g. heuristic score fusion, static UI, linear vector scan, repair-not-constrained-decoding; conversation extract still offline-heuristic until model path is daily-used) are documented per topic.
+
+## Next phase: Continuous Cognitive Capture
+
+**Status:** active — next product/system phase  
+**Evidence:** confirmed  
+**Source:** design decision 2026-08-09 after Knowledge Infrastructure v2  
+**Revisit when:** sustained real use shows the interaction/capture loop should be decomposed differently
+
+**Decision:** The next phase of Workflows is **Continuous Cognitive Capture**.
+
+The goal is to make the first complete, continuously useful human↔system loop real: natural interaction and project work should become structured, persistent, provenance-preserving knowledge that is integrated into the world model and reused to improve later learning, reasoning, and project execution.
+
+Core loop:
+
+```text
+interact
+  → capture
+  → structure
+  → integrate
+  → retrieve
+  → augment the next interaction
+  → repeat
+```
+
+Text and voice are interaction modalities over the same system rather than separate products. Conversations are not only transient model context: when they contain durable knowledge, observations, decisions, project state, evidence, or useful relationships, the system should be able to turn that activity into reviewable structured knowledge and connect it to existing canonical identities.
+
+The intended compounding effect is two-way: as the human learns and builds, the system's world model improves; as the world model improves, the system can supply more relevant context, connections, prior work, evidence, and project understanding back into future learning and building.
+
+This phase is **not** defined as “build a frontend” or “add chat memory”. The interaction surface is part of the capability, but the product objective is the complete cognitive loop across interaction, curation, persistent knowledge, retrieval, and reuse. A cognitive workspace should make that loop observable and usable, including what the system captured, connected, retrieved, or proposed.
+
+The phase should build on the current Knowledge Infrastructure v2 boundaries: canonical PostgreSQL/PostGIS truth, rebuildable graph/vector projections, bounded hybrid retrieval, and proposal/approval semantics. It should exercise those components in real use before another major abstract iteration of the orchestrator/system-intelligence layer.
+
+**Initial direction, deliberately not frozen:**
+
+- natural text interaction first-class; voice feeds the same interaction/capture path
+- low-friction continuous capture from conversations and project activity
+- structured curation into canonical identities, claims, observations, evidence, relations, projects, and provenance
+- dynamic retrieval of relevant prior knowledge into later interactions
+- a cognitive workspace for conversation, knowledge inspection, project context, and curation/review
+- enough visibility to observe and debug how the system learns from use
+- later attention/reflection/system-intelligence layers should be driven by observed usage rather than designed entirely in the abstract
+
+**Not decided by this phase declaration:** exact frontend layout, final cognitive object vocabulary, degree of future curation autonomy, voice UX, agent decomposition, attention model, or richer world-model visualizations. Those should be iterated as the complete loop is used.
+
+**Reason:** The backend now has enough durable structure to support a real compounding interaction loop. Building more orchestration intelligence before the system has functioning user-facing cognitive workflows would optimize abstractions without enough behavioral evidence. Conversely, building only a thin UI shell would underuse the available architecture. Continuous Cognitive Capture provides a high-ceiling product target while allowing implementation details to evolve through real use.
 
 ## Milestone 3 privacy cut
 
