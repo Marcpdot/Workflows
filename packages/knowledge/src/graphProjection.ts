@@ -32,7 +32,7 @@ export async function processGraphProjectionOutbox(input: {
     const lock = await client.query<{ locked: boolean }>("SELECT pg_try_advisory_lock($1) AS locked", [lockId]);
     locked = lock.rows[0]?.locked === true; if (!locked) return { processed: 0, failed: 0 };
     const jobs = await client.query<{ id: string; canonical_id: string; operation: "upsert" | "delete" | "rebuild"; sequence_id: string }>(
-      `SELECT * FROM (SELECT DISTINCT ON (canonical_id) id::text, canonical_id::text, operation, sequence_id::text, available_at
+      `SELECT * FROM (SELECT DISTINCT ON (canonical_id) id::text, canonical_id::text, operation, sequence_id, available_at
        FROM knowledge_projection_outbox WHERE projection = 'graph' AND processed_at IS NULL
        ORDER BY canonical_id, sequence_id DESC) latest
        WHERE available_at <= now() ORDER BY sequence_id ASC LIMIT $1`,

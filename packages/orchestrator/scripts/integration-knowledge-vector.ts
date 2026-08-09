@@ -127,7 +127,7 @@ async function main(): Promise<void> {
       [randomUUID(), beta.id]
     );
     const deleteResult = await processVectorProjectionOutbox({ pool, canonical, vector: vectors, embedder: fixtureEmbedder(), limit: 100 });
-    assert(deleteResult.processed > 0 && await vectors.get(semanticVectorRecordId(beta.id, "fixture-semantic", "v1")) === null, "vector outbox delete removes derived canonical projection");
+    const deletedVector = await vectors.get(semanticVectorRecordId(beta.id, "fixture-semantic", "v1")); assert(deleteResult.processed > 0, `vector outbox delete job processes (processed=${deleteResult.processed}, failed=${deleteResult.failed})`); assert(deletedVector === null, "vector outbox delete removes derived canonical projection");
 
     const outboxNode = await acceptedNode(canonical, event.id, "future_type", "Outbox projected identity");
     const outboxResult = await processVectorProjectionOutbox({ pool, canonical, vector: vectors, embedder: fixtureEmbedder(), limit: 100 });
