@@ -187,8 +187,8 @@ export interface KnowledgeStore {
 
   getNeighborhood(
     nodeId: string,
-    options?: { hops?: 1 | 2; status?: KnowledgeStatus }
-  ): Promise<{ nodes: KnowledgeNode[]; edges: KnowledgeEdge[] }>;
+    options?: { hops?: 1 | 2; status?: KnowledgeStatus; nodeLimit?: number; edgeLimit?: number }
+  ): Promise<{ nodes: KnowledgeNode[]; edges: KnowledgeEdge[]; truncated: boolean; complete: boolean; truncation: { nodes: boolean; edges: boolean }; limits: { nodes: number; edges: number } }>;
 
   /** Bulk/induced subgraph for network clients. Defaults to accepted nodes, capped. */
   getSubgraph(input?: {

@@ -44,6 +44,10 @@ export interface NeighborhoodRead {
   edges: KnowledgeEdgeDto[];
   nodeCount: number;
   edgeCount: number;
+  truncated: boolean;
+  complete: boolean;
+  truncation: { nodes: boolean; edges: boolean };
+  limits: { nodes: number; edges: number };
 }
 
 export interface SearchRead {
@@ -168,12 +172,14 @@ export function createKnowledgeReader(store: KnowledgeStore) {
 
     async getNeighborhood(
       nodeId: string,
-      options?: { hops?: 1 | 2; status?: KnowledgeStatus }
+      options?: { hops?: 1 | 2; status?: KnowledgeStatus; nodeLimit?: number; edgeLimit?: number }
     ): Promise<NeighborhoodRead> {
       const hops = options?.hops === 2 ? 2 : 1;
       const neigh = await store.getNeighborhood(nodeId, {
         hops: hops as 1 | 2,
         status: options?.status ?? "accepted",
+        nodeLimit: options?.nodeLimit,
+        edgeLimit: options?.edgeLimit,
       });
       return {
         rootId: nodeId,
@@ -182,6 +188,10 @@ export function createKnowledgeReader(store: KnowledgeStore) {
         edges: neigh.edges.map(toEdgeDto),
         nodeCount: neigh.nodes.length,
         edgeCount: neigh.edges.length,
+        truncated: neigh.truncated,
+        complete: neigh.complete,
+        truncation: neigh.truncation,
+        limits: neigh.limits,
       };
     },
 

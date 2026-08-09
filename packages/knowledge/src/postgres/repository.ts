@@ -317,31 +317,42 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     return result.rows.map(node);
   }
 
-  private async edgesFor(db: Queryable, ids: string[], status: KnowledgeStatus): Promise<KnowledgeEdge[]> {
+  private async edgesFor(db: Queryable, ids: string[], status: KnowledgeStatus, limit?: number): Promise<KnowledgeEdge[]> {
     if (!ids.length) return [];
     const result = await db.query(
-      "SELECT * FROM knowledge_edges WHERE status = $1 AND (from_node_id = ANY($2::uuid[]) OR to_node_id = ANY($2::uuid[])) ORDER BY created_at ASC",
-      [status, ids]
+      `SELECT * FROM knowledge_edges WHERE status = $1 AND (from_node_id = ANY($2::uuid[]) OR to_node_id = ANY($2::uuid[])) ORDER BY created_at ASC${limit == null ? "" : " LIMIT $3"}`,
+      limit == null ? [status, ids] : [status, ids, limit]
     );
     return result.rows.map(edge);
   }
 
-  async getNeighborhood(nodeId: string, options?: { hops?: 1 | 2; status?: KnowledgeStatus }): Promise<{ nodes: KnowledgeNode[]; edges: KnowledgeEdge[] }> {
-    const root = await this.getNode(nodeId); if (!root) return { nodes: [], edges: [] };
+  async getNeighborhood(nodeId: string, options?: { hops?: 1 | 2; status?: KnowledgeStatus; nodeLimit?: number; edgeLimit?: number }): Promise<{ nodes: KnowledgeNode[]; edges: KnowledgeEdge[]; truncated: boolean; complete: boolean; truncation: { nodes: boolean; edges: boolean }; limits: { nodes: number; edges: number } }> {
+    const nodeLimit = Math.min(Math.max(Math.floor(options?.nodeLimit ?? 250), 1), 1000); const edgeLimit = Math.min(Math.max(Math.floor(options?.edgeLimit ?? 500), 0), 2000);
+    const empty = { nodes: [], edges: [], truncated: false, complete: true, truncation: { nodes: false, edges: false }, limits: { nodes: nodeLimit, edges: edgeLimit } };
+    const root = await this.getNode(nodeId); if (!root) return empty;
     const status = options?.status ?? "accepted"; const hops = options?.hops === 2 ? 2 : 1;
-    const nodes = new Map([[root.id, root]]); const edges = new Map<string, KnowledgeEdge>(); let frontier = [root.id];
+    const nodes = new Map([[root.id, root]]); const edges = new Map<string, KnowledgeEdge>(); let frontier = [root.id]; let nodeTruncated = false; let edgeTruncated = false;
     for (let i = 0; i < hops; i++) {
-      const found = await this.edgesFor(this.pool, frontier, status); const next: string[] = [];
+      const remainingEdges = edgeLimit - edges.size; const remainingNodes = nodeLimit - nodes.size;
+      if (remainingEdges <= 0) { edgeTruncated = frontier.length > 0; break; }
+      const sqlLimit = Math.min(remainingEdges + 1, Math.max(1, remainingNodes * 2 + 1));
+      const found = await this.edgesFor(this.pool, frontier, status, sqlLimit); const next: string[] = [];
+      if (found.length > remainingEdges) edgeTruncated = true;
       for (const item of found) {
-        edges.set(item.id, item);
+        if (edges.size >= edgeLimit) { edgeTruncated = true; break; }
+        const endpointIds = [item.fromNodeId, item.toNodeId]; const missingIds = endpointIds.filter((id) => !nodes.has(id));
+        if (nodes.size + missingIds.length > nodeLimit) { nodeTruncated = true; continue; }
         for (const id of [item.fromNodeId, item.toNodeId]) if (!nodes.has(id)) {
           const foundNode = await this.getNode(id);
           if (foundNode && foundNode.status === status) { nodes.set(id, foundNode); next.push(id); }
         }
+        if (nodes.has(item.fromNodeId) && nodes.has(item.toNodeId)) edges.set(item.id, item);
       }
       frontier = next;
+      if (nodeTruncated || edgeTruncated) break;
     }
-    return { nodes: [...nodes.values()], edges: [...edges.values()] };
+    const truncated = nodeTruncated || edgeTruncated;
+    return { nodes: [...nodes.values()], edges: [...edges.values()], truncated, complete: !truncated, truncation: { nodes: nodeTruncated, edges: edgeTruncated }, limits: { nodes: nodeLimit, edges: edgeLimit } };
   }
 
   async getSubgraph(input?: { rootId?: string; nodeIds?: string[]; hops?: 1 | 2; status?: KnowledgeStatus; workspaceId?: string | null; limit?: number }): Promise<{ nodes: KnowledgeNode[]; edges: KnowledgeEdge[]; truncated: boolean }> {
