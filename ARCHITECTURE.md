@@ -32,6 +32,7 @@ Knowledge Infrastructure v2 skiller domenet fra lagringen:
 - Alle lag bruker samme canonical UUID-er; graph/vector er aldri konkurrerende truth stores.
 - Canonical UUID identifiserer enhver selvstendig refererbar ting; label, workspace og provenance er resolution/context-signaler, ikke identity keys.
 - `@workflows/knowledge` eier repository/service-kontraktene og domenereglene. Orchestrator er fortsatt tynn wiring.
+- En eksplisitt **Knowledge Agent** bruker kontrollerte domeneverktøy over hybrid retrieval: Navigator leser/navigerer, mens Curator inspiserer og lager pending proposals. Modellen får aldri rå SQL/Cypher eller egen approval-rett.
 
 PostgreSQL er aktiv canonical runtime; proposal/approval, provenance,
 workspace-isolasjon, identity/merge og contradiction/supersession beholdes gjennom cutover.

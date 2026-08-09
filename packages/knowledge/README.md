@@ -99,6 +99,28 @@ scope never silently widens to global semantic search. Hard limits cover results
 hops, edges, semantic candidates, provenance rows, sources and a deterministic
 context-unit budget.
 
+## Knowledge Agent
+
+`KnowledgeAgentService` is the bounded cognitive interface over retrieval and
+canonical domain contracts. Navigator tools resolve identities, run hybrid
+retrieval, traverse graph paths, and inspect canonical provenance. Curator tools
+inspect possible duplicates/conflicts/structure and create pending entity,
+claim, relation, evidence, observation, merge, or supersession proposals.
+Their allowlists and policies remain separate even while they share a runtime.
+
+The model boundary is `KnowledgeAgentModelAdapter`; storage has no model-vendor
+dependency. Runs cap tool calls, context characters, graph hops, results, and
+proposal count. Structured audit events record run ID, mode, tools, canonical
+IDs, retrieval degradation, proposal IDs, counts, and outcome without prompts
+or full content by default. No agent tool exposes SQL, Cypher, filesystem,
+proposal acceptance, or direct merge/supersede operations.
+
+Agent curation never commits permanent truth. Merge and supersession are
+first-class pending proposal kinds; only separate canonical approval executes
+them transactionally. Similarity, label equality, graph proximity, and
+retrieval confidence support inspection, never identity collapse or truth
+arbitration.
+
 ## Identity
 
 Every independently referable thing may have one stable canonical UUID. A label,
@@ -128,6 +150,7 @@ npm run knowledge:test:canonical
 npm run knowledge:test:vector
 npm run knowledge:test:graph
 npm run knowledge:test:hybrid
+npm run knowledge:test:agent
 ```
 
 Knowledge smoke scripts create isolated PostgreSQL databases and clean them up.

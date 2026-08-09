@@ -168,6 +168,25 @@ export {
   type RetrievalStrategyState,
 } from "./hybridRetrieval.js";
 export {
+  createKnowledgeAgent,
+  KnowledgeAgentService,
+  KNOWLEDGE_CURATOR_POLICY,
+  KNOWLEDGE_NAVIGATOR_POLICY,
+  type KnowledgeAgentAuditEvent,
+  type KnowledgeAgentAuditor,
+  type KnowledgeAgentDecision,
+  type KnowledgeAgentDependencies,
+  type KnowledgeAgentLimits,
+  type KnowledgeAgentMode,
+  type KnowledgeAgentModelAdapter,
+  type KnowledgeAgentModelInput,
+  type KnowledgeAgentOutcome,
+  type KnowledgeAgentRunRequest,
+  type KnowledgeAgentRunResult,
+  type KnowledgeAgentToolResult,
+  type KnowledgeAgentToolSchema,
+} from "./knowledgeAgent.js";
+export {
   STRUCTURED_CAPTURE_SCHEMA,
   extractStructuredConversation,
   normalizeStructuredCapture,

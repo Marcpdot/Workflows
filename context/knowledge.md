@@ -223,8 +223,24 @@ Results retain discovery origins, canonical edges, evidence, observations,
 source nodes and source events within hard per-layer and context-unit budgets.
 Strategy metadata reports ran/skipped/unavailable/degraded. Missing projections
 degrade independently, but failure of a requested narrowing scope never widens
-semantic retrieval silently. This is substrate for a later Knowledge Agent; it
-contains no LLM planning or autonomous strategy selection.
+semantic retrieval silently. The retrieval service itself contains no LLM
+planning or autonomous strategy selection.
+
+The explicit Knowledge Agent now consumes that deterministic substrate through
+controlled domain tools. Its Navigator capability resolves, retrieves,
+traverses and inspects provenance without mutation. Its Curator capability
+inspects duplicate/conflict/structure candidates and creates pending proposals;
+it has no accept tool and cannot directly merge, supersede, or arbitrate truth.
+Merge and supersession are durable proposal kinds whose execution occurs only
+through the separate canonical approval boundary.
+
+Model reasoning is behind a vendor-independent adapter and receives bounded,
+structured tool results rather than repositories or raw SQL/Cypher. Hard run
+limits cover tool calls, context characters, graph hops, result count and
+proposal count. Privacy-preserving audit events retain run/mode, tool names,
+canonical IDs, strategy degradation, proposal IDs, counts and outcome without
+logging full prompt/content by default. Navigator and Curator share an initial
+runtime but keep separate policy and tool allowlists so they may split later.
 
 **Reason:** The shell proved the domain, but SQLite tables and application-side
 indexes do not provide the integrity, spatial capability, traversal ceiling, or

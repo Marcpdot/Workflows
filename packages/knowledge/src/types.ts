@@ -92,7 +92,7 @@ export interface KnowledgeEvent {
 export interface KnowledgeProposal {
   id: string;
   eventId: string;
-  kind: "node" | "edge" | "evidence" | "observation";
+  kind: "node" | "edge" | "evidence" | "observation" | "merge" | "supersede";
   payload: Record<string, unknown>;
   status: "pending" | "accepted" | "rejected";
   createdAt: number;

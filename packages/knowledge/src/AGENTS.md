@@ -36,6 +36,10 @@ contracts. PostgreSQL/PostGIS is the sole canonical knowledge runtime.
 - Hybrid retrieval must canonical-hydrate every graph/vector candidate, report
   strategy degradation, enforce hard context bounds and never widen a failed
   requested scope silently. Keep agent planning outside this service.
+- Knowledge Agent models receive only controlled, allowlisted domain tools.
+  Navigator is read-only; Curator creates pending proposals but cannot accept,
+  merge, supersede or arbitrate truth directly. Every run is bounded and emits
+  privacy-preserving structured audit metadata.
 - Keep PostgreSQL-specific code inside adapters and the orchestrator thin.
 - Expose controlled domain/tools contracts, not unrestricted SQL access.
 
