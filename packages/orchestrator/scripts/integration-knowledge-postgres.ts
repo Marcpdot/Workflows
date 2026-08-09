@@ -101,14 +101,14 @@ async function main(): Promise<void> {
     );
     await testPool.query(
       `INSERT INTO knowledge_evidence
-         (claim_node_id, source_node_id, source_event_id, excerpt, stance)
+         (target_node_id, source_node_id, source_event_id, excerpt, stance)
        VALUES ($1, $2, $3, 'PostgreSQL integration evidence', 'supports')`,
       [claimA.rows[0].id, source.rows[0].id, event.rows[0].id]
     );
     const canonicalRead = await testPool.query<{ evidence_count: number }>(
       `SELECT count(e.id)::int AS evidence_count
        FROM knowledge_nodes n
-       JOIN knowledge_evidence e ON e.claim_node_id = n.id
+       JOIN knowledge_evidence e ON e.target_node_id = n.id
        WHERE n.id = $1 AND n.status = 'accepted'`,
       [claimA.rows[0].id]
     );

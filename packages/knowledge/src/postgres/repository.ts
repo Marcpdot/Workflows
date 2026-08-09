@@ -9,6 +9,8 @@ import type {
   KnowledgeEvidence,
   KnowledgeNode,
   KnowledgeNodeType,
+  KnowledgeObservation,
+  KnowledgeObservationKind,
   KnowledgeProposal,
   KnowledgeStatus,
   MergeNodesResult,
@@ -86,6 +88,14 @@ function alias(row: Record<string, unknown>): KnowledgeAlias {
     canonicalNodeId: String(row.canonical_node_id),
     createdAt: millis(row.created_at as Date),
   };
+}
+
+function evidence(row: Record<string, unknown>): KnowledgeEvidence {
+  return { id: String(row.id), targetNodeId: String(row.target_node_id), sourceNodeId: String(row.source_node_id), excerpt: row.excerpt == null ? undefined : String(row.excerpt), stance: row.stance as KnowledgeEvidence["stance"], confidence: row.confidence == null ? undefined : Number(row.confidence), createdAt: millis(row.created_at as Date) };
+}
+
+function observation(row: Record<string, unknown>): KnowledgeObservation {
+  return { id: String(row.id), targetNodeId: String(row.target_node_id), sourceEventId: row.source_event_id == null ? undefined : String(row.source_event_id), sourceNodeId: row.source_node_id == null ? undefined : String(row.source_node_id), kind: row.kind as KnowledgeObservationKind, observedAt: millis(row.observed_at as Date), metadata: (row.metadata ?? {}) as Record<string, unknown> };
 }
 
 export interface PostgresCanonicalRepositoryConfig extends PostgresKnowledgeConfig {
@@ -171,9 +181,10 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
       const current = proposal(result.rows[0]);
       if (current.status !== "pending") throw new Error(`acceptProposal: proposal ${id} is already ${current.status}`);
       const payload = { ...current.payload, ...edits };
-      if (current.kind === "node") await this.materializeNode(client, payload, current.eventId);
+      if (current.kind === "node") await this.materializeNode(client, payload, current.eventId, true);
       else if (current.kind === "edge") await this.materializeEdge(client, payload, current.eventId);
-      else await this.materializeEvidence(client, payload, current.eventId);
+      else if (current.kind === "evidence") await this.materializeEvidence(client, payload, current.eventId);
+      else await this.materializeObservation(client, payload, current.eventId);
       await client.query("UPDATE knowledge_proposals SET status = 'accepted', resolved_at = now() WHERE id = $1", [id]);
       await client.query("COMMIT");
     } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
@@ -189,6 +200,16 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
       if (!current.rows[0]) throw new Error(`rejectProposal: unknown id ${id}`);
       throw new Error(`rejectProposal: proposal ${id} is already ${current.rows[0].status}`);
     }
+  }
+
+  async listEvidence(targetNodeId: string): Promise<KnowledgeEvidence[]> {
+    const result = await this.pool.query("SELECT * FROM knowledge_evidence WHERE target_node_id = $1 ORDER BY created_at ASC", [targetNodeId]);
+    return result.rows.map(evidence);
+  }
+
+  async listObservations(targetNodeId: string): Promise<KnowledgeObservation[]> {
+    const result = await this.pool.query("SELECT * FROM knowledge_observations WHERE target_node_id = $1 ORDER BY observed_at ASC, id ASC", [targetNodeId]);
+    return result.rows.map(observation);
   }
 
   async getNode(id: string): Promise<KnowledgeNode | null> { return this.getNodeWith(this.pool, id); }
@@ -374,8 +395,10 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
           [mergeConflictIds]
         );
       }
-      const evidenceA = await client.query("UPDATE knowledge_evidence SET claim_node_id = $1 WHERE claim_node_id = $2", [into.id, from.id]);
+      const evidenceA = await client.query("UPDATE knowledge_evidence SET target_node_id = $1 WHERE target_node_id = $2", [into.id, from.id]);
       const evidenceB = await client.query("UPDATE knowledge_evidence SET source_node_id = $1 WHERE source_node_id = $2", [into.id, from.id]);
+      const observationsA = await client.query("UPDATE knowledge_observations SET target_node_id = $1 WHERE target_node_id = $2", [into.id, from.id]);
+      const observationsB = await client.query("UPDATE knowledge_observations SET source_node_id = $1 WHERE source_node_id = $2", [into.id, from.id]);
       const retarget = await client.query("UPDATE knowledge_aliases SET canonical_node_id = $1 WHERE canonical_node_id = $2", [into.id, from.id]);
       let aliasCreated = false; const normalized = normalizeLabel(from.label); const existing = normalized ? await this.getAlias(client, normalized) : null;
       if (normalized && !existing) { await client.query("INSERT INTO knowledge_aliases (id, alias_label, normalized_alias_label, canonical_node_id) VALUES ($1, $2, $2, $3)", [randomUUID(), normalized, into.id]); aliasCreated = true; }
@@ -386,7 +409,7 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
       await this.queueProjection(client, into.id, "vector", "upsert");
       await this.queueProjection(client, from.id, "vector", "delete");
       await client.query("COMMIT");
-      return { from: (await this.getNode(from.id))!, into: (await this.getNode(into.id))!, edgesRewired: (first.rowCount ?? 0) + (second.rowCount ?? 0), evidenceRewired: (evidenceA.rowCount ?? 0) + (evidenceB.rowCount ?? 0), aliasesRetargeted: retarget.rowCount ?? 0, aliasCreated };
+      return { from: (await this.getNode(from.id))!, into: (await this.getNode(into.id))!, edgesRewired: (first.rowCount ?? 0) + (second.rowCount ?? 0), evidenceRewired: (evidenceA.rowCount ?? 0) + (evidenceB.rowCount ?? 0), observationsRewired: (observationsA.rowCount ?? 0) + (observationsB.rowCount ?? 0), aliasesRetargeted: retarget.rowCount ?? 0, aliasCreated };
     } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
   }
 
@@ -452,16 +475,17 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
 
   private workspace(payload: Record<string, unknown>): string | null { return payload.workspaceId !== undefined ? payload.workspaceId as string | null : this.defaultWorkspaceId ?? null; }
 
-  private async materializeNode(db: Queryable, payload: Record<string, unknown>, eventId: string): Promise<KnowledgeNode> {
+  private async materializeNode(db: Queryable, payload: Record<string, unknown>, eventId: string, recordEncounter = false): Promise<KnowledgeNode> {
     const type = String(payload.type ?? "concept") as KnowledgeNodeType; const labelValue = String(payload.label ?? "").trim(); if (!labelValue) throw new Error("acceptProposal node: label is required");
     const canonicalId = String(payload.canonicalId ?? payload.identityId ?? "").trim();
     if (canonicalId) {
       if (!UUID.test(canonicalId)) throw new Error("acceptProposal node: canonicalId must be a UUID");
       const existing = await this.getNodeWith(db, canonicalId);
       if (!existing || existing.status === "rejected") throw new Error(`acceptProposal node: canonicalId ${canonicalId} is not reusable`);
+      if (recordEncounter) await this.insertObservation(db, { targetNodeId: existing.id, sourceEventId: eventId, kind: this.observationKind(payload), metadata: this.observationMetadata(payload, labelValue) });
       return existing;
     }
-    const knownAlias = await this.getAlias(db, normalizeLabel(labelValue)); if (knownAlias) { const target = await this.getNodeWith(db, knownAlias.canonicalNodeId); if (target && target.status !== "rejected") return target; }
+    const knownAlias = await this.getAlias(db, normalizeLabel(labelValue)); if (knownAlias) { const target = await this.getNodeWith(db, knownAlias.canonicalNodeId); if (target && target.status !== "rejected") { if (recordEncounter) await this.insertObservation(db, { targetNodeId: target.id, sourceEventId: eventId, kind: this.observationKind(payload), metadata: this.observationMetadata(payload, labelValue) }); return target; } }
     const result = await db.query(
       `INSERT INTO knowledge_nodes (id, type, label, normalized_label, description, status, workspace_id)
        VALUES ($1, $2, $3, $4, $5, 'accepted', $6) RETURNING *`,
@@ -470,7 +494,29 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     const created = node(result.rows[0]);
     await this.queueProjection(db, created.id, "graph", "upsert");
     await this.queueProjection(db, created.id, "vector", "upsert");
+    if (recordEncounter) await this.insertObservation(db, { targetNodeId: created.id, sourceEventId: eventId, kind: this.observationKind(payload), metadata: this.observationMetadata(payload, labelValue) });
     return created;
+  }
+
+  private observationKind(payload: Record<string, unknown>): KnowledgeObservationKind {
+    const value = String(payload.observationKind ?? "observes");
+    if (!["mentions", "observes", "independently_formulated", "references"].includes(value)) throw new Error(`invalid observation kind ${value}`);
+    return value as KnowledgeObservationKind;
+  }
+
+  private observationMetadata(payload: Record<string, unknown>, encounteredLabel?: string): Record<string, unknown> {
+    const supplied = payload.observationMetadata;
+    const metadata = supplied && typeof supplied === "object" && !Array.isArray(supplied) ? { ...(supplied as Record<string, unknown>) } : {};
+    if (encounteredLabel) metadata.encounteredLabel = encounteredLabel;
+    return metadata;
+  }
+
+  private async insertObservation(db: Queryable, item: Omit<KnowledgeObservation, "id" | "observedAt">): Promise<void> {
+    await db.query(
+      `INSERT INTO knowledge_observations (id, target_node_id, source_event_id, source_node_id, kind, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+      [randomUUID(), item.targetNodeId, item.sourceEventId, item.sourceNodeId ?? null, item.kind, JSON.stringify(item.metadata)]
+    );
   }
 
   private async resolveEndpoint(db: Queryable, value: string, eventId: string): Promise<string> {
@@ -490,25 +536,60 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
   }
 
   private async materializeEvidence(db: Queryable, payload: Record<string, unknown>, eventId: string): Promise<void> {
-    const claimLabel = String(payload.claimLabel ?? payload.claim ?? "").trim(); if (!claimLabel) throw new Error("acceptProposal evidence: claimLabel is required"); const excerpt = String(payload.excerpt ?? "").trim();
-    const claimId = String(payload.claimId ?? "").trim();
-    let claim = claimId && UUID.test(claimId) ? await this.getNodeWith(db, claimId) : null;
-    if (!claim) {
-      const candidates = await this.findIdentityCandidates(db, claimLabel, "claim");
-      if (candidates.length > 1) throw new Error(`evidence claim "${claimLabel}" is ambiguous; provide claimId`);
-      claim = candidates[0] ?? await this.materializeNode(db, { type: "claim", label: claimLabel }, eventId);
+    const targetLabel = String(payload.targetLabel ?? payload.claimLabel ?? payload.claim ?? "").trim();
+    const targetId = String(payload.targetId ?? payload.claimId ?? "").trim();
+    const claimSpecific = payload.claimId != null || payload.claimLabel != null || payload.claim != null;
+    if (!targetId && !targetLabel) throw new Error("acceptProposal evidence: targetId or targetLabel is required");
+    const excerpt = String(payload.excerpt ?? "").trim();
+    let target = targetId && UUID.test(targetId) ? await this.getNodeWith(db, targetId) : null;
+    if (targetId && !target) throw new Error(`acceptProposal evidence: unknown targetId ${targetId}`);
+    if (claimSpecific && target && target.type !== "claim") throw new Error("acceptProposal evidence: claimId must reference a claim");
+    if (!target) {
+      const targetType = claimSpecific ? "claim" : payload.targetType == null ? undefined : String(payload.targetType) as KnowledgeNodeType;
+      const candidates = await this.findIdentityCandidates(db, targetLabel, targetType);
+      if (candidates.length > 1) throw new Error(`evidence target "${targetLabel}" is ambiguous; provide targetId`);
+      target = candidates[0] ?? null;
+      if (!target && !targetType) throw new Error(`evidence target "${targetLabel}" is unknown; provide targetId or targetType`);
+      target ??= await this.materializeNode(db, { type: targetType, label: targetLabel }, eventId);
     }
     const sourceId = String(payload.sourceId ?? "").trim();
     let source = sourceId && UUID.test(sourceId) ? await this.getNodeWith(db, sourceId) : null;
+    if (sourceId && !source) throw new Error(`acceptProposal evidence: unknown sourceId ${sourceId}`);
     if (!source) {
-      const sourceLabel = String(payload.sourceLabel ?? (excerpt.slice(0, 80) || `source-${claimLabel}`));
+      const sourceLabel = String(payload.sourceLabel ?? (excerpt.slice(0, 80) || `source-${targetLabel || target.id}`));
       source = await this.materializeNode(db, { type: "source", label: sourceLabel, description: excerpt || undefined }, eventId);
     }
+    const stance = String(payload.stance ?? "supports");
+    if (stance === "mentions") {
+      await this.insertObservation(db, { targetNodeId: target.id, sourceEventId: eventId, sourceNodeId: source.id, kind: "mentions", metadata: { excerpt, confidence: payload.confidence } });
+      return;
+    }
+    if (!["supports", "contradicts", "test_evidence"].includes(stance)) throw new Error(`invalid evidence stance ${stance}`);
     await db.query(
-      `INSERT INTO knowledge_evidence (id, claim_node_id, source_node_id, source_event_id, excerpt, stance, confidence)
+      `INSERT INTO knowledge_evidence (id, target_node_id, source_node_id, source_event_id, excerpt, stance, confidence)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [randomUUID(), claim.id, source.id, eventId, excerpt || null, String(payload.stance ?? "mentions"), payload.confidence == null ? null : Number(payload.confidence)]
+      [randomUUID(), target.id, source.id, eventId, excerpt || null, stance, payload.confidence == null ? null : Number(payload.confidence)]
     );
+  }
+
+  private async materializeObservation(db: Queryable, payload: Record<string, unknown>, eventId: string): Promise<void> {
+    const targetValue = String(payload.targetId ?? payload.targetLabel ?? "").trim();
+    if (!targetValue) throw new Error("acceptProposal observation: targetId or targetLabel is required");
+    const targetId = await this.resolveEndpoint(db, targetValue, eventId);
+    const sourceId = String(payload.sourceId ?? "").trim();
+    let source = sourceId && UUID.test(sourceId) ? await this.getNodeWith(db, sourceId) : null;
+    if (sourceId && !source) throw new Error(`acceptProposal observation: unknown sourceId ${sourceId}`);
+    const sourceLabel = String(payload.sourceLabel ?? "").trim();
+    if (!source && sourceLabel) {
+      const aliasMatch = await this.getAlias(db, normalizeLabel(sourceLabel));
+      source = aliasMatch ? await this.getNodeWith(db, aliasMatch.canonicalNodeId) : null;
+      if (!source) {
+        const candidates = await this.findIdentityCandidates(db, sourceLabel, "source");
+        if (candidates.length > 1) throw new Error(`observation source "${sourceLabel}" is ambiguous; provide sourceId`);
+        source = candidates[0] ?? await this.materializeNode(db, { type: "source", label: sourceLabel }, eventId);
+      }
+    }
+    await this.insertObservation(db, { targetNodeId: targetId, sourceEventId: eventId, sourceNodeId: source?.id, kind: this.observationKind(payload), metadata: this.observationMetadata(payload) });
   }
 }
 

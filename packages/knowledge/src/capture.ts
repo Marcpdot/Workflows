@@ -24,7 +24,7 @@ import type {
 
 export interface KnowledgeProposalSummary {
   id: string;
-  kind: "node" | "edge" | "evidence";
+  kind: KnowledgeProposal["kind"];
   label: string;
   relation?: string;
   confidence?: number;
@@ -99,8 +99,10 @@ export function proposalToSummary(
     const to = String(payload.to ?? payload.toLabel ?? "?");
     relation = String(payload.relation ?? "about");
     label = `${from} -[${relation}]-> ${to}`;
+  } else if (p.kind === "evidence") {
+    label = String(payload.targetLabel ?? payload.claimLabel ?? payload.claim ?? "evidence");
   } else {
-    label = String(payload.claimLabel ?? payload.claim ?? "evidence");
+    label = String(payload.targetLabel ?? payload.targetId ?? "observation");
   }
   if (p.kind === "node") {
     const desc = String(payload.description ?? "");

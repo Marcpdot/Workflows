@@ -59,12 +59,24 @@ export interface KnowledgeEdge {
 
 export interface KnowledgeEvidence {
   id: string;
-  claimNodeId: string;
+  targetNodeId: string;
   sourceNodeId: string;
   excerpt?: string;
-  stance: "supports" | "contradicts" | "mentions";
+  stance: "supports" | "contradicts" | "test_evidence";
   confidence?: number;
   createdAt: number;
+}
+
+export type KnowledgeObservationKind = "mentions" | "observes" | "independently_formulated" | "references";
+
+export interface KnowledgeObservation {
+  id: string;
+  targetNodeId: string;
+  sourceEventId?: string;
+  sourceNodeId?: string;
+  kind: KnowledgeObservationKind;
+  observedAt: number;
+  metadata: Record<string, unknown>;
 }
 
 export interface KnowledgeEvent {
@@ -79,7 +91,7 @@ export interface KnowledgeEvent {
 export interface KnowledgeProposal {
   id: string;
   eventId: string;
-  kind: "node" | "edge" | "evidence";
+  kind: "node" | "edge" | "evidence" | "observation";
   payload: Record<string, unknown>;
   status: "pending" | "accepted" | "rejected";
   createdAt: number;
@@ -115,6 +127,7 @@ export interface MergeNodesResult {
   into: KnowledgeNode;
   edgesRewired: number;
   evidenceRewired: number;
+  observationsRewired: number;
   aliasesRetargeted: number;
   aliasCreated: boolean;
 }
@@ -156,6 +169,10 @@ export interface KnowledgeStore {
   ): Promise<void>;
 
   rejectProposal(id: string): Promise<void>;
+
+  listEvidence(targetNodeId: string): Promise<KnowledgeEvidence[]>;
+
+  listObservations(targetNodeId: string): Promise<KnowledgeObservation[]>;
 
   getNode(id: string): Promise<KnowledgeNode | null>;
 

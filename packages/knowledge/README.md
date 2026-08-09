@@ -42,6 +42,13 @@ remain ambiguous for review.
 The initial node vocabulary remains useful, but PostgreSQL accepts future
 referable node kinds without requiring a new identity architecture.
 
+Accepted node proposals append provenance to `knowledge_observations`, including
+explicit `canonicalId` and alias reuse. Rows retain target, event, optional
+source, occurrence kind, timestamp and metadata; normal reads do not write.
+Qualified `supports`, `contradicts` and `test_evidence` live separately in
+`knowledge_evidence` and may target any canonical type. `mentions` is an
+observation rather than evidence.
+
 ## Tests
 
 From `packages/orchestrator`:

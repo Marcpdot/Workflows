@@ -56,7 +56,8 @@ work and “what is the status of actuator-v2?” need that structure. Those are
 | **Relation / edge** | Typed link between nodes (`requires`, `limits`, `causes`, `increases`, `reduces`, `measures`, `controls`, `supports`, `contradicts`, `used_in`, …) |
 | **Event** | Extraction or analysis event (source type + ref) |
 | **Source** | Conversation id + excerpt, file path, measurement |
-| **Evidence** | Claim ↔ source with stance (supports / contradicts / mentions) |
+| **Evidence** | Canonical identity ↔ source with qualified stance (`supports`, `contradicts`, `test_evidence`) |
+| **Observation** | Encounter with an identity through an event/source (`mentions`, `observes`, `independently_formulated`, `references`) |
 | **Project / artifact** | Optional anchors for work product |
 
 Status on claims/nodes: `proposed | accepted | disputed | rejected`.
@@ -207,6 +208,26 @@ confuses observations/context with things. Treating every mention as new identit
 fragments provenance and makes cross-store references unstable. A universal ID
 with conservative domain resolution supports both precision and later Curator
 assistance without SQL uniqueness guessing ontology.
+
+### Identity, provenance and context
+
+**Decision:** Identity records what the referent is. Provenance records how,
+where and when that same referent was encountered or learned. Context records
+how it participates in projects, relationships, time and space. These concerns
+do not manufacture identities for one another.
+
+`knowledge_observations` binds a canonical target to an extraction event and
+optional source identity with occurrence kind, timestamp and metadata. Accepting
+a meaningful node proposal records an observation, including explicit
+`canonicalId` or alias reuse; reads and lookups do not. `mentions` is an
+occurrence. Qualified `supports`, `contradicts` and `test_evidence` remain in
+`knowledge_evidence`, whose generic target can be an idea, claim, artifact or
+future canonical type. Claim-labelled extraction is a validated convenience,
+not a restriction on generic evidence.
+
+**Reason:** Encounters must remain distinguishable by event, source and time
+without duplicating their referent or treating every mention as support. Merge
+retargets evidence and observation history to the surviving canonical UUID.
 
 ## Knowledge milestone roadmap (M11–M18)
 

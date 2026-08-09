@@ -11,6 +11,10 @@ contracts. PostgreSQL/PostGIS is the sole canonical knowledge runtime.
 - Every independently referable object can receive one stable canonical UUID.
 - Labels, workspace, source, observation frequency and semantic similarity are
   resolution signals, never identity keys.
+- Identity is the referent; provenance is event/source encounter history;
+  context is participation in relationships, projects, time and space.
+- Mentions/observations are occurrences, distinct from qualified
+  supports/contradicts/test evidence. Both may target every canonical type.
 - Reuse requires an explicit canonical ID, explicit alias, or an unambiguous
   resolution decision. Preserve ambiguity instead of silently collapsing IDs.
 - Explicit merge is transactional, retains the retired identity as history and

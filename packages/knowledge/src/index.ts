@@ -7,6 +7,8 @@ export type {
   KnowledgeEvidence,
   KnowledgeNode,
   KnowledgeNodeType,
+  KnowledgeObservation,
+  KnowledgeObservationKind,
   KnowledgeProposal,
   KnowledgeRelation,
   KnowledgeStatus,
