@@ -6,6 +6,10 @@ import {
   type CanonicalKnowledgeRepository, type KnowledgeNode, type VectorRepository,
 } from "@workflows/knowledge";
 import { randomUUID } from "node:crypto";
+import {
+  DEFAULT_KNOWLEDGE_EMBEDDING_MODEL,
+  resolveKnowledgeEmbeddingConfig,
+} from "../src/knowledgeEmbedding.js";
 import { startKnowledgePostgresTest } from "./knowledge-postgres-test-runtime.js";
 
 function assert(condition: unknown, message: string): asserts condition { if (!condition) throw new Error(`ASSERT: ${message}`); }
@@ -19,6 +23,21 @@ function fixtureEmbedder(fail = false, model = "fixture-semantic", modelVersion 
       return texts.map((text) => { const index = [...text].reduce((sum, char) => sum + char.charCodeAt(0), 0) % 32; return vector([index, 1], [(index + 1) % 32, 0.25]); });
     },
   };
+}
+
+function verifyDefaultEmbeddingConfig(): void {
+  const config = resolveKnowledgeEmbeddingConfig({});
+  assert(config.model === DEFAULT_KNOWLEDGE_EMBEDDING_MODEL, "default embedding model uses the declared default");
+  assert(config.model === "qwen3-embedding:4b", "default embedding model supports the pgvector schema dimension");
+  assert(config.dimension === KNOWLEDGE_VECTOR_DIMENSION, "default embedding dimension matches the pgvector schema");
+
+  let undersizedModelFailed = false;
+  try {
+    resolveKnowledgeEmbeddingConfig({ KNOWLEDGE_EMBEDDING_MODEL: "qwen3-embedding:0.6b" });
+  } catch (error) {
+    undersizedModelFailed = error instanceof Error && error.message.includes("native dimension 1024");
+  }
+  assert(undersizedModelFailed, "known embedding models below the requested output dimension fail configuration");
 }
 
 async function acceptedNode(store: ReturnType<typeof createKnowledgeStore>, eventId: string, type: string, label: string) {
@@ -54,6 +73,7 @@ async function verifyRebuildBeyondLegacyLimit(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  verifyDefaultEmbeddingConfig();
   await verifyRebuildBeyondLegacyLimit();
   const runtime = await startKnowledgePostgresTest();
   const base = resolvePostgresKnowledgeConfig();

@@ -134,7 +134,8 @@ initial provider (`KNOWLEDGE_AGENT_PROVIDER=ollama`), with a shared
 `KNOWLEDGE_AGENT_MODEL` and optional `KNOWLEDGE_AGENT_NAVIGATOR_MODEL` and
 `KNOWLEDGE_AGENT_CURATOR_MODEL` overrides. From `packages/orchestrator`, run
 `npm run knowledge:agent -- navigator "goal"` (or `curator`). Semantic search
-uses `KNOWLEDGE_EMBEDDING_PROVIDER=ollama`, `KNOWLEDGE_EMBEDDING_MODEL`, optional
+uses `KNOWLEDGE_EMBEDDING_PROVIDER=ollama`, `KNOWLEDGE_EMBEDDING_MODEL` (default
+`qwen3-embedding:4b`, whose native dimension supports the configured 1536-output), optional
 `KNOWLEDGE_EMBEDDING_MODEL_VERSION`, `OLLAMA_BASE_URL`, and validates output
 against `KNOWLEDGE_VECTOR_DIMENSION` (currently 1536). Malformed model decisions
 fail closed before a tool executes; unavailable embeddings are reported without
