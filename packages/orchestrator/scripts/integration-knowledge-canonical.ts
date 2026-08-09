@@ -155,6 +155,16 @@ async function main(): Promise<void> {
     assert(contexts.rows[0].count === 2, "one canonical identity participates in multiple project/workspace contexts");
     assert((await repository.findNodes({ type: "artifact", label: "Motor", status: "accepted" })).filter((node) => node.id === shared.id).length === 1, "context does not duplicate canonical identity");
 
+    const hubProposal = (await repository.addProposals(event.id, [{ kind: "node", payload: { type: "concept", label: "Bounded topology hub" } }]))[0]; await repository.acceptProposal(hubProposal.id);
+    const hub = (await repository.findNodes({ label: "Bounded topology hub", status: "accepted" }))[0]; const spokes = [];
+    for (let index = 0; index < 6; index++) { const proposal = (await repository.addProposals(event.id, [{ kind: "node", payload: { type: "concept", label: `Bounded spoke ${index}` } }]))[0]; await repository.acceptProposal(proposal.id); const spoke = (await repository.findNodes({ label: `Bounded spoke ${index}`, status: "accepted" }))[0]; spokes.push(spoke); const relation = (await repository.addProposals(event.id, [{ kind: "edge", payload: { fromId: hub.id, relation: "about", toId: spoke.id } }]))[0]; await repository.acceptProposal(relation.id); }
+    const selfProposal = (await repository.addProposals(event.id, [{ kind: "edge", payload: { fromId: hub.id, relation: "controls", toId: hub.id } }]))[0]; await repository.acceptProposal(selfProposal.id);
+    const nodeBound = await repository.getNeighborhood(hub.id, { hops: 1, nodeLimit: 2, edgeLimit: 20 }); assert(nodeBound.nodes.length <= 2 && nodeBound.edges.length <= 20 && nodeBound.truncation.nodes && !nodeBound.truncation.edges && !nodeBound.complete, "node-capacity truncation is independent from edge completeness");
+    const edgeBound = await repository.getNeighborhood(hub.id, { hops: 1, nodeLimit: 20, edgeLimit: 2 }); assert(edgeBound.edges.length === 2 && edgeBound.truncation.edges && !edgeBound.complete, "edgeLimit below degree is detected with one bounded lookahead row");
+    const selfOnly = await repository.getNeighborhood(hub.id, { hops: 1, nodeLimit: 1, edgeLimit: 20 }); assert(selfOnly.edges.some((item) => item.fromNodeId === hub.id && item.toNodeId === hub.id), "bounded traversal preserves valid self-relations");
+    const twoHop = await repository.getNeighborhood(spokes[0].id, { hops: 2, nodeLimit: 3, edgeLimit: 20 }); assert(twoHop.truncated && twoHop.truncation.nodes && twoHop.nodes.length <= 3, "two-hop high-degree traversal remains node-bounded and reports incompleteness");
+    const subgraph = await repository.getSubgraph({ rootId: hub.id, hops: 1, limit: 3, edgeLimit: 1 }); assert(subgraph.nodes.length <= 3 && subgraph.edges.length <= 1 && subgraph.truncated && subgraph.truncation.edges && subgraph.edges.every((item) => subgraph.nodes.some((node) => node.id === item.fromNodeId) && subgraph.nodes.some((node) => node.id === item.toNodeId)), "bounded induced subgraph propagates traversal/edge truncation and exposes no outside incident edge");
+
     const outbox = await pool.query<{ count: number }>("SELECT count(*)::int AS count FROM knowledge_projection_outbox");
     assert(outbox.rows[0].count > 0, "canonical writes retain projection outbox contract");
     console.log("PostgreSQL canonical cutover and identity correctness checks passed.");

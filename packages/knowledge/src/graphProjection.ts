@@ -31,10 +31,11 @@ export async function processGraphProjectionOutbox(input: {
   try {
     const lock = await client.query<{ locked: boolean }>("SELECT pg_try_advisory_lock($1) AS locked", [lockId]);
     locked = lock.rows[0]?.locked === true; if (!locked) return { processed: 0, failed: 0 };
-    const jobs = await client.query<{ id: string; canonical_id: string; operation: "upsert" | "delete" | "rebuild" }>(
-      `SELECT id::text, canonical_id::text, operation FROM knowledge_projection_outbox
-       WHERE projection = 'graph' AND processed_at IS NULL AND available_at <= now()
-       ORDER BY created_at ASC LIMIT $1`,
+    const jobs = await client.query<{ id: string; canonical_id: string; operation: "upsert" | "delete" | "rebuild"; sequence_id: string }>(
+      `SELECT * FROM (SELECT DISTINCT ON (canonical_id) id::text, canonical_id::text, operation, sequence_id::text, available_at
+       FROM knowledge_projection_outbox WHERE projection = 'graph' AND processed_at IS NULL
+       ORDER BY canonical_id, sequence_id DESC) latest
+       WHERE available_at <= now() ORDER BY sequence_id ASC LIMIT $1`,
       [Math.min(Math.max(Math.floor(input.limit ?? 100), 1), 1000)]
     );
     let processed = 0; let failed = 0;
@@ -44,18 +45,19 @@ export async function processGraphProjectionOutbox(input: {
         else if (job.operation === "delete") await input.graph.deleteCanonicalId(job.canonical_id);
         else {
           const node = await input.canonical.getNode(job.canonical_id);
-          if (node) await input.graph.upsertNode(node);
+          if (node) { if (node.status === "accepted") await input.graph.upsertNode(node); else await input.graph.deleteCanonicalId(node.id); }
           else {
             const edge = await input.canonical.getEdge(job.canonical_id);
             if (!edge || edge.status !== "accepted") await input.graph.deleteCanonicalId(job.canonical_id);
             else {
               const from = await input.canonical.getNode(edge.fromNodeId); const to = await input.canonical.getNode(edge.toNodeId);
               if (!from || !to) throw new Error(`graph edge ${edge.id} has unresolved canonical endpoints`);
-              await input.graph.upsertEdge({ edge, from, to });
+              if (from.status !== "accepted" || to.status !== "accepted") await input.graph.deleteCanonicalId(edge.id); else await input.graph.upsertEdge({ edge, from, to });
             }
           }
         }
         await client.query("UPDATE knowledge_projection_outbox SET processed_at = now(), last_error = NULL WHERE id = $1 AND processed_at IS NULL", [job.id]); processed++;
+        await client.query("UPDATE knowledge_projection_outbox SET processed_at = now(), last_error = $4 WHERE projection = 'graph' AND canonical_id = $1 AND processed_at IS NULL AND sequence_id < $2 AND id <> $3", [job.canonical_id, job.sequence_id, job.id, `superseded by newer successful job ${job.id}`]);
       } catch (error) {
         await client.query(
           `UPDATE knowledge_projection_outbox SET attempt_count = attempt_count + 1,

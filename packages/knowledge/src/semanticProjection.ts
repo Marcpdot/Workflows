@@ -86,10 +86,11 @@ export async function processVectorProjectionOutbox(input: {
     const lock = await client.query<{ locked: boolean }>("SELECT pg_try_advisory_lock($1) AS locked", [lockId]);
     locked = lock.rows[0]?.locked === true;
     if (!locked) return { processed: 0, failed: 0 };
-    const pending = await client.query<{ id: string; canonical_id: string; operation: "upsert" | "delete" | "rebuild" }>(
-      `SELECT id::text, canonical_id::text, operation FROM knowledge_projection_outbox
-       WHERE projection = 'vector' AND processed_at IS NULL AND available_at <= now()
-       ORDER BY created_at ASC LIMIT $1`,
+    const pending = await client.query<{ id: string; canonical_id: string; operation: "upsert" | "delete" | "rebuild"; sequence_id: string }>(
+      `SELECT * FROM (SELECT DISTINCT ON (canonical_id) id::text, canonical_id::text, operation, sequence_id::text, available_at
+       FROM knowledge_projection_outbox WHERE projection = 'vector' AND processed_at IS NULL
+       ORDER BY canonical_id, sequence_id DESC) latest
+       WHERE available_at <= now() ORDER BY sequence_id ASC LIMIT $1`,
       [Math.min(Math.max(Math.floor(input.limit ?? 100), 1), 1000)]
     );
     let processed = 0; let failed = 0;
@@ -106,6 +107,7 @@ export async function processVectorProjectionOutbox(input: {
           }
         }
         await client.query("UPDATE knowledge_projection_outbox SET processed_at = now(), last_error = NULL WHERE id = $1 AND processed_at IS NULL", [job.id]);
+        await client.query("UPDATE knowledge_projection_outbox SET processed_at = now(), last_error = $4 WHERE projection = 'vector' AND canonical_id = $1 AND processed_at IS NULL AND sequence_id < $2 AND id <> $3", [job.canonical_id, job.sequence_id, job.id, `superseded by newer successful job ${job.id}`]);
         processed++;
       } catch (error) {
         await client.query(

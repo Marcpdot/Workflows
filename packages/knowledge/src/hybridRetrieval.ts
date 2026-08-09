@@ -1,5 +1,6 @@
 import type { CanonicalKnowledgeRepository, GraphRepository, SpatialHit, SpatialRepository, VectorRepository } from "./storage/contracts.js";
 import type { KnowledgeEdge, KnowledgeEvent, KnowledgeEvidence, KnowledgeNode, KnowledgeNodeType, KnowledgeObservation } from "./types.js";
+import { retainReachableCanonicalGraph, validateCanonicalGraph } from "./canonicalGraph.js";
 
 export type RetrievalOrigin = "exact" | "structured_candidate" | "graph" | "semantic" | "project" | "spatial";
 export type RetrievalStrategyState = "ran" | "skipped" | "unavailable" | "degraded";
@@ -88,8 +89,10 @@ export class HybridKnowledgeRetrievalService {
       try {
         for (const root of roots) {
           const path = await this.repositories.graph.expand(root, { hops: Math.max(graphHops, 1), relation: request.graphRelation, workspaceId: request.workspaceId, status: "accepted", limit: maxEdges });
-          for (const node of path.nodes) { mark(node.id, "graph"); const set = graphRoots.get(node.id) ?? new Set<string>(); set.add(root); graphRoots.set(node.id, set); }
-          for (const edge of path.edges) graphEdges.set(edge.id, edge);
+          const validated = await validateCanonicalGraph(canonical, path, { requireAccepted: true });
+          const reachable = retainReachableCanonicalGraph(root, validated.graph);
+          for (const node of reachable.nodes) { mark(node.id, "graph"); const set = graphRoots.get(node.id) ?? new Set<string>(); set.add(root); graphRoots.set(node.id, set); }
+          for (const edge of reachable.edges) graphEdges.set(edge.id, edge);
         }
         graphSucceeded = true; strategies.graph = { state: "ran", candidates: [...origins].filter(([, value]) => value.has("graph")).length };
       } catch (error) { strategies.graph = { state: "degraded", detail: error instanceof Error ? error.message : String(error) }; }
@@ -129,8 +132,10 @@ export class HybridKnowledgeRetrievalService {
       try {
         for (const id of [...semanticScores.keys()].slice(0, semanticLimit)) {
           const path = await this.repositories.graph.expand(id, { hops: semanticGraphHops, workspaceId: request.workspaceId, status: "accepted", limit: maxEdges });
-          for (const node of path.nodes) { mark(node.id, "graph"); const set = graphRoots.get(node.id) ?? new Set<string>(); set.add(id); graphRoots.set(node.id, set); }
-          for (const edge of path.edges) graphEdges.set(edge.id, edge);
+          const validated = await validateCanonicalGraph(canonical, path, { requireAccepted: true });
+          const reachable = retainReachableCanonicalGraph(id, validated.graph);
+          for (const node of reachable.nodes) { mark(node.id, "graph"); const set = graphRoots.get(node.id) ?? new Set<string>(); set.add(id); graphRoots.set(node.id, set); }
+          for (const edge of reachable.edges) graphEdges.set(edge.id, edge);
         }
         strategies.graph = { state: "ran", detail: roots.length ? "root expansion and semantic enrichment" : "semantic-first enrichment", candidates: [...origins].filter(([, value]) => value.has("graph")).length };
       } catch (error) { strategies.graph = { state: "degraded", detail: error instanceof Error ? error.message : String(error) }; }
@@ -160,7 +165,7 @@ export class HybridKnowledgeRetrievalService {
     }
     strategies.hydration = { state: "ran", candidates: items.length };
     const selectedIds = new Set(items.map((item) => item.node.id)); const edges: KnowledgeEdge[] = [];
-    for (const edge of graphEdges.values()) { if (edges.length >= maxEdges || budgetUsed + 2 > contextBudget) { truncated = true; break; } if (selectedIds.has(edge.fromNodeId) || selectedIds.has(edge.toNodeId)) { edges.push(edge); budgetUsed += 2; } }
+    for (const edge of graphEdges.values()) { if (edges.length >= maxEdges || budgetUsed + 2 > contextBudget) { truncated = true; break; } if (selectedIds.has(edge.fromNodeId) && selectedIds.has(edge.toNodeId)) { edges.push(edge); budgetUsed += 2; } }
     return { items, edges, strategies, bounds: { overallLimit, graphHops, semanticLimit, contextBudget, budgetUsed, truncated } };
   }
 }

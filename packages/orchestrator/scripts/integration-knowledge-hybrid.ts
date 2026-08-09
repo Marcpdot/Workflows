@@ -29,12 +29,16 @@ async function main(): Promise<void> {
     const outside = await node(canonical, event.id, "idea", "Unrelated workspace thermal", "workspace-b");
     const sameA = await node(canonical, event.id, "artifact", "Motor", "workspace-a"); const sameB = await node(canonical, event.id, "artifact", "Motor", "workspace-a");
     const source = await node(canonical, event.id, "source", "hybrid-fixture.md", "workspace-a");
+    const bridgeRoot = await node(canonical, event.id, "concept", "Bridge root", "workspace-a"); const bridgeB = await node(canonical, event.id, "concept", "Bridge B", "workspace-a"); const bridgeC = await node(canonical, event.id, "concept", "Bridge C", "workspace-a"); const staleNode = await node(canonical, event.id, "concept", "Soon disputed", "workspace-a");
     await edge(canonical, event.id, project.id, "about", alpha.id); await edge(canonical, event.id, alpha.id, "requires", beta.id); await edge(canonical, event.id, beta.id, "part_of", deep.id); await edge(canonical, event.id, alpha.id, "uses", global.id); await edge(canonical, event.id, alpha.id, "cross_workspace", outside.id);
+    await edge(canonical, event.id, bridgeRoot.id, "requires", bridgeB.id); await edge(canonical, event.id, bridgeB.id, "requires", bridgeC.id); await edge(canonical, event.id, alpha.id, "about", staleNode.id);
     const provenance = await canonical.addProposals(event.id, [
       { kind: "evidence", payload: { targetId: alpha.id, sourceId: source.id, stance: "supports", excerpt: "Source supports thermal control" } },
       { kind: "observation", payload: { targetId: alpha.id, sourceId: source.id, observationKind: "references", observationMetadata: { section: 2 } } },
     ]); for (const proposal of provenance) await canonical.acceptProposal(proposal.id);
     await rebuildGraphProjection({ canonical, graph, pageSize: 2 });
+    const staleBridge = await pool.query<{ id: string }>("DELETE FROM knowledge_edges WHERE from_node_id = $1 AND to_node_id = $2 RETURNING id::text", [bridgeRoot.id, bridgeB.id]); assert(staleBridge.rowCount === 1, "stale bridge fixture removes canonical edge only");
+    await pool.query("UPDATE knowledge_nodes SET status = 'disputed' WHERE id = $1", [staleNode.id]);
     const now = Date.now(); const records: Array<[string, number[], string, string | null]> = [
       [alpha.id, vector([0, 1]), "idea", "workspace-a"], [beta.id, vector([0, 0.85], [1, 0.15]), "concept", "workspace-a"],
       [deep.id, vector([0, 0.6], [2, 0.4]), "artifact", "workspace-a"], [outside.id, vector([0, 0.99], [3, 0.01]), "idea", "workspace-b"],
@@ -50,6 +54,8 @@ async function main(): Promise<void> {
     assert(semantic.items[0].node.id === alpha.id && semantic.items[0].semanticScore != null && semantic.items.every((item) => item.node.id), "semantic retrieval returns hydrated canonical IDs and scores");
     const graphOnly = await service.retrieve({ graphRootIds: [alpha.id], graphHops: 2, overallLimit: 10 });
     assert(graphOnly.items.some((item) => item.node.id === deep.id) && graphOnly.edges.some((item) => item.relation === "part_of"), "graph-root retrieval returns multi-hop canonical topology");
+    assert(!graphOnly.items.some((item) => item.node.id === staleNode.id) && graphOnly.edges.every((item) => item.fromNodeId !== staleNode.id && item.toNodeId !== staleNode.id), "stale disputed Neo4j node and its edge never influence hybrid output");
+    const bridgeResult = await service.retrieve({ graphRootIds: [bridgeRoot.id], graphHops: 2, overallLimit: 10 }); assert(bridgeResult.items.some((item) => item.node.id === bridgeRoot.id) && !bridgeResult.items.some((item) => item.node.id === bridgeB.id || item.node.id === bridgeC.id) && !bridgeResult.edges.some((item) => item.id === staleBridge.rows[0].id), "canonical validation removes a stale bridge and recomputed reachability prevents downstream graph origin");
     const narrowed = await service.retrieve({ projectId: project.id, graphHops: 2, queryVector: vector([0, 1]), embeddingModel: "hybrid-fixture", embeddingModelVersion: "v1", workspaceId: "workspace-a", semanticLimit: 5, overallLimit: 5 });
     assert(narrowed.strategies.graph.state === "ran" && narrowed.strategies.semantic.state === "ran" && narrowed.items.some((item) => item.node.id === global.id) && !narrowed.items.some((item) => item.node.id === outside.id), "graph/project scope preserves global visibility while excluding another workspace during vector narrowing");
     const workspaceExact = await service.retrieve({ canonicalIds: [global.id, outside.id], workspaceId: "workspace-a", overallLimit: 5 });

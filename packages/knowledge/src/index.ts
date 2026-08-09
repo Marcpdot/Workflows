@@ -70,6 +70,7 @@ export {
   PostgresVectorRepository,
   type PostgresVectorRepositoryConfig,
 } from "./postgres/vectorRepository.js";
+export { createPostgresSpatialRepository, PostgresSpatialRepository, type PostgresSpatialRepositoryConfig } from "./postgres/spatialRepository.js";
 export { resolveNeo4jGraphConfig, type Neo4jGraphConfig } from "./graph/config.js";
 export { createNeo4jGraphRepository, Neo4jGraphRepository } from "./graph/neo4jRepository.js";
 export {

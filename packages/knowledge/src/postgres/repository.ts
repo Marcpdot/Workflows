@@ -329,13 +329,13 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
   async getNeighborhood(nodeId: string, options?: { hops?: 1 | 2; status?: KnowledgeStatus; nodeLimit?: number; edgeLimit?: number }): Promise<{ nodes: KnowledgeNode[]; edges: KnowledgeEdge[]; truncated: boolean; complete: boolean; truncation: { nodes: boolean; edges: boolean }; limits: { nodes: number; edges: number } }> {
     const nodeLimit = Math.min(Math.max(Math.floor(options?.nodeLimit ?? 250), 1), 1000); const edgeLimit = Math.min(Math.max(Math.floor(options?.edgeLimit ?? 500), 0), 2000);
     const empty = { nodes: [], edges: [], truncated: false, complete: true, truncation: { nodes: false, edges: false }, limits: { nodes: nodeLimit, edges: edgeLimit } };
-    const root = await this.getNode(nodeId); if (!root) return empty;
-    const status = options?.status ?? "accepted"; const hops = options?.hops === 2 ? 2 : 1;
+    const root = await this.getNode(nodeId); const status = options?.status ?? "accepted"; if (!root || root.status !== status) return empty;
+    const hops = options?.hops === 2 ? 2 : 1;
     const nodes = new Map([[root.id, root]]); const edges = new Map<string, KnowledgeEdge>(); let frontier = [root.id]; let nodeTruncated = false; let edgeTruncated = false;
     for (let i = 0; i < hops; i++) {
       const remainingEdges = edgeLimit - edges.size; const remainingNodes = nodeLimit - nodes.size;
       if (remainingEdges <= 0) { edgeTruncated = frontier.length > 0; break; }
-      const sqlLimit = Math.min(remainingEdges + 1, Math.max(1, remainingNodes * 2 + 1));
+      const sqlLimit = remainingEdges + 1;
       const found = await this.edgesFor(this.pool, frontier, status, sqlLimit); const next: string[] = [];
       if (found.length > remainingEdges) edgeTruncated = true;
       for (const item of found) {
@@ -355,22 +355,21 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     return { nodes: [...nodes.values()], edges: [...edges.values()], truncated, complete: !truncated, truncation: { nodes: nodeTruncated, edges: edgeTruncated }, limits: { nodes: nodeLimit, edges: edgeLimit } };
   }
 
-  async getSubgraph(input?: { rootId?: string; nodeIds?: string[]; hops?: 1 | 2; status?: KnowledgeStatus; workspaceId?: string | null; limit?: number }): Promise<{ nodes: KnowledgeNode[]; edges: KnowledgeEdge[]; truncated: boolean }> {
-    const status = input?.status ?? "accepted";
-    const limit = Math.min(input?.limit && input.limit > 0 ? Math.floor(input.limit) : 250, 1000);
-    let candidates: KnowledgeNode[];
+  async getSubgraph(input?: { rootId?: string; nodeIds?: string[]; hops?: 1 | 2; status?: KnowledgeStatus; workspaceId?: string | null; limit?: number; edgeLimit?: number }): Promise<{ nodes: KnowledgeNode[]; edges: KnowledgeEdge[]; truncated: boolean; complete: boolean; truncation: { nodes: boolean; edges: boolean } }> {
+    const status = input?.status ?? "accepted"; const limit = Math.min(input?.limit && input.limit > 0 ? Math.floor(input.limit) : 250, 1000); const edgeLimit = Math.min(input?.edgeLimit && input.edgeLimit > 0 ? Math.floor(input.edgeLimit) : limit * 2, 2000);
+    let candidates: KnowledgeNode[]; let traversalTruncated = false; let traversalNodeTruncated = false; let traversalEdgeTruncated = false;
     if (input?.rootId) {
-      const root = await this.getNode(input.rootId);
-      if (!root || root.status !== status) return { nodes: [], edges: [], truncated: false };
-      candidates = (await this.getNeighborhood(root.id, { hops: input.hops === 2 ? 2 : 1, status })).nodes;
+      const root = await this.getNode(input.rootId); if (!root || root.status !== status) return { nodes: [], edges: [], truncated: false, complete: true, truncation: { nodes: false, edges: false } };
+      const neighborhood = await this.getNeighborhood(root.id, { hops: input.hops === 2 ? 2 : 1, status, nodeLimit: limit + 1, edgeLimit }); candidates = neighborhood.nodes; traversalTruncated = neighborhood.truncated; traversalNodeTruncated = neighborhood.truncation.nodes; traversalEdgeTruncated = neighborhood.truncation.edges;
     } else if (input?.nodeIds?.length) {
-      candidates = [];
-      for (const id of [...new Set(input.nodeIds)]) { const item = await this.getNode(id); if (item?.status === status) candidates.push(item); }
+      const requestedIds = [...new Set(input.nodeIds)]; traversalNodeTruncated = requestedIds.length > limit;
+      candidates = []; for (const id of requestedIds.slice(0, limit)) { const item = await this.getNode(id); if (item?.status === status) candidates.push(item); }
     } else candidates = await this.findNodes({ status, workspaceId: input?.workspaceId, limit: limit + 1 });
     if (input?.workspaceId !== undefined) candidates = candidates.filter((item) => item.workspaceId === input.workspaceId);
-    const truncated = candidates.length > limit; const nodes = candidates.slice(0, limit); const ids = new Set(nodes.map((item) => item.id));
-    const edges = (await this.edgesFor(this.pool, [...ids], status)).filter((item) => ids.has(item.fromNodeId) && ids.has(item.toNodeId));
-    return { nodes, edges, truncated };
+    const nodeTruncated = traversalNodeTruncated || candidates.length > limit; const nodes = candidates.slice(0, limit); const ids = nodes.map((item) => item.id);
+    const found = ids.length ? await this.pool.query(`SELECT * FROM knowledge_edges WHERE status = $1 AND from_node_id = ANY($2::uuid[]) AND to_node_id = ANY($2::uuid[]) ORDER BY created_at ASC, id ASC LIMIT $3`, [status, ids, edgeLimit + 1]) : { rows: [] };
+    const foundEdges = found.rows.map(edge); const edgeTruncated = traversalEdgeTruncated || foundEdges.length > edgeLimit; const edges = foundEdges.slice(0, edgeLimit); const truncated = traversalTruncated || nodeTruncated || edgeTruncated;
+    return { nodes, edges, truncated, complete: !truncated, truncation: { nodes: nodeTruncated, edges: edgeTruncated } };
   }
 
   async ensureProject(input: { canonicalId?: string; label: string; description?: string; workspaceId?: string | null; createAccepted?: boolean }): Promise<KnowledgeNode> {
@@ -429,10 +428,11 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     const graph = await this.getNeighborhood(project.id, { hops: input.hops === 2 ? 2 : 1, status: "accepted" });
     const linkedNodes = graph.nodes.filter((item) => item.id !== project.id);
     const claims = linkedNodes.filter((item) => item.type === "claim"); const concepts = linkedNodes.filter((item) => item.type === "concept"); const artifacts = linkedNodes.filter((item) => item.type === "artifact");
-    const pending = await this.listProposals({ status: "pending" }); const needle = project.label.toLowerCase();
-    const pendingProposalCount = pending.filter((item) => { const raw = JSON.stringify(item.payload).toLowerCase(); return raw.includes(needle) || raw.includes(project.id.toLowerCase()); }).length;
+    const pending = await this.pool.query<{ count: number }>("SELECT count(*)::int AS count FROM knowledge_proposals WHERE status = 'pending' AND (position($1 in lower(payload::text)) > 0 OR position($2 in lower(payload::text)) > 0)", [project.label.toLowerCase(), project.id.toLowerCase()]);
+    const pendingProposalCount = pending.rows[0]?.count ?? 0;
     const summaryLines = [`project: ${project.label} (${project.status})`, `workspace: ${project.workspaceId ?? "none"}`, `claims: ${claims.length} | concepts: ${concepts.length} | artifacts: ${artifacts.length}`, ...claims.slice(0, 8).map((item) => `- claim: ${item.label}`), `pending proposals: ${pendingProposalCount}`];
-    return { project, workspaceId: project.workspaceId, linkedNodes, edges: graph.edges, claims, concepts, artifacts, pendingProposalCount, summaryLines };
+    if (!graph.complete) summaryLines.push(`topology: incomplete (${graph.truncation.nodes ? "node limit" : ""}${graph.truncation.nodes && graph.truncation.edges ? ", " : ""}${graph.truncation.edges ? "edge limit" : ""})`);
+    return { project, workspaceId: project.workspaceId, linkedNodes, edges: graph.edges, claims, concepts, artifacts, pendingProposalCount, summaryLines, topologyComplete: graph.complete, topologyTruncated: graph.truncated, topologyTruncation: graph.truncation };
   }
 
   async addAlias(input: { aliasLabel: string; canonicalNodeId: string }): Promise<KnowledgeAlias> {

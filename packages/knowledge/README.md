@@ -31,6 +31,14 @@ Migrations are checksum-verified, advisory-locked and transactional. Accepted
 canonical writes append retryable projection-outbox work; graph and vector
 systems remain rebuildable projections and cannot invalidate PostgreSQL truth.
 
+Projection work is operational but remains decoupled from canonical writes. From
+`packages/orchestrator`, `npm run knowledge:projections -- incremental` drains
+currently eligible graph and active-vector outbox work; failures stay pending
+with the existing retry/backoff metadata. `npm run knowledge:projections:rebuild`
+explicitly rebuilds both projections. Knowledge Agent startup never performs a
+full rebuild. A monotonic outbox sequence makes newer canonical state supersede
+older failed work for the same identity.
+
 ## Semantic vector projection
 
 `PostgresVectorRepository` stores derived representations in pgvector. Records
@@ -50,6 +58,9 @@ spaces remain intact. `processVectorProjectionOutbox()` handles only vector
 jobs, serializes workers with an advisory lock, and leaves failed jobs retryable.
 Embedding generation remains behind `SemanticEmbeddingProvider`; the repository
 never invents embeddings and similarity results never merge identities.
+Incremental processing has one configured active provider/model/version;
+additional stored model/version spaces are rebuildable snapshots unless made
+active explicitly.
 
 ## Graph projection
 
@@ -83,8 +94,11 @@ Local defaults from `compose.knowledge.yml` are Bolt
 `HybridKnowledgeRetrievalService` is the deterministic retrieval substrate over
 canonical PostgreSQL, Neo4j, pgvector and optional PostGIS candidates. Requests
 can combine explicit canonical IDs/aliases, project or graph roots, workspace
-and entity filters, relation/hop constraints, a caller-supplied query vector and
-model/version, and bounded evidence/observation/source hydration.
+and entity filters, relation/hop constraints, an internal query vector/model
+space, and bounded evidence/observation/source hydration. Agent-facing tools
+accept `queryText`; the configured embedding provider owns vector generation and
+model/version selection. Neo4j topology is canonically validated, then root
+reachability is recomputed using only current accepted PostgreSQL nodes/edges.
 
 Exact lookup skips graph/vector when unnecessary. Root/project graph results can
 narrow pgvector candidate IDs; unconstrained semantic discovery can optionally
@@ -119,8 +133,14 @@ The runnable model binding is configured independently by role. Ollama is the
 initial provider (`KNOWLEDGE_AGENT_PROVIDER=ollama`), with a shared
 `KNOWLEDGE_AGENT_MODEL` and optional `KNOWLEDGE_AGENT_NAVIGATOR_MODEL` and
 `KNOWLEDGE_AGENT_CURATOR_MODEL` overrides. From `packages/orchestrator`, run
-`npm run knowledge:agent -- navigator "goal"` (or `curator`). Malformed model
-decisions fail closed before a tool executes.
+`npm run knowledge:agent -- navigator "goal"` (or `curator`). Semantic search
+uses `KNOWLEDGE_EMBEDDING_PROVIDER=ollama`, `KNOWLEDGE_EMBEDDING_MODEL`, optional
+`KNOWLEDGE_EMBEDDING_MODEL_VERSION`, `OLLAMA_BASE_URL`, and validates output
+against `KNOWLEDGE_VECTOR_DIMENSION` (currently 1536). Malformed model decisions
+fail closed before a tool executes; unavailable embeddings are reported without
+inventing or widening semantic results. The same runtime wires
+`PostgresSpatialRepository`, so `knowledge.spatial_search` executes bounded
+PostGIS meter-distance queries before canonical hydration.
 
 Agent curation never commits permanent truth. Merge and supersession are
 first-class pending proposal kinds; only separate canonical approval executes

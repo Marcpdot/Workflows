@@ -8,6 +8,14 @@ export interface CanonicalGraphValidation {
   invalidEdgeIds: string[];
 }
 
+/** Retains only the component still connected to a requested root after validation. */
+export function retainReachableCanonicalGraph(rootId: string, graph: GraphPath): GraphPath {
+  const known = new Set(graph.nodes.map((node) => node.id)); if (!known.has(rootId)) return { nodes: [], edges: [] };
+  const reached = new Set([rootId]); let changed = true;
+  while (changed) { changed = false; for (const edge of graph.edges) { if (reached.has(edge.fromNodeId) && !reached.has(edge.toNodeId)) { reached.add(edge.toNodeId); changed = true; } else if (reached.has(edge.toNodeId) && !reached.has(edge.fromNodeId)) { reached.add(edge.fromNodeId); changed = true; } } }
+  return { nodes: graph.nodes.filter((node) => reached.has(node.id)), edges: graph.edges.filter((edge) => reached.has(edge.fromNodeId) && reached.has(edge.toNodeId)) };
+}
+
 /** Neo4j supplies candidate topology; PostgreSQL decides current visibility. */
 export async function validateCanonicalGraph(
   canonical: CanonicalKnowledgeRepository,

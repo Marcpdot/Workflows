@@ -99,7 +99,8 @@ async function main(): Promise<void> {
 
     await processGraphProjectionOutbox({ pool, canonical, graph, limit: 100 });
     const outboxNode = await acceptedNode(canonical, event.id, "future_type", "Incremental graph node", "workspace-a");
-    assert((await processGraphProjectionOutbox({ pool, canonical, graph, limit: 100 })).processed > 0 && (await graph.getNode(outboxNode.id))?.id === outboxNode.id, "graph outbox incrementally upserts canonical node");
+    const incrementalGraph = await processGraphProjectionOutbox({ pool, canonical, graph, limit: 100 }); const incrementalVector = await processVectorProjectionOutbox({ pool, canonical, vector: vectors, embedder, limit: 100 });
+    assert(incrementalGraph.processed > 0 && incrementalVector.processed > 0 && (await graph.getNode(outboxNode.id))?.id === outboxNode.id && await vectors.get(semanticVectorRecordId(outboxNode.id, embedder.model, embedder.modelVersion)) !== null, "normal accepted canonical write becomes visible in graph and active vector projections after reconciliation");
     const project = await acceptedNode(canonical, event.id, "project", "Graph delete project", "workspace-a");
     const projectEdge = await canonical.linkToProject({ nodeId: alpha.id, projectId: project.id, relation: "used_in", sourceEventId: event.id });
     await processGraphProjectionOutbox({ pool, canonical, graph, limit: 100 });
@@ -119,6 +120,8 @@ async function main(): Promise<void> {
     assert(failure.failed > 0 && (await canonical.getNode(failureNode.id))?.status === "accepted", "graph failure does not invalidate canonical PostgreSQL write");
     const failedJob = await pool.query("SELECT last_error, processed_at FROM knowledge_projection_outbox WHERE canonical_id = $1 AND projection = 'graph' ORDER BY created_at DESC LIMIT 1", [failureNode.id]);
     assert(String(failedJob.rows[0]?.last_error).includes("fixture graph failure") && failedJob.rows[0]?.processed_at == null, "failed graph job remains retryable");
+    await canonical.mergeNodes({ fromId: failureNode.id, intoId: alpha.id }); await processGraphProjectionOutbox({ pool, canonical, graph, limit: 100 }); await pool.query("UPDATE knowledge_projection_outbox SET available_at = now() WHERE canonical_id = $1 AND projection = 'graph' AND processed_at IS NULL", [failureNode.id]); await processGraphProjectionOutbox({ pool, canonical, graph, limit: 100 });
+    const remainingOldGraphJobs = await pool.query<{ count: number }>("SELECT count(*)::int AS count FROM knowledge_projection_outbox WHERE canonical_id = $1 AND projection = 'graph' AND processed_at IS NULL", [failureNode.id]); assert(remainingOldGraphJobs.rows[0].count === 0 && await graph.getNode(failureNode.id) === null, "newer merge/delete supersedes an older failed graph upsert and prevents resurrection");
     console.log("Neo4j canonical graph projection checks passed.");
   } finally { await graph.close(); await vectors.close(); await pool.end(); await neo4jRuntime.dispose(); await postgresRuntime.dispose(); }
 }

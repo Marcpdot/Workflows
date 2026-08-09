@@ -1,6 +1,6 @@
 import {
   createHybridKnowledgeRetrievalService, createKnowledgeAgent, createKnowledgePostgresPool,
-  createKnowledgeStore, createNeo4jGraphRepository, createPostgresVectorRepository,
+  createKnowledgeStore, createNeo4jGraphRepository, createPostgresSpatialRepository, createPostgresVectorRepository,
   KNOWLEDGE_VECTOR_DIMENSION, rebuildGraphProjection, resolvePostgresKnowledgeConfig,
   type GraphRepository, type KnowledgeAgentAuditEvent, type KnowledgeAgentDecision,
   type KnowledgeAgentModelAdapter, type KnowledgeAgentModelInput, type KnowledgeProposal,
@@ -25,7 +25,7 @@ async function main() {
   const postgresRuntime = await startKnowledgePostgresTest(); const neo4jRuntime = await startKnowledgeNeo4jTest();
   const base = resolvePostgresKnowledgeConfig(); const pool = createKnowledgePostgresPool({ ...base, connectionString: postgresRuntime.connectionString, applicationName: `${base.applicationName}-agent-test` });
   const canonical = createKnowledgeStore({ postgresConfig: { ...base, connectionString: postgresRuntime.connectionString }, pool });
-  const graph = createNeo4jGraphRepository(neo4jRuntime.config); const vectors = createPostgresVectorRepository({ ...base, connectionString: postgresRuntime.connectionString, pool });
+  const graph = createNeo4jGraphRepository(neo4jRuntime.config); const vectors = createPostgresVectorRepository({ ...base, connectionString: postgresRuntime.connectionString, pool }); const spatial = createPostgresSpatialRepository({ ...base, connectionString: postgresRuntime.connectionString, pool });
   try {
     let health = await graph.healthCheck(); for (let i = 0; !health.ok && i < 60; i++) { await new Promise((r) => setTimeout(r, 1000)); health = await graph.healthCheck(); } assert(health.ok, "agent graph runtime healthy");
     const event = await canonical.createEvent({ sourceType: "file", sourceRef: "agent-fixture.md" });
@@ -41,14 +41,20 @@ async function main() {
     const provenance = await canonical.addProposals(event.id, [{ kind: "evidence", payload: { targetId: claimA.id, sourceId: source.id, stance: "supports", excerpt: "fixture support" } }, { kind: "observation", payload: { targetId: claimA.id, sourceId: source.id, observationKind: "mentions" } }]); for (const p of provenance) await canonical.acceptProposal(p.id);
     await rebuildGraphProjection({ canonical, graph, pageSize: 2 });
     const now = Date.now(); for (const [id, embedding, type, workspaceId] of [[idea.id, vector([0, 1]), "idea", "workspace-a"], [claimA.id, vector([0, .9], [1, .1]), "claim", "workspace-a"], [sameA.id, vector([2, 1]), "artifact", "workspace-a"], [sameB.id, vector([2, .99], [3, .01]), "artifact", "workspace-a"]] as Array<[string, number[], string, string | null]>) { const record: SemanticVectorRecord = { id: randomUUID(), canonicalId: id, vector: embedding, dimension: KNOWLEDGE_VECTOR_DIMENSION, model: "agent-fixture", modelVersion: "v1", entityType: type, workspaceId, createdAt: now, updatedAt: now }; await vectors.upsert(record); }
-    const retrieval = createHybridKnowledgeRetrievalService({ canonical, graph, vector: vectors }); const audit: KnowledgeAgentAuditEvent[] = [];
-    const run = async (mode: "navigator" | "curator", decisions: KnowledgeAgentDecision[], limits = {}) => { const model = new ScriptedModel(decisions); const agent = createKnowledgeAgent({ canonical, graph, vector: vectors, retrieval, model, auditor: { emit: (e) => audit.push(e) } }); return { result: await agent.run({ goal: "fixture goal", mode, limits }), model, agent }; };
+    await spatial.upsert({ canonicalId: idea.id, geometry: { type: "Point", coordinates: [10.7522, 59.9139] }, updatedAt: Date.now() });
+    const retrieval = createHybridKnowledgeRetrievalService({ canonical, graph, vector: vectors, spatial }); const audit: KnowledgeAgentAuditEvent[] = [];
+    const queryEmbedding = { model: "agent-fixture", modelVersion: "v1", dimension: KNOWLEDGE_VECTOR_DIMENSION, async embed(texts: readonly string[]) { return texts.map(() => vector([0, 1])); } };
+    const run = async (mode: "navigator" | "curator", decisions: KnowledgeAgentDecision[], limits = {}) => { const model = new ScriptedModel(decisions); const agent = createKnowledgeAgent({ canonical, graph, vector: vectors, spatial, queryEmbedding, retrieval, model, auditor: { emit: (e) => audit.push(e) } }); return { result: await agent.run({ goal: "fixture goal", mode, limits }), model, agent }; };
 
     const resolved = await run("navigator", [call("knowledge.resolve_entity", { canonicalId: idea.id }), done()]); assert(resolved.result.canonicalIds.includes(idea.id), "Navigator resolves canonical identity through controlled tool");
-    const hybrid = await run("navigator", [call("knowledge.retrieve", { graphRootIds: [project.id], queryVector: vector([0, 1]), embeddingModel: "agent-fixture", embeddingModelVersion: "v1", includeEvidence: true, overallLimit: 5 }), done()]); assert(hybrid.result.steps[0].result.strategies?.graph && hybrid.result.steps[0].result.strategies?.semantic, "Navigator performs bounded hybrid retrieval");
+    const hybrid = await run("navigator", [call("knowledge.retrieve", { graphRootIds: [project.id], queryText: "adaptive cooling", includeEvidence: true, overallLimit: 5 }), done()]); assert(hybrid.result.steps[0].result.strategies?.graph && hybrid.result.steps[0].result.strategies?.semantic, "Navigator turns query text into a provider-owned embedding for hybrid retrieval");
+    const semanticText = await run("navigator", [call("knowledge.semantic_search", { queryText: "adaptive cooling", limit: 3 }), done()]); assert(semanticText.result.canonicalIds.includes(idea.id), "semantic query text is embedded, searched in pgvector and canonically hydrated");
+    const spatialSearch = await run("navigator", [call("knowledge.spatial_search", { longitude: 10.75, latitude: 59.91, distanceMeters: 1000, workspaceId: "workspace-a" }), done()]); assert(spatialSearch.result.canonicalIds.includes(idea.id), "Knowledge Agent spatial search reaches bounded PostGIS and canonical hydration");
     const topology = await run("navigator", [call("knowledge.graph_expand", { canonicalId: project.id, hops: 2 }), call("knowledge.find_path", { fromId: project.id, toId: claimA.id, maxHops: 3 }), done()]); assert(topology.result.canonicalIds.includes(claimA.id), "Navigator expands neighborhood and finds path");
     const trace = await run("navigator", [call("knowledge.get_evidence", { canonicalId: claimA.id }), call("knowledge.get_observations", { canonicalId: claimA.id }), call("knowledge.get_sources", { canonicalId: claimA.id }), done()]); assert(trace.result.canonicalIds.includes(source.id), "Navigator retrieves evidence, observations and source provenance");
     assert(!resolved.agent.listTools("navigator").some((x) => x.name.includes("sql") || x.name.includes("cypher") || x.name.includes("accept") || x.name.includes("merge")), "Navigator receives no raw backend, approval or merge tools");
+    assert(resolved.agent.listTools("navigator").flatMap((x) => x.parameters).every((parameter) => !parameter.toLowerCase().includes("vector") && !parameter.toLowerCase().includes("embeddingmodel")), "agent tool schemas expose semantic query text, never raw vectors or model-space internals");
+    const unavailableSemantic = await createKnowledgeAgent({ canonical, vector: vectors, retrieval: createHybridKnowledgeRetrievalService({ canonical, vector: vectors }), model: new ScriptedModel([call("knowledge.semantic_search", { queryText: "adaptive cooling" }), done()]) }).run({ goal: "semantic unavailable" }); assert(!unavailableSemantic.steps[0].result.ok && unavailableSemantic.steps[0].result.error?.includes("semantic retrieval unavailable"), "missing query embedding provider reports semantic unavailability without widening results");
 
     const degradedGraphModel = new ScriptedModel([call("knowledge.retrieve", { canonicalIds: [idea.id], graphRootIds: [idea.id] }), done()]); const failingGraph = { async expand() { throw new Error("graph fixture unavailable"); } } as unknown as GraphRepository;
     const degradedGraph = await createKnowledgeAgent({ canonical, graph: failingGraph, vector: vectors, retrieval: createHybridKnowledgeRetrievalService({ canonical, graph: failingGraph, vector: vectors }), model: degradedGraphModel }).run({ goal: "degrade" }); assert(degradedGraph.canonicalIds.includes(idea.id) && degradedGraph.degradedDependencies.includes("graph"), "graph degradation retains canonical retrieval and is reported");
@@ -79,6 +85,6 @@ async function main() {
     assert(unknownRejected, "unknown proposal kinds fail closed instead of dispatching to supersession");
     assert((await canonical.listProposals({ status: "pending" })).some((proposal) => proposal.id === unknown.id), "failed unknown proposal remains pending after rollback");
     console.log("Knowledge Agent controlled navigation/curation checks passed.");
-  } finally { await graph.close(); await vectors.close(); await pool.end(); await neo4jRuntime.dispose(); await postgresRuntime.dispose(); }
+  } finally { await graph.close(); await vectors.close(); await spatial.close(); await pool.end(); await neo4jRuntime.dispose(); await postgresRuntime.dispose(); }
 }
 main().catch((error) => { console.error(error instanceof Error ? error.stack : String(error)); process.exitCode = 1; });

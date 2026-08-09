@@ -110,6 +110,9 @@ export interface ProjectStatus {
   artifacts: KnowledgeNode[];
   pendingProposalCount: number;
   summaryLines: string[];
+  topologyComplete?: boolean;
+  topologyTruncated?: boolean;
+  topologyTruncation?: { nodes: boolean; edges: boolean };
 }
 
 export type ProjectLinkRelation = "used_in" | "about" | "part_of";
@@ -198,10 +201,13 @@ export interface KnowledgeStore {
     status?: KnowledgeStatus;
     workspaceId?: string | null;
     limit?: number;
+    edgeLimit?: number;
   }): Promise<{
     nodes: KnowledgeNode[];
     edges: KnowledgeEdge[];
     truncated: boolean;
+    complete: boolean;
+    truncation: { nodes: boolean; edges: boolean };
   }>;
 
   /** M13: find or create accepted project node */

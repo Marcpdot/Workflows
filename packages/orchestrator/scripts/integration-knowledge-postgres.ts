@@ -1,5 +1,8 @@
 import {
+  createHybridKnowledgeRetrievalService,
   createKnowledgePostgresPool,
+  createKnowledgeStore,
+  createPostgresSpatialRepository,
   loadKnowledgeMigrations,
   resolvePostgresKnowledgeConfig,
   runKnowledgeMigrations,
@@ -129,6 +132,16 @@ async function main(): Promise<void> {
        )`
     );
     assert(nearby.rows[0]?.canonical_node_id === source.rows[0].id, "spatial query finds geometry");
+    await testPool.query("DELETE FROM knowledge_locations WHERE canonical_node_id = $1", [source.rows[0].id]);
+
+    const canonical = createKnowledgeStore({ postgresConfig: testConfig, pool: testPool });
+    const spatial = createPostgresSpatialRepository({ ...testConfig, pool: testPool });
+    await spatial.upsert({ canonicalId: claimA.rows[0].id, geometry: { type: "Point", coordinates: [10.7522, 59.9139] }, properties: { fixture: true }, updatedAt: Date.now() });
+    const repositoryHits = await spatial.withinDistance({ longitude: 10.75, latitude: 59.91, distanceMeters: 1000, workspaceId: "integration", limit: 1 });
+    assert(repositoryHits.length === 1 && repositoryHits[0].canonicalId === claimA.rows[0].id && Number.isFinite(repositoryHits[0].distanceMeters), "PostgresSpatialRepository uses bounded PostGIS meter distance and deterministic canonical results");
+    const spatialHybrid = await createHybridKnowledgeRetrievalService({ canonical, spatial }).retrieve({ workspaceId: "integration", spatial: { longitude: 10.75, latitude: 59.91, distanceMeters: 1000, limit: 5 } });
+    assert(spatialHybrid.items.some((item) => item.node.id === claimA.rows[0].id && item.origins.includes("spatial")), "hybrid spatial discovery canonically hydrates accepted PostgreSQL identity");
+    await spatial.delete(claimA.rows[0].id); assert(await spatial.get(claimA.rows[0].id) === null, "spatial repository delete removes the canonical location record");
 
     console.log("PostgreSQL/PostGIS/pgvector integration checks passed.");
   } finally {

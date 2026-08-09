@@ -137,6 +137,8 @@ async function main(): Promise<void> {
     assert(failure.failed > 0 && (await canonical.getNode(failureNode.id))?.status === "accepted", "canonical write remains valid when projection processing fails");
     const failedJob = await pool.query("SELECT last_error, processed_at FROM knowledge_projection_outbox WHERE canonical_id = $1 AND projection = 'vector' ORDER BY created_at DESC LIMIT 1", [failureNode.id]);
     assert(String(failedJob.rows[0]?.last_error).includes("fixture embedding failure") && failedJob.rows[0]?.processed_at == null, "failed projection remains retryable with error state");
+    await canonical.mergeNodes({ fromId: failureNode.id, intoId: alpha.id }); await processVectorProjectionOutbox({ pool, canonical, vector: vectors, embedder: fixtureEmbedder(), limit: 100 }); await pool.query("UPDATE knowledge_projection_outbox SET available_at = now() WHERE canonical_id = $1 AND projection = 'vector' AND processed_at IS NULL", [failureNode.id]); await processVectorProjectionOutbox({ pool, canonical, vector: vectors, embedder: fixtureEmbedder(), limit: 100 });
+    const remainingOldVectorJobs = await pool.query<{ count: number }>("SELECT count(*)::int AS count FROM knowledge_projection_outbox WHERE canonical_id = $1 AND projection = 'vector' AND processed_at IS NULL", [failureNode.id]); assert(remainingOldVectorJobs.rows[0].count === 0 && await vectors.get(semanticVectorRecordId(failureNode.id, "fixture-semantic", "v1")) === null, "newer merge/delete supersedes an older failed vector upsert and prevents resurrection");
     console.log("PostgreSQL pgvector semantic projection checks passed.");
   } finally { await vectors.close(); await pool.end(); await runtime.dispose(); }
 }
