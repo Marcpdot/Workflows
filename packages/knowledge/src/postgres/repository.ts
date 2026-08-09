@@ -91,7 +91,7 @@ function alias(row: Record<string, unknown>): KnowledgeAlias {
 }
 
 function evidence(row: Record<string, unknown>): KnowledgeEvidence {
-  return { id: String(row.id), targetNodeId: String(row.target_node_id), sourceNodeId: String(row.source_node_id), excerpt: row.excerpt == null ? undefined : String(row.excerpt), stance: row.stance as KnowledgeEvidence["stance"], confidence: row.confidence == null ? undefined : Number(row.confidence), createdAt: millis(row.created_at as Date) };
+  return { id: String(row.id), targetNodeId: String(row.target_node_id), sourceNodeId: String(row.source_node_id), sourceEventId: row.source_event_id == null ? undefined : String(row.source_event_id), excerpt: row.excerpt == null ? undefined : String(row.excerpt), stance: row.stance as KnowledgeEvidence["stance"], confidence: row.confidence == null ? undefined : Number(row.confidence), createdAt: millis(row.created_at as Date) };
 }
 
 function observation(row: Record<string, unknown>): KnowledgeObservation {
@@ -573,9 +573,25 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
   }
 
   private async materializeObservation(db: Queryable, payload: Record<string, unknown>, eventId: string): Promise<void> {
-    const targetValue = String(payload.targetId ?? payload.targetLabel ?? "").trim();
-    if (!targetValue) throw new Error("acceptProposal observation: targetId or targetLabel is required");
-    const targetId = await this.resolveEndpoint(db, targetValue, eventId);
+    const explicitTargetId = String(payload.targetId ?? "").trim();
+    const targetLabel = String(payload.targetLabel ?? "").trim();
+    if (!explicitTargetId && !targetLabel) throw new Error("acceptProposal observation: targetId or targetLabel is required");
+    let target: KnowledgeNode | null = null;
+    if (explicitTargetId) {
+      if (!UUID.test(explicitTargetId)) throw new Error("acceptProposal observation: targetId must be a UUID");
+      target = await this.getNodeWith(db, explicitTargetId);
+      if (!target || target.status === "rejected") throw new Error(`acceptProposal observation: targetId ${explicitTargetId} is not reusable`);
+    } else {
+      const knownAlias = await this.getAlias(db, normalizeLabel(targetLabel));
+      if (knownAlias) target = await this.getNodeWith(db, knownAlias.canonicalNodeId);
+      if (!target || target.status === "rejected") {
+        const targetType = payload.targetType == null ? undefined : String(payload.targetType) as KnowledgeNodeType;
+        const candidates = await this.findIdentityCandidates(db, targetLabel, targetType);
+        if (candidates.length > 1) throw new Error(`observation target "${targetLabel}" is ambiguous; provide targetId or alias`);
+        target = candidates[0] ?? null;
+      }
+      if (!target) throw new Error(`observation target "${targetLabel}" is unknown; create the canonical identity explicitly first`);
+    }
     const sourceId = String(payload.sourceId ?? "").trim();
     let source = sourceId && UUID.test(sourceId) ? await this.getNodeWith(db, sourceId) : null;
     if (sourceId && !source) throw new Error(`acceptProposal observation: unknown sourceId ${sourceId}`);
@@ -589,7 +605,7 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
         source = candidates[0] ?? await this.materializeNode(db, { type: "source", label: sourceLabel }, eventId);
       }
     }
-    await this.insertObservation(db, { targetNodeId: targetId, sourceEventId: eventId, sourceNodeId: source?.id, kind: this.observationKind(payload), metadata: this.observationMetadata(payload) });
+    await this.insertObservation(db, { targetNodeId: target.id, sourceEventId: eventId, sourceNodeId: source?.id, kind: this.observationKind(payload), metadata: this.observationMetadata(payload) });
   }
 }
 

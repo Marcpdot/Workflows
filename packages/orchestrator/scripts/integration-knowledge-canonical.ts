@@ -48,6 +48,10 @@ async function main(): Promise<void> {
     const motors = await repository.findNodes({ type: "artifact", label: "Motor", status: "accepted" });
     assert(motors.length === 2 && motors[0].id !== motors[1].id, "same label can represent distinct referents");
     assert(await repository.resolveCanonical({ label: "Motor", type: "artifact" }) === null, "ambiguous label does not silently collapse identity");
+    const ambiguousObservation = (await repository.addProposals(event.id, [{ kind: "observation", payload: { targetLabel: "Motor", targetType: "artifact", observationKind: "mentions" } }]))[0];
+    let ambiguousObservationFailed = false;
+    try { await repository.acceptProposal(ambiguousObservation.id); } catch { ambiguousObservationFailed = true; }
+    assert(ambiguousObservationFailed, "pure observation rejects an ambiguous target label");
 
     const ideaProposal = (await repository.addProposals(event.id, [
       { kind: "node", payload: { type: "idea", label: "Field-oriented thermal control" } },
@@ -65,6 +69,7 @@ async function main(): Promise<void> {
     assert((await repository.findNodes({ type: "idea", label: idea.label, status: "accepted" })).length === 1, "repeated observation reuses explicit canonical identity");
     const ideaEvidence = await repository.listEvidence(idea.id);
     assert(ideaEvidence.length === 1 && ideaEvidence[0].stance === "supports", "an idea can receive generic evidence without becoming a claim");
+    assert(ideaEvidence[0].sourceEventId === observation.id, "evidence retains source event provenance through the repository API");
     assert((await repository.getNode(idea.id))?.type === "idea", "generic evidence preserves target identity type");
     const ideaObservations = await repository.listObservations(idea.id);
     assert(ideaObservations.length === 3, "one identity retains original and repeated encounters without duplication");
@@ -87,9 +92,20 @@ async function main(): Promise<void> {
 
     const alias = await repository.addAlias({ aliasLabel: "FOC thermal control", canonicalNodeId: idea.id });
     assert((await repository.resolveCanonical({ label: alias.aliasLabel }))?.id === idea.id, "explicit alias resolves terminology to one identity");
+    const aliasObservation = (await repository.addProposals(observation.id, [{ kind: "observation", payload: { targetLabel: alias.aliasLabel, observationKind: "mentions" } }]))[0];
+    await repository.acceptProposal(aliasObservation.id);
+    assert((await repository.listObservations(idea.id)).some((item) => item.sourceEventId === observation.id && item.kind === "mentions"), "pure observation resolves an alias to the existing identity");
     const aliasEncounter = (await repository.addProposals(observation.id, [{ kind: "node", payload: { type: "idea", label: alias.aliasLabel, observationKind: "observes" } }]))[0];
     await repository.acceptProposal(aliasEncounter.id);
     assert((await repository.listObservations(idea.id)).some((item) => item.metadata.encounteredLabel === alias.aliasLabel), "alias reuse records provenance on the canonical identity");
+
+    const conceptsBeforeUnknownObservation = await repository.findNodes({ type: "concept", status: "accepted", limit: 500 });
+    const unknownObservation = (await repository.addProposals(observation.id, [{ kind: "observation", payload: { targetLabel: "Unknown provenance-only referent", observationKind: "mentions" } }]))[0];
+    let unknownObservationFailed = false;
+    try { await repository.acceptProposal(unknownObservation.id); } catch { unknownObservationFailed = true; }
+    assert(unknownObservationFailed, "pure observation rejects an unknown target label");
+    const conceptsAfterUnknownObservation = await repository.findNodes({ type: "concept", status: "accepted", limit: 500 });
+    assert(conceptsAfterUnknownObservation.length === conceptsBeforeUnknownObservation.length, "failed observation does not silently create a generic concept");
 
     const mergeItems = await repository.addProposals(event.id, [
       { kind: "node", payload: { type: "concept", label: "Thermal regulation idea" } },

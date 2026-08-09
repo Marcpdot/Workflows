@@ -61,6 +61,7 @@ export interface KnowledgeEvidence {
   id: string;
   targetNodeId: string;
   sourceNodeId: string;
+  sourceEventId?: string;
   excerpt?: string;
   stance: "supports" | "contradicts" | "test_evidence";
   confidence?: number;
