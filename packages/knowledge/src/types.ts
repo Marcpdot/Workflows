@@ -275,6 +275,8 @@ export interface KnowledgeStore {
   }): Promise<KnowledgeEdge>;
 
   listAliases(canonicalNodeId?: string): Promise<KnowledgeAlias[]>;
+  /** Bounded alias hydration for an already bounded canonical candidate set. */
+  listAliasesForCanonicalIds(canonicalNodeIds: readonly string[]): Promise<KnowledgeAlias[]>;
 
   close(): void;
 }

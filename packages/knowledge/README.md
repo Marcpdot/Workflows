@@ -115,6 +115,13 @@ IDs, retrieval degradation, proposal IDs, counts, and outcome without prompts
 or full content by default. No agent tool exposes SQL, Cypher, filesystem,
 proposal acceptance, or direct merge/supersede operations.
 
+The runnable model binding is configured independently by role. Ollama is the
+initial provider (`KNOWLEDGE_AGENT_PROVIDER=ollama`), with a shared
+`KNOWLEDGE_AGENT_MODEL` and optional `KNOWLEDGE_AGENT_NAVIGATOR_MODEL` and
+`KNOWLEDGE_AGENT_CURATOR_MODEL` overrides. From `packages/orchestrator`, run
+`npm run knowledge:agent -- navigator "goal"` (or `curator`). Malformed model
+decisions fail closed before a tool executes.
+
 Agent curation never commits permanent truth. Merge and supersession are
 first-class pending proposal kinds; only separate canonical approval executes
 them transactionally. Similarity, label equality, graph proximity, and

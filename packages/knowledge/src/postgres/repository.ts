@@ -529,6 +529,16 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     return result.rows.map(alias);
   }
 
+  async listAliasesForCanonicalIds(canonicalNodeIds: readonly string[]): Promise<KnowledgeAlias[]> {
+    const ids = [...new Set(canonicalNodeIds)];
+    if (!ids.length) return [];
+    const result = await this.pool.query(
+      "SELECT * FROM knowledge_aliases WHERE canonical_node_id = ANY($1::uuid[]) ORDER BY created_at ASC",
+      [ids]
+    );
+    return result.rows.map(alias);
+  }
+
   close(): void { if (this.ownsPool) void this.pool.end(); }
 
   private async getAlias(db: Queryable, normalized: string): Promise<KnowledgeAlias | null> {

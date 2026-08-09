@@ -18,6 +18,10 @@ export type {
   ProjectStatus,
 } from "./types.js";
 export {
+  validateCanonicalGraph,
+  type CanonicalGraphValidation,
+} from "./canonicalGraph.js";
+export {
   createKnowledgeStore,
   hashInput,
   type KnowledgeStoreConfig,
