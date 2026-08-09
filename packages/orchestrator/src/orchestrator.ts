@@ -44,7 +44,6 @@ import {
   createKnowledgeStore,
   createKnowledgeTools,
   listPendingForSession,
-  resolveKnowledgeDbPath,
   type KnowledgeProposalSummary,
   type KnowledgeStore,
 } from "@workflows/knowledge";
@@ -1049,7 +1048,6 @@ export function loadConfigFromEnv(
   const captureTierRaw = env.KNOWLEDGE_CAPTURE_TIER?.trim().toLowerCase();
   const captureModelTier: "local" | "heuristic" =
     captureTierRaw === "heuristic" ? "heuristic" : "local";
-  const knowledgeDbPath = resolveKnowledgeDbPath(cwd, env);
   const defaultWorkspaceId =
     env.KNOWLEDGE_DEFAULT_WORKSPACE_ID?.trim() || workspace.id;
   const knowledge =
@@ -1058,7 +1056,6 @@ export function loadConfigFromEnv(
     knowledgeIngestAutoOnChat ||
     knowledgeCaptureEnabled
       ? createKnowledgeStore({
-          dbPath: knowledgeDbPath,
           defaultWorkspaceId,
         })
       : undefined;

@@ -10,12 +10,14 @@ import {
   normalizeLabel,
 } from "@workflows/knowledge";
 import { MapToolRegistry } from "@workflows/tools";
+import { startKnowledgePostgresTest } from "./knowledge-postgres-test-runtime.js";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);
 }
 
 async function main(): Promise<void> {
+  const postgres = await startKnowledgePostgresTest();
   const dataDir = resolve(process.cwd(), "data");
   mkdirSync(dataDir, { recursive: true });
   const dbPath = resolve(
@@ -23,7 +25,7 @@ async function main(): Promise<void> {
     `_smoke_knowledge_identity_${Date.now()}.db`
   );
 
-  const store = createKnowledgeStore({ dbPath });
+  const store = createKnowledgeStore();
 
   try {
     assert(normalizeLabel("  Heat  ") === "heat", "normalizeLabel");
@@ -120,24 +122,23 @@ async function main(): Promise<void> {
       `OK: mergeNodes edgesRewired=${merge.edgesRewired} aliasCreated=${merge.aliasCreated}`
     );
 
-    // Accept path avoids trivial duplicate (normalized)
+    // Accept path reuses only an explicit canonical identity.
     const ev2 = await store.createEvent({
       sourceType: "manual",
       sourceRef: "smoke-dup",
     });
     const [dupProp] = await store.addProposals(ev2.id, [
-      { kind: "node", payload: { type: "concept", label: "  HEAT " } },
+      { kind: "node", payload: { type: "concept", label: "  HEAT ", canonicalId: heat.id } },
     ]);
     await store.acceptProposal(dupProp!.id);
     const heats = (
       await store.findNodes({ type: "concept", status: "accepted", limit: 50 })
     ).filter((n) => n.label.toLowerCase() === "heat" || n.label === "  HEAT ");
-    // materialize should reuse heat, not create second accepted "  HEAT "
     const acceptedHeatLabels = (
       await store.findNodes({ type: "concept", status: "accepted", limit: 50 })
     ).filter((n) => n.label.trim().toLowerCase() === "heat");
     assert(acceptedHeatLabels.length === 1, "no trivial duplicate heat node");
-    console.log("OK: accept reuses normalized identity");
+    console.log("OK: accept reuses explicit canonical identity");
 
     // Contradictions
     const claims = await store.findNodes({
@@ -193,6 +194,7 @@ async function main(): Promise<void> {
     console.log("OK: M15 knowledge tools");
   } finally {
     store.close();
+    await postgres.dispose();
     try {
       if (existsSync(dbPath)) rmSync(dbPath);
       for (const s of ["-shm", "-wal"]) {

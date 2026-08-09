@@ -1,6 +1,6 @@
 /**
  * Continuous / explicit conversation capture → pending proposals only.
- * Iteration: conversation-optimised extract, pending+accepted dedupe, ranking.
+ * Conversation-optimised extract, conservative identity handling and ranking.
  */
 
 import {
@@ -10,7 +10,7 @@ import {
 } from "./conversationExtract.js";
 import { extractionToProposalItems } from "./extract.js";
 import { formatChatSegment } from "./ingest.js";
-import { labelsMatch, normalizeLabel } from "./identity.js";
+import { normalizeLabel } from "./identity.js";
 import { hashInput } from "./knowledge.js";
 import {
   extractStructuredConversation,
@@ -18,14 +18,13 @@ import {
 } from "./structuredCapture.js";
 import type {
   KnowledgeEvent,
-  KnowledgeNodeType,
   KnowledgeProposal,
   KnowledgeStore,
 } from "./types.js";
 
 export interface KnowledgeProposalSummary {
   id: string;
-  kind: "node" | "edge" | "evidence";
+  kind: KnowledgeProposal["kind"];
   label: string;
   relation?: string;
   confidence?: number;
@@ -100,8 +99,10 @@ export function proposalToSummary(
     const to = String(payload.to ?? payload.toLabel ?? "?");
     relation = String(payload.relation ?? "about");
     label = `${from} -[${relation}]-> ${to}`;
+  } else if (p.kind === "evidence") {
+    label = String(payload.targetLabel ?? payload.claimLabel ?? payload.claim ?? "evidence");
   } else {
-    label = String(payload.claimLabel ?? payload.claim ?? "evidence");
+    label = String(payload.targetLabel ?? payload.targetId ?? "observation");
   }
   if (p.kind === "node") {
     const desc = String(payload.description ?? "");
@@ -162,18 +163,11 @@ async function filterAgainstAcceptedAndPending(
   skipped: number;
 }> {
   const pending = await store.listProposals({ status: "pending" });
-  const pendingNodeKeys = new Set<string>();
-  const pendingEdgeKeys = new Set<string>();
+  const pendingCanonicalIds = new Set<string>();
   for (const p of pending) {
     if (p.kind === "node") {
-      const t = String(p.payload.type ?? "concept");
-      const l = normalizeLabel(String(p.payload.label ?? ""));
-      if (l) pendingNodeKeys.add(`${t}:${l}`);
-    } else if (p.kind === "edge") {
-      const from = normalizeLabel(String(p.payload.from ?? ""));
-      const to = normalizeLabel(String(p.payload.to ?? ""));
-      const rel = String(p.payload.relation ?? "about").toLowerCase();
-      pendingEdgeKeys.add(`${from}|${rel}|${to}`);
+      const canonicalId = String(p.payload.canonicalId ?? "").trim();
+      if (canonicalId) pendingCanonicalIds.add(canonicalId);
     }
   }
 
@@ -181,45 +175,19 @@ async function filterAgainstAcceptedAndPending(
   let skipped = 0;
   for (const item of items) {
     if (item.kind === "node") {
-      const type = String(item.payload.type ?? "concept") as KnowledgeNodeType;
       const label = String(item.payload.label ?? "").trim();
       if (!label) {
         skipped++;
         continue;
       }
-      const key = `${type}:${normalizeLabel(label)}`;
-      if (pendingNodeKeys.has(key)) {
-        skipped++;
-        continue;
-      }
-      const canon = await store.resolveCanonical({ label, type });
-      if (canon && (canon.type === type || !type)) {
-        skipped++;
-        continue;
-      }
-      const hits = await store.findNodes({
-        type,
-        label,
-        status: "accepted",
-        limit: 8,
-      });
-      if (hits.some((n) => n.type === type && labelsMatch(n.label, label))) {
-        skipped++;
-        continue;
-      }
-      pendingNodeKeys.add(key);
+      const canonicalId = String(item.payload.canonicalId ?? "").trim();
+      if (canonicalId && pendingCanonicalIds.has(canonicalId)) { skipped++; continue; }
+      if (canonicalId) pendingCanonicalIds.add(canonicalId);
       out.push(item);
       continue;
     }
     if (item.kind === "edge") {
-      const from = normalizeLabel(String(item.payload.from ?? ""));
-      const to = normalizeLabel(String(item.payload.to ?? ""));
       const rel = String(item.payload.relation ?? "about").toLowerCase();
-      const ek = `${from}|${rel}|${to}`;
-      if (pendingEdgeKeys.has(ek)) {
-        skipped++;
-        continue;
-      }
       const fromNode = await store.resolveCanonical({
         label: String(item.payload.from ?? ""),
       });
@@ -243,7 +211,6 @@ async function filterAgainstAcceptedAndPending(
           continue;
         }
       }
-      pendingEdgeKeys.add(ek);
       out.push(item);
       continue;
     }
@@ -271,7 +238,11 @@ async function filterResolvableEdges(
     if (proposedLabels.has(key)) return true;
     if (known.has(key)) return known.get(key)!;
     const node = await store.resolveCanonical({ label });
-    const exists = node != null;
+    const exists = node != null || (await store.findNodes({
+      label,
+      status: "accepted",
+      limit: 2,
+    })).length > 0;
     known.set(key, exists);
     return exists;
   };
@@ -453,4 +424,3 @@ export async function captureConversationSegment(
     sourceRef,
   };
 }
-

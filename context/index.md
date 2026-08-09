@@ -8,7 +8,7 @@ Lean index of why-knowledge. Load a topic file only when relevant.
 - [routing.md](routing.md) — rule-based local vs frontier selection
 - [policy.md](policy.md) — budget/tier compute policy over the router (M7)
 - [memory.md](memory.md) — short-term SQLite; LTM; **session_state** (interaction mode)
-- [knowledge.md](knowledge.md) — world model M11–M18; structured capture; accepted subgraph read contract
+- [knowledge.md](knowledge.md) — world model; Knowledge Infrastructure v2 storage boundaries; capture and accepted subgraph contracts
 - [workspace.md](workspace.md) — multi-project session/workspace isolation (M9)
 - [structured.md](structured.md) — parseable JSON + repair, not constrained decoding (M10)
 - [models.md](models.md) — default small local model, Ollama CLI, Grok frontier

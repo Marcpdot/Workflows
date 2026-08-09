@@ -56,7 +56,8 @@ work and “what is the status of actuator-v2?” need that structure. Those are
 | **Relation / edge** | Typed link between nodes (`requires`, `limits`, `causes`, `increases`, `reduces`, `measures`, `controls`, `supports`, `contradicts`, `used_in`, …) |
 | **Event** | Extraction or analysis event (source type + ref) |
 | **Source** | Conversation id + excerpt, file path, measurement |
-| **Evidence** | Claim ↔ source with stance (supports / contradicts / mentions) |
+| **Evidence** | Canonical identity ↔ source with qualified stance (`supports`, `contradicts`, `test_evidence`) |
+| **Observation** | Encounter with an identity through an event/source (`mentions`, `observes`, `independently_formulated`, `references`) |
 | **Project / artifact** | Optional anchors for work product |
 
 Status on claims/nodes: `proposed | accepted | disputed | rejected`.
@@ -126,7 +127,7 @@ See decision log below and [interface.md](interface.md).
 
 ## Storage choice for first shell
 
-**Status:** active  
+**Status:** superseded by Knowledge Infrastructure v2 (2026-08)
 **Evidence:** confirmed  
 **Source:** M11 AGENTS + delivery  
 
@@ -135,6 +136,172 @@ SQLite tables alongside existing DBs. No new infrastructure required for M11–M
 **Reason:** Zero ops tax for a personal machine; schema can migrate later. Graph *objects* matter more than graph *engine* early.
 
 **Rejected:** Neo4j/Graphiti as hard dependency for M11; one DB file per project as default (see M13 decision on workspaceId filters).
+
+## Knowledge Infrastructure v2 storage boundaries
+
+**Status:** active
+**Evidence:** confirmed
+**Source:** PR #32 implementation specification; foundational contracts and migration `0001_canonical_postgis.sql`
+**Revisit when:** canonical PostgreSQL parity testing invalidates a domain mapping, or an auxiliary backend cannot be rebuilt from canonical state
+
+**Decision:** `@workflows/knowledge` exposes storage-independent canonical,
+graph, vector, and spatial repository contracts. PostgreSQL/PostGIS is the
+authoritative structured/spatial store. Graph topology and pgvector similarity
+are derived, reconstructable projections keyed by the same canonical UUIDs.
+`KnowledgeStore` remains the storage-independent domain/service contract, while
+`createKnowledgeStore()` now selects PostgreSQL as the sole canonical runtime.
+
+Canonical writes retain the existing proposal/approval, provenance, workspace,
+identity/alias/merge, contradiction, and supersession semantics. PostgreSQL
+schema changes are ordered SQL migrations with checksums, an advisory lock, and
+per-migration transactions. A canonical outbox records graph/vector projection
+work so auxiliary failure cannot invalidate a successful truth-store write.
+Normalized labels are indexed lookup signals rather than database identities.
+Self-relations are permitted unless a specific relation's domain invariant
+rejects them. The local PostgreSQL runtime loads PostGIS and pgvector together
+and defaults to conflict-safe host port `55432`.
+
+The PostgreSQL canonical adapter implements the existing storage-independent
+domain contract rather than exposing SQL to orchestrator callers. Proposal
+materialization and merge operations are transactional, and accepted writes
+append retryable projection-outbox work without coupling canonical success to a
+graph/vector backend. There is no SQLite canonical adapter/import/cutover path;
+knowledge moves forward from PostgreSQL canonical truth.
+
+The semantic projection uses pgvector `vector(1536)` with HNSW cosine indexing.
+Each row retains a stable projection ID, canonical target UUID, optional
+canonical source/chunk UUIDs, embedding model/version/dimension, filter metadata
+and timestamps. It does not copy canonical text. Accepted nodes of any present
+or future type are embeddable from type + label + optional description when an
+explicit embedding provider is configured. Rebuild traverses the complete
+accepted state through a keyset-paginated repeatable-read snapshot, generates
+all embeddings, then atomically replaces only that model/version projection;
+coexisting embedding spaces are preserved. Vector outbox failures remain
+retryable and cannot invalidate canonical commits. Search is executed in
+PostgreSQL, requires a matching model/version and returns candidates rather than
+making identity decisions.
+
+**HNSW rationale:** it supports incrementally updated projections without a
+training phase and gives strong query-time recall/latency for the local semantic
+index. Fixed dimension keeps the ANN operator class indexable and makes model
+incompatibility fail explicitly; dimension changes use forward migrations.
+
+The dedicated topology projection uses Neo4j 5 Community behind the
+storage-independent `GraphRepository`. Neo4j is appropriate because
+variable-depth expansion and directed shortest paths execute natively in
+Cypher; PostgreSQL remains authoritative and no graph transaction participates
+in a canonical commit. Graph nodes and relationships retain canonical node and
+edge UUIDs. A stable `CanonicalNode` / `CANONICAL_RELATION` shape stores exact
+canonical type/relation values as properties, so future vocabulary and
+self-relations require no second ontology or graph-schema redesign.
+
+Full reconciliation reads all accepted nodes and edges from one keyset-
+paginated repeatable-read PostgreSQL snapshot and replaces Neo4j topology in one
+Neo4j transaction. Pending/rejected records and edges with non-accepted
+endpoints are excluded. Incremental outbox jobs support node/edge upsert, delete
+and rebuild; merge uses rebuild when local rewiring is unsafe. Failures remain
+retryable and never invalidate canonical PostgreSQL writes.
+
+Canonical accepted-to-non-accepted transitions are projection invalidations,
+not ordinary metadata updates. Supersession atomically records its edge and
+disputed status while enqueueing graph reconciliation and vector deletion.
+Merge similarly rebuilds graph topology and deletes the retired vector identity;
+direct canonical edge deletion enqueues graph deletion. These outbox writes are
+part of the canonical PostgreSQL transaction, while execution remains decoupled.
+
+Hybrid retrieval is a storage-independent domain service over these layers, not
+an agent planner. It composes only the strategies requested: exact canonical
+resolution, Neo4j expansion, pgvector similarity and optional spatial candidate
+narrowing. Graph/project/explicit candidate sets can constrain semantic search;
+semantic discovery can request bounded graph enrichment. All candidates are
+rehydrated and status-checked in PostgreSQL before return.
+
+Fusion is deterministic and inspectable: exact/project identity, explicit
+candidate membership and graph/spatial membership are structural signals, while
+cosine similarity is an additive ranking signal and never an identity decision.
+Results retain discovery origins, canonical edges, evidence, observations,
+source nodes and source events within hard per-layer and context-unit budgets.
+Strategy metadata reports ran/skipped/unavailable/degraded. Missing projections
+degrade independently, but failure of a requested narrowing scope never widens
+semantic retrieval silently. The retrieval service itself contains no LLM
+planning or autonomous strategy selection.
+
+The explicit Knowledge Agent now consumes that deterministic substrate through
+controlled domain tools. Its Navigator capability resolves, retrieves,
+traverses and inspects provenance without mutation. Its Curator capability
+inspects duplicate/conflict/structure candidates and creates pending proposals;
+it has no accept tool and cannot directly merge, supersede, or arbitrate truth.
+Merge and supersession are durable proposal kinds whose execution occurs only
+through the separate canonical approval boundary.
+
+Model reasoning is behind a vendor-independent adapter and receives bounded,
+structured tool results rather than repositories or raw SQL/Cypher. Hard run
+limits cover tool calls, context characters, graph hops, result count and
+proposal count. Privacy-preserving audit events retain run/mode, tool names,
+canonical IDs, strategy degradation, proposal IDs, counts and outcome without
+logging full prompt/content by default. Navigator and Curator share an initial
+runtime but keep separate policy and tool allowlists so they may split later.
+
+**Reason:** The shell proved the domain, but SQLite tables and application-side
+indexes do not provide the integrity, spatial capability, traversal ceiling, or
+indexed semantic retrieval required for a knowledge system expected to outgrow
+direct inspection. Separating contracts from adapters prevents database vendors
+from redefining the ontology and permits incremental, reversible cutover.
+
+**Rejected alternatives:** destructive big-bang replacement; PostgreSQL/graph
+types leaking into orchestrator callers; graph or vector stores as competing
+truth; fragile cross-database pseudo-transactions; retaining startup schema
+strings as the long-term migration mechanism; preserving obsolete SQLite
+knowledge data at the cost of a permanent dual-backend surface.
+
+### Universal canonical identity
+
+**Decision:** Every independently referable thing may have one stable canonical
+UUID, regardless of whether today's ontology calls it a concept, claim, source,
+project, physical component, CAD version, test, idea or observation. PostgreSQL,
+PostGIS, future graph/vector projections, source references, agents and tools use
+that same ID. The current node vocabulary is an initial ontology, not a closed
+identity universe.
+
+Identity means sameness of referent. Labels, workspace, provenance, repeated
+observation and semantic similarity are evidence for resolution, not identity
+keys. The same referent observed in another source normally keeps its canonical
+ID while adding evidence/provenance/state/relationships. Two different motors
+may share `Motor`; two claims may share wording while differing in assumptions,
+conditions or temporal validity. One identity can participate in multiple
+project/workspace contexts without being duplicated solely for context.
+
+Explicit canonical IDs and aliases provide confident reuse. Label discovery may
+offer candidates, but ambiguous candidates remain separate/reviewable. Explicit
+merge transactionally consolidates IDs only after sameness is established,
+retains the retired record/history, rewires its references and cleans only
+conflicts created by that merge.
+
+**Reason:** Treating identity as label dedupe collapses distinct referents and
+confuses observations/context with things. Treating every mention as new identity
+fragments provenance and makes cross-store references unstable. A universal ID
+with conservative domain resolution supports both precision and later Curator
+assistance without SQL uniqueness guessing ontology.
+
+### Identity, provenance and context
+
+**Decision:** Identity records what the referent is. Provenance records how,
+where and when that same referent was encountered or learned. Context records
+how it participates in projects, relationships, time and space. These concerns
+do not manufacture identities for one another.
+
+`knowledge_observations` binds a canonical target to an extraction event and
+optional source identity with occurrence kind, timestamp and metadata. Accepting
+a meaningful node proposal records an observation, including explicit
+`canonicalId` or alias reuse; reads and lookups do not. `mentions` is an
+occurrence. Qualified `supports`, `contradicts` and `test_evidence` remain in
+`knowledge_evidence`, whose generic target can be an idea, claim, artifact or
+future canonical type. Claim-labelled extraction is a validated convenience,
+not a restriction on generic evidence.
+
+**Reason:** Encounters must remain distinguishable by event, source and time
+without duplicating their referent or treating every mention as support. Merge
+retargets evidence and observation history to the surviving canonical UUID.
 
 ## Knowledge milestone roadmap (M11–M18)
 
@@ -261,6 +428,8 @@ Cross-cutting choices that apply across the whole track:
 
 ### One knowledge.db + metadata filters (not multi-DB per project)
 
+> Superseded 2026-08 by **Knowledge Infrastructure v2 storage boundaries** above. The workspace-filtering rationale remains active; the single SQLite file does not.
+
 **Decision:** Single SQLite knowledge DB; isolation via `workspaceId` on nodes and project edges — same *idea* as M9 session namespace in one memory.db.
 
 **Reason:** Cheap filter, one backup story, no circular “which DB?” for early shells.
@@ -371,13 +540,13 @@ Compact pointers to what exists in code (detail lives in AGENTS-M* specs):
 **Source:** [`docs/KNOWLEDGE_EXPLORE_UI.md`](../docs/KNOWLEDGE_EXPLORE_UI.md); [`docs/STRUCTURED_CAPTURE_AND_NETWORK_VIZ.md`](../docs/STRUCTURED_CAPTURE_AND_NETWORK_VIZ.md); `packages/orchestrator/src/ui/web/`
 **Revisit when:** more than 50 matching nodes is a normal browse case, or graph edits beyond proposal accept/reject are required
 
-**Decision:** `npm run ui` explicitly mounts the existing M17 read catalog on its own origin and presents accepted nodes, stable DTO details, and 1–2-hop neighborhoods in the main web shell. The ordinary integration server keeps the existing `KNOWLEDGE_HTTP_READ` gate; UI startup opts in through a server option. Reads continue through `createKnowledgeReader` and the same SQLite store.
+**Decision:** `npm run ui` explicitly mounts the existing M17 read catalog on its own origin and presents accepted nodes, stable DTO details, and 1–2-hop neighborhoods in the main web shell. The ordinary integration server keeps the existing `KNOWLEDGE_HTTP_READ` gate; UI startup opts in through a server option. Reads continue through `createKnowledgeReader` and the canonical PostgreSQL repository.
 
 Network clients use the stable `getSubgraph` / `GET /v1/knowledge/subgraph` envelope rather than stitching many neighborhood calls together. It supports a root with 1–2 hops, an explicit node-ID set, or a capped accepted-node window; returned edges are induced by the returned nodes. The default cap is 250 nodes (hard maximum 1000), and truncation is explicit.
 
 **Reason:** Accepted knowledge must be visible where capture decisions are made, and the one-process UI should work without a second env switch. An explicit server option preserves the integration server's prior opt-in boundary while avoiding duplicate routes or query logic.
 
-**Rejected alternatives:** require UI users to remember `KNOWLEDGE_HTTP_READ=true`; query SQLite directly from UI-specific code; create a second knowledge HTTP service; make the network issue one request per node; return dangling edges whose endpoints are outside the node envelope; merge pending and accepted data into one truth view.
+**Rejected alternatives:** require UI users to remember `KNOWLEDGE_HTTP_READ=true`; query storage directly from UI-specific code; create a second knowledge HTTP service; make the network issue one request per node; return dangling edges whose endpoints are outside the node envelope; merge pending and accepted data into one truth view.
 
 ## First-principles root question (kept)
 

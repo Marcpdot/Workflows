@@ -44,6 +44,10 @@ export interface NeighborhoodRead {
   edges: KnowledgeEdgeDto[];
   nodeCount: number;
   edgeCount: number;
+  truncated: boolean;
+  complete: boolean;
+  truncation: { nodes: boolean; edges: boolean };
+  limits: { nodes: number; edges: number };
 }
 
 export interface SearchRead {
@@ -66,12 +70,15 @@ export interface SubgraphRead {
     status: KnowledgeStatus;
     workspaceId?: string | null;
     limit: number;
+    edgeLimit: number;
   };
   nodes: KnowledgeNodeDto[];
   edges: KnowledgeEdgeDto[];
   nodeCount: number;
   edgeCount: number;
   truncated: boolean;
+  complete: boolean;
+  truncation: { nodes: boolean; edges: boolean };
 }
 
 export interface ContradictionsRead {
@@ -168,12 +175,14 @@ export function createKnowledgeReader(store: KnowledgeStore) {
 
     async getNeighborhood(
       nodeId: string,
-      options?: { hops?: 1 | 2; status?: KnowledgeStatus }
+      options?: { hops?: 1 | 2; status?: KnowledgeStatus; nodeLimit?: number; edgeLimit?: number }
     ): Promise<NeighborhoodRead> {
       const hops = options?.hops === 2 ? 2 : 1;
       const neigh = await store.getNeighborhood(nodeId, {
         hops: hops as 1 | 2,
         status: options?.status ?? "accepted",
+        nodeLimit: options?.nodeLimit,
+        edgeLimit: options?.edgeLimit,
       });
       return {
         rootId: nodeId,
@@ -182,6 +191,10 @@ export function createKnowledgeReader(store: KnowledgeStore) {
         edges: neigh.edges.map(toEdgeDto),
         nodeCount: neigh.nodes.length,
         edgeCount: neigh.edges.length,
+        truncated: neigh.truncated,
+        complete: neigh.complete,
+        truncation: neigh.truncation,
+        limits: neigh.limits,
       };
     },
 
@@ -192,6 +205,7 @@ export function createKnowledgeReader(store: KnowledgeStore) {
       status?: KnowledgeStatus;
       workspaceId?: string | null;
       limit?: number;
+      edgeLimit?: number;
     }): Promise<SubgraphRead> {
       const hops = input?.hops === 2 ? 2 : 1;
       const status = input?.status ?? "accepted";
@@ -200,6 +214,7 @@ export function createKnowledgeReader(store: KnowledgeStore) {
           ? Math.floor(input.limit)
           : 250;
       const limit = Math.min(requestedLimit, 1000);
+      const edgeLimit = Math.min(input?.edgeLimit && input.edgeLimit > 0 ? Math.floor(input.edgeLimit) : limit * 2, 2000);
       const graph = await store.getSubgraph({
         rootId: input?.rootId,
         nodeIds: input?.nodeIds,
@@ -207,6 +222,7 @@ export function createKnowledgeReader(store: KnowledgeStore) {
         status,
         workspaceId: input?.workspaceId,
         limit,
+        edgeLimit,
       });
       return {
         query: {
@@ -216,12 +232,15 @@ export function createKnowledgeReader(store: KnowledgeStore) {
           status,
           workspaceId: input?.workspaceId,
           limit,
+          edgeLimit,
         },
         nodes: graph.nodes.map(toNodeDto),
         edges: graph.edges.map(toEdgeDto),
         nodeCount: graph.nodes.length,
         edgeCount: graph.edges.length,
         truncated: graph.truncated,
+        complete: graph.complete,
+        truncation: graph.truncation,
       };
     },
 

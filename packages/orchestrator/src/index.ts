@@ -30,7 +30,6 @@ import {
   renderNodeTable,
   renderProjectStatusReport,
   renderSearchRead,
-  resolveKnowledgeDbPath,
   runFirstPrinciplesAnalysis,
   type ExtractionResult,
   type KnowledgeStore,
@@ -145,7 +144,7 @@ Env (see .env.example):
   TOOLS_DISABLED, TOOLS_ENABLED, TOOLS_MAX_STEPS
   LONGTERM_DB_PATH, PERSONAL_CONTEXT_DIR, LONGTERM_AUTO_INJECT, LONGTERM_DISABLED
   LONGTERM_PROJECT_SCOPED, LONGTERM_PROJECT_DB
-  KNOWLEDGE_DB_PATH, PERSONAL_CONTEXT_DIR (knowledge.db)
+  KNOWLEDGE_DATABASE_URL (canonical PostgreSQL knowledge store)
   KNOWLEDGE_DEFAULT_WORKSPACE_ID (else from --workspace / WORKSPACE_ROOT id)
   KNOWLEDGE_TOOLS_ENABLED, KNOWLEDGE_INJECT_ENABLED
   KNOWLEDGE_INGEST_AUTO_ON_CHAT (default false; proposals only), KNOWLEDGE_INGEST_MIN_CHARS
@@ -610,7 +609,6 @@ function openKnowledgeFromEnv(options?: {
 }): KnowledgeStore {
   const env = process.env;
   return createKnowledgeStore({
-    dbPath: resolveKnowledgeDbPath(process.cwd(), env),
     defaultWorkspaceId: resolveDefaultKnowledgeWorkspaceId(env, {
       workspaceRoot: options?.workspaceRoot,
     }),
@@ -720,6 +718,9 @@ async function runKnowledgeAction(
         process.exit(1);
       }
       const project = await store.ensureProject({
+        canonicalId: action.args.canonicalId
+          ? String(action.args.canonicalId)
+          : undefined,
         label,
         description: action.args.description
           ? String(action.args.description)

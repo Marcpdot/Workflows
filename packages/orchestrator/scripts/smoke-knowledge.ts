@@ -9,12 +9,14 @@ import {
   createKnowledgeStore,
   type ExtractionResult,
 } from "@workflows/knowledge";
+import { startKnowledgePostgresTest } from "./knowledge-postgres-test-runtime.js";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);
 }
 
 async function main(): Promise<void> {
+  const postgres = await startKnowledgePostgresTest();
   const dbPath = resolve(
     process.cwd(),
     "data",
@@ -57,7 +59,7 @@ async function main(): Promise<void> {
     ],
   };
 
-  const store = createKnowledgeStore({ dbPath });
+  const store = createKnowledgeStore();
   try {
     // 1. createEvent + addProposals from fixture
     const { eventId, proposals } = await applyExtractionResult(
@@ -138,16 +140,13 @@ async function main(): Promise<void> {
       console.log("OK: rejectProposal (extra proposal)");
     }
 
-    // 6. identity: accepting same concept again reuses (via second accept path)
-    const { proposals: dup } = await applyExtractionResult(
-      store,
-      {
-        concepts: [{ label: "copper loss", description: "dup" }],
-        claims: [],
-        relations: [],
-      },
-      { sourceType: "manual", sourceRef: "dup-test" }
-    );
+    // 6. identity reuse is explicit; label alone is not an identity key.
+    const existingCopper = (await store.findNodes({ type: "concept", label: "copper loss", status: "accepted" }))[0]!;
+    const reuseEvent = await store.createEvent({ sourceType: "manual", sourceRef: "reuse-test" });
+    const dup = await store.addProposals(reuseEvent.id, [{
+      kind: "node",
+      payload: { type: "concept", label: "copper loss", canonicalId: existingCopper.id },
+    }]);
     await store.acceptProposal(dup[0]!.id);
     const copperNodes = await store.findNodes({
       type: "concept",
@@ -155,11 +154,12 @@ async function main(): Promise<void> {
       status: "accepted",
     });
     assert(copperNodes.length === 1, "identity: single copper loss node");
-    console.log("OK: label+type identity reuse");
+    console.log("OK: explicit canonical identity reuse");
 
     console.log("All knowledge (M11) smoke checks passed.");
   } finally {
     store.close();
+    await postgres.dispose();
     try {
       if (existsSync(dbPath)) rmSync(dbPath);
       for (const suffix of ["-shm", "-wal"]) {

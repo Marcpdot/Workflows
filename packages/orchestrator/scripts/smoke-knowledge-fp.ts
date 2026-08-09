@@ -13,16 +13,18 @@ import {
   type FirstPrinciplesResult,
 } from "@workflows/knowledge";
 import { MapToolRegistry } from "@workflows/tools";
+import { startKnowledgePostgresTest } from "./knowledge-postgres-test-runtime.js";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);
 }
 
 async function main(): Promise<void> {
+  const postgres = await startKnowledgePostgresTest();
   const dataDir = resolve(process.cwd(), "data");
   mkdirSync(dataDir, { recursive: true });
   const dbPath = resolve(dataDir, `_smoke_knowledge_fp_${Date.now()}.db`);
-  const store = createKnowledgeStore({ dbPath });
+  const store = createKnowledgeStore();
 
   try {
     // 1. fixture shape
@@ -186,6 +188,7 @@ async function main(): Promise<void> {
     console.log("OK: knowledge_first_principles tool");
   } finally {
     store.close();
+    await postgres.dispose();
     try {
       if (existsSync(dbPath)) rmSync(dbPath);
       for (const s of ["-shm", "-wal"]) {

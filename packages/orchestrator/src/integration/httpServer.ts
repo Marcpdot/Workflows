@@ -11,7 +11,6 @@ import {
   createKnowledgeStore,
   listPendingForSession,
   renderKnowledgeBrowseHtml,
-  resolveKnowledgeDbPath,
   type KnowledgeNodeType,
   type KnowledgeStatus,
 } from "@workflows/knowledge";
@@ -440,9 +439,7 @@ async function handleKnowledgeRead(
   path: string,
   url: URL
 ): Promise<void> {
-  const store = createKnowledgeStore({
-    dbPath: resolveKnowledgeDbPath(process.cwd(), process.env),
-  });
+  const store = createKnowledgeStore();
   const reader = createKnowledgeReader(store);
   try {
     const q = url.searchParams;

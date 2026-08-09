@@ -6,16 +6,13 @@
  *   npx tsx scripts/seed-drone-concepts.ts
  *
  * Optional:
- *   KNOWLEDGE_DB_PATH=./data/knowledge.db npx tsx scripts/seed-drone-concepts.ts
  *   SEED_EDGES=0  — concepts only
  */
 
-import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
 import {
   applyExtractionResult,
   createKnowledgeStore,
-  resolveKnowledgeDbPath,
+  resolvePostgresKnowledgeConfig,
   type ExtractionResult,
 } from "@workflows/knowledge";
 
@@ -113,12 +110,8 @@ const RELATIONS: ExtractionResult["relations"] = [
 
 async function main(): Promise<void> {
   const seedEdges = process.env.SEED_EDGES !== "0";
-  const dbPath =
-    process.env.KNOWLEDGE_DB_PATH?.trim() ||
-    resolveKnowledgeDbPath(process.cwd(), process.env);
-
-  mkdirSync(dirname(resolve(dbPath)), { recursive: true });
-  console.log(`Knowledge DB: ${dbPath}`);
+  const postgres = resolvePostgresKnowledgeConfig();
+  console.log(`Knowledge DB: ${new URL(postgres.connectionString).host}`);
 
   const fixture: ExtractionResult = {
     concepts: CONCEPTS,
@@ -126,7 +119,7 @@ async function main(): Promise<void> {
     relations: seedEdges ? RELATIONS : [],
   };
 
-  const store = createKnowledgeStore({ dbPath });
+  const store = createKnowledgeStore({ postgresConfig: postgres });
   try {
     const { eventId, proposals } = await applyExtractionResult(store, fixture, {
       sourceType: "manual",

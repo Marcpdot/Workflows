@@ -12,12 +12,14 @@ import {
   type ExtractionResult,
 } from "@workflows/knowledge";
 import { MapToolRegistry } from "@workflows/tools";
+import { startKnowledgePostgresTest } from "./knowledge-postgres-test-runtime.js";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);
 }
 
 async function main(): Promise<void> {
+  const postgres = await startKnowledgePostgresTest();
   const dbPath = resolve(
     process.cwd(),
     "data",
@@ -25,7 +27,6 @@ async function main(): Promise<void> {
   );
 
   const store = createKnowledgeStore({
-    dbPath,
     defaultWorkspaceId: "ws-test",
   });
 
@@ -41,6 +42,7 @@ async function main(): Promise<void> {
     assert(project.workspaceId === "ws-test", "project workspaceId");
     // idempotent
     const again = await store.ensureProject({
+      canonicalId: project.id,
       label: "aktuator-v2",
       createAccepted: true,
     });
@@ -214,6 +216,7 @@ async function main(): Promise<void> {
     console.log("OK: unlinkFromProject");
   } finally {
     store.close();
+    await postgres.dispose();
     try {
       if (existsSync(dbPath)) rmSync(dbPath);
       for (const s of ["-shm", "-wal"]) {

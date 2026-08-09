@@ -10,12 +10,10 @@ import {
 } from "@workflows/structured";
 import { resolveSafePath } from "@workflows/tools";
 import { EXTRACTION_SCHEMA, extractionToProposalItems } from "./extract.js";
-import { labelsMatch } from "./identity.js";
 import { hashInput } from "./knowledge.js";
 import type {
   ExtractionResult,
   KnowledgeEvent,
-  KnowledgeNodeType,
   KnowledgeProposal,
   KnowledgeStore,
 } from "./types.js";
@@ -119,31 +117,14 @@ export async function filterDuplicateNodeProposals(
       out.push(item);
       continue;
     }
-    const type = String(item.payload.type ?? "concept") as KnowledgeNodeType;
     const label = String(item.payload.label ?? "").trim();
     if (!label) {
       skipped++;
       continue;
     }
     // Alias or normalized identity → skip node proposal
-    const canon = await store.resolveCanonical({ label, type });
-    if (canon && (canon.type === type || !type)) {
-      skipped++;
-      continue;
-    }
-    const hits = await store.findNodes({
-      type,
-      label,
-      status: "accepted",
-      limit: 8,
-    });
-    const exact = hits.some(
-      (n) => n.type === type && labelsMatch(n.label, label)
-    );
-    if (exact) {
-      skipped++;
-      continue;
-    }
+    const canonicalId = String(item.payload.canonicalId ?? "").trim();
+    if (canonicalId && await store.getNode(canonicalId)) { skipped++; continue; }
     out.push(item);
   }
   return { items: out, skipped };

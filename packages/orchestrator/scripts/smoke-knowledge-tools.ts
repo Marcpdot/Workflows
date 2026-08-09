@@ -9,18 +9,20 @@ import {
   createKnowledgeTools,
 } from "@workflows/knowledge";
 import { MapToolRegistry } from "@workflows/tools";
+import { startKnowledgePostgresTest } from "./knowledge-postgres-test-runtime.js";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);
 }
 
 async function main(): Promise<void> {
+  const postgres = await startKnowledgePostgresTest();
   const dbPath = resolve(
     process.cwd(),
     "data",
     `_smoke_knowledge_tools_${Date.now()}.db`
   );
-  const store = createKnowledgeStore({ dbPath });
+  const store = createKnowledgeStore();
   const registry = new MapToolRegistry();
   for (const t of createKnowledgeTools(store)) {
     registry.register(t);
@@ -175,6 +177,7 @@ async function main(): Promise<void> {
   console.log("OK: tools absent when not registered (KNOWLEDGE_TOOLS_ENABLED off path)");
 
   store.close();
+  await postgres.dispose();
   try {
     if (existsSync(dbPath)) rmSync(dbPath);
     for (const s of ["-shm", "-wal"]) {

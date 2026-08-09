@@ -8,7 +8,8 @@ export type KnowledgeNodeType =
   | "event"
   | "source"
   | "project"
-  | "artifact";
+  | "artifact"
+  | (string & {});
 
 export type KnowledgeStatus =
   | "proposed"
@@ -58,12 +59,25 @@ export interface KnowledgeEdge {
 
 export interface KnowledgeEvidence {
   id: string;
-  claimNodeId: string;
+  targetNodeId: string;
   sourceNodeId: string;
+  sourceEventId?: string;
   excerpt?: string;
-  stance: "supports" | "contradicts" | "mentions";
+  stance: "supports" | "contradicts" | "test_evidence";
   confidence?: number;
   createdAt: number;
+}
+
+export type KnowledgeObservationKind = "mentions" | "observes" | "independently_formulated" | "references";
+
+export interface KnowledgeObservation {
+  id: string;
+  targetNodeId: string;
+  sourceEventId?: string;
+  sourceNodeId?: string;
+  kind: KnowledgeObservationKind;
+  observedAt: number;
+  metadata: Record<string, unknown>;
 }
 
 export interface KnowledgeEvent {
@@ -78,17 +92,11 @@ export interface KnowledgeEvent {
 export interface KnowledgeProposal {
   id: string;
   eventId: string;
-  kind: "node" | "edge" | "evidence";
+  kind: "node" | "edge" | "evidence" | "observation" | "merge" | "supersede";
   payload: Record<string, unknown>;
   status: "pending" | "accepted" | "rejected";
   createdAt: number;
   resolvedAt?: number;
-}
-
-export interface KnowledgeStoreConfig {
-  dbPath: string;
-  /** Applied to new nodes on accept when payload omits workspaceId (M13) */
-  defaultWorkspaceId?: string | null;
 }
 
 /** Project status summary for tools/CLI (M13) */
@@ -102,6 +110,9 @@ export interface ProjectStatus {
   artifacts: KnowledgeNode[];
   pendingProposalCount: number;
   summaryLines: string[];
+  topologyComplete?: boolean;
+  topologyTruncated?: boolean;
+  topologyTruncation?: { nodes: boolean; edges: boolean };
 }
 
 export type ProjectLinkRelation = "used_in" | "about" | "part_of";
@@ -120,6 +131,7 @@ export interface MergeNodesResult {
   into: KnowledgeNode;
   edgesRewired: number;
   evidenceRewired: number;
+  observationsRewired: number;
   aliasesRetargeted: number;
   aliasCreated: boolean;
 }
@@ -162,6 +174,10 @@ export interface KnowledgeStore {
 
   rejectProposal(id: string): Promise<void>;
 
+  listEvidence(targetNodeId: string, limit?: number): Promise<KnowledgeEvidence[]>;
+
+  listObservations(targetNodeId: string, limit?: number): Promise<KnowledgeObservation[]>;
+
   getNode(id: string): Promise<KnowledgeNode | null>;
 
   findNodes(query: {
@@ -174,8 +190,8 @@ export interface KnowledgeStore {
 
   getNeighborhood(
     nodeId: string,
-    options?: { hops?: 1 | 2; status?: KnowledgeStatus }
-  ): Promise<{ nodes: KnowledgeNode[]; edges: KnowledgeEdge[] }>;
+    options?: { hops?: 1 | 2; status?: KnowledgeStatus; nodeLimit?: number; edgeLimit?: number }
+  ): Promise<{ nodes: KnowledgeNode[]; edges: KnowledgeEdge[]; truncated: boolean; complete: boolean; truncation: { nodes: boolean; edges: boolean }; limits: { nodes: number; edges: number } }>;
 
   /** Bulk/induced subgraph for network clients. Defaults to accepted nodes, capped. */
   getSubgraph(input?: {
@@ -185,14 +201,19 @@ export interface KnowledgeStore {
     status?: KnowledgeStatus;
     workspaceId?: string | null;
     limit?: number;
+    edgeLimit?: number;
   }): Promise<{
     nodes: KnowledgeNode[];
     edges: KnowledgeEdge[];
     truncated: boolean;
+    complete: boolean;
+    truncation: { nodes: boolean; edges: boolean };
   }>;
 
   /** M13: find or create accepted project node */
   ensureProject(input: {
+    /** Explicit identity to reuse; label alone never proves sameness. */
+    canonicalId?: string;
     label: string;
     description?: string;
     workspaceId?: string | null;
@@ -260,6 +281,8 @@ export interface KnowledgeStore {
   }): Promise<KnowledgeEdge>;
 
   listAliases(canonicalNodeId?: string): Promise<KnowledgeAlias[]>;
+  /** Bounded alias hydration for an already bounded canonical candidate set. */
+  listAliasesForCanonicalIds(canonicalNodeIds: readonly string[]): Promise<KnowledgeAlias[]>;
 
   close(): void;
 }

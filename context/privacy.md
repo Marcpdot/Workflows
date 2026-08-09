@@ -25,7 +25,7 @@ Long-term memory is exposed as an **API**; storage defaults to local/gitignored 
 **Source:** knowledge AGENTS privacy notes; M18 `VOICE_ALLOW_REMOTE_AUDIO`  
 **Revisit when:** multi-device knowledge sync or cloud STT becomes daily path
 
-- **Knowledge:** public repo holds schema, tools, smokes with **fake** labels only. Real project claims and conversation excerpts stay in gitignored `KNOWLEDGE_DB_PATH` / `PERSONAL_CONTEXT_DIR`.
+- **Knowledge:** public repo holds schema, tools and smokes with **fake** labels only. Real project claims and conversation excerpts stay in the configured private PostgreSQL instance.
 - **Voice:** prefer local STT (`VOICE_STT_PROVIDER=local` + command). Cloud STT/TTS **refuse** unless `VOICE_ALLOW_REMOTE_AUDIO=true`. TTS default off; no surprise mic (`VOICE_ENABLED` / explicit `--voice-once`).
 
 **Reason:** Same personal-stack posture as LTM — useful APIs, private storage, remote leave-machine paths are opt-in and documented.

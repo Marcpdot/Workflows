@@ -13,12 +13,14 @@ import {
   ingestText,
 } from "@workflows/knowledge";
 import { MapToolRegistry } from "@workflows/tools";
+import { startKnowledgePostgresTest } from "./knowledge-postgres-test-runtime.js";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);
 }
 
 async function main(): Promise<void> {
+  const postgres = await startKnowledgePostgresTest();
   const dataDir = resolve(process.cwd(), "data");
   mkdirSync(dataDir, { recursive: true });
   const dbPath = resolve(dataDir, `_smoke_knowledge_ingest_${Date.now()}.db`);
@@ -40,7 +42,6 @@ async function main(): Promise<void> {
   );
 
   const store = createKnowledgeStore({
-    dbPath,
     defaultWorkspaceId: "ws-ingest",
   });
 
@@ -95,17 +96,15 @@ async function main(): Promise<void> {
     });
     const nodeProps2 = second.proposals.filter((p) => p.kind === "node");
     assert(
-      second.skippedDuplicateNodes >= 1,
-      `expected skipped duplicates, got ${second.skippedDuplicateNodes}`
+      second.skippedDuplicateNodes === 0,
+      "labels alone do not dedupe canonical identities"
     );
     assert(
-      nodeProps2.length < first.proposals.filter((p) => p.kind === "node").length ||
-        second.skippedDuplicateNodes >=
-          first.proposals.filter((p) => p.kind === "node").length,
-      "second pass should skip accepted node labels"
+      nodeProps2.length === first.proposals.filter((p) => p.kind === "node").length,
+      "ambiguous repeated referents stay reviewable"
     );
     console.log(
-      `OK: dedupe second pass skipped=${second.skippedDuplicateNodes} nodeProposals=${nodeProps2.length}`
+      `OK: identity-safe second pass skipped=${second.skippedDuplicateNodes} nodeProposals=${nodeProps2.length}`
     );
 
     // 4. file ingest
@@ -181,6 +180,7 @@ async function main(): Promise<void> {
     console.log("OK: chat segment ingest proposals-only");
   } finally {
     store.close();
+    await postgres.dispose();
     for (const p of [dbPath, fixturePath]) {
       try {
         if (existsSync(p)) rmSync(p);

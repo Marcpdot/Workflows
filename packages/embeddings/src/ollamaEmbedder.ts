@@ -9,12 +9,14 @@ export interface OllamaEmbedderConfig {
   model: string;
   baseUrl?: string;
   timeoutMs?: number;
+  dimensions?: number;
 }
 
 export class OllamaEmbedder implements Embedder {
   readonly model: string;
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
+  private readonly dimensions?: number;
 
   constructor(config: OllamaEmbedderConfig) {
     this.model = config.model;
@@ -23,6 +25,7 @@ export class OllamaEmbedder implements Embedder {
       ""
     );
     this.timeoutMs = config.timeoutMs ?? 60_000;
+    this.dimensions = config.dimensions;
   }
 
   async embed(texts: string[]): Promise<number[][]> {
@@ -46,6 +49,7 @@ export class OllamaEmbedder implements Embedder {
     const body = await this.postJson(`${this.baseUrl}/api/embed`, {
       model: this.model,
       input: texts.length === 1 ? texts[0] : texts,
+      ...(this.dimensions ? { dimensions: this.dimensions } : {}),
     });
 
     if (Array.isArray(body.embeddings)) {

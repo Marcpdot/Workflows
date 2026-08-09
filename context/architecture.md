@@ -11,7 +11,7 @@ Intended layers remain:
 
 1. **Orchestration** — receive, route/policy, call model, return  
 2. **Memory** — short-term + long-term (+ optional embeddings); session namespace per workspace (M9)  
-3. **Knowledge** (M11–M18 shells) — explicit concepts, claims, relations, events, provenance; extraction-with-approval; tools, project bind, ingest, FP workflow, read surface; optional voice I/O adapters only
+3. **Knowledge** — explicit concepts, claims, relations, events, provenance; extraction-with-approval; storage-independent canonical/graph/vector/spatial contracts; PostgreSQL/PostGIS canonical target; optional voice I/O adapters only
 4. **Tools** — external capabilities via one interface  
 5. **Evaluation** — fixed cases, tokens/cost  
 6. **Interface** — CLI, then optional UI  
@@ -28,7 +28,7 @@ Platform shells also present: embeddings, integration surface, compute policy, o
 
 Feature layers live under **`packages/<layer>`**. Runnable glue is **`packages/orchestrator`** (router, handle, CLI, UI, integration HTTP). See [packaging.md](packaging.md).
 
-**`packages/knowledge`** (M11–M17) owns graph truth, extract, tools, ingest, identity, FP, read. **`packages/voice`** (M18) is optional STT/TTS only. Orchestrator wires tools, CLI, inject, optional knowledge HTTP, and voice turns into the same `handle()` — not a second brain.
+**`packages/knowledge`** owns knowledge-domain truth, repository contracts, extract, tools, ingest, identity, FP, and read. PostgreSQL/PostGIS is canonical; graph/vector backends are reconstructable projections. **`packages/voice`** is optional STT/TTS only. Orchestrator wires tools, CLI, inject, optional knowledge HTTP, and voice turns into the same `handle()` — not a second brain.
 
 **Reason:** Readable multi-layer layout without npm workspaces complexity; Orchestrator wires rather than owns every implementation.
 

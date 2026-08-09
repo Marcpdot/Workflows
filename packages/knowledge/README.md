@@ -1,54 +1,186 @@
 # @workflows/knowledge
 
-Semantic knowledge model shell (M11–M17): graph, ingest, identity, first-principles, **read surface**.
+Semantic knowledge domain, canonical PostgreSQL repository, ingest, identity,
+first-principles workflows and read surfaces.
+
+## Canonical runtime
+
+PostgreSQL/PostGIS is the sole authoritative knowledge backend.
+`createKnowledgeStore()` resolves `KNOWLEDGE_DATABASE_URL` and returns the
+storage-independent `CanonicalKnowledgeRepository`; orchestrator callers do not
+select a database implementation.
 
 ```bash
-cd packages/knowledge
-npm install
-
-cd ../orchestrator
-npx tsx scripts/smoke-knowledge.ts
-npx tsx scripts/smoke-knowledge-tools.ts
-npx tsx scripts/smoke-knowledge-projects.ts
-npx tsx scripts/smoke-knowledge-ingest.ts
-npx tsx scripts/smoke-knowledge-identity.ts
-npx tsx scripts/smoke-knowledge-fp.ts
-npx tsx scripts/smoke-knowledge-read.ts
+docker compose -f compose.knowledge.yml up -d
+cd packages/orchestrator
+npm run knowledge:migrate
+npm run knowledge:test:postgres
+npm run knowledge:test:canonical
 ```
 
-Vertical: extract → propose/accept → neighborhood → project → ingest → identity → FP → **read**.
+Configuration:
 
-CLI (from `packages/orchestrator`):
+- `KNOWLEDGE_POSTGRES_PORT` controls the Compose host port (default `55432`)
+- `KNOWLEDGE_DATABASE_URL` defaults to
+  `postgresql://workflows:workflows@127.0.0.1:55432/workflows`
+- `KNOWLEDGE_DATABASE_SSL=true|false` (default `false`)
+- `KNOWLEDGE_DATABASE_APPLICATION_NAME` (default `workflows-knowledge`)
+- `KNOWLEDGE_MIGRATIONS_DIR` is normally auto-resolved
+
+Migrations are checksum-verified, advisory-locked and transactional. Accepted
+canonical writes append retryable projection-outbox work; graph and vector
+systems remain rebuildable projections and cannot invalidate PostgreSQL truth.
+
+Projection work is operational but remains decoupled from canonical writes. From
+`packages/orchestrator`, `npm run knowledge:projections -- incremental` drains
+currently eligible graph and active-vector outbox work; failures stay pending
+with the existing retry/backoff metadata. `npm run knowledge:projections:rebuild`
+explicitly rebuilds both projections. Knowledge Agent startup never performs a
+full rebuild. A monotonic outbox sequence makes newer canonical state supersede
+older failed work for the same identity.
+
+## Semantic vector projection
+
+`PostgresVectorRepository` stores derived representations in pgvector. Records
+reference canonical target UUIDs plus optional canonical source/chunk UUIDs;
+they contain embedding/filter metadata, not duplicated canonical content.
+Embeddable canonical nodes are all accepted current or future types with their
+type, label and optional description as deterministic semantic text.
+
+The active schema uses `vector(1536)` with an HNSW cosine index. Providers must
+declare model, model version and dimension, and searches require the matching
+model/version so incompatible embedding spaces are not mixed. A different
+dimension requires a forward schema/index migration rather than silent coercion.
+`rebuildSemanticVectorProjection()` scans the complete accepted canonical state
+with keyset pagination in one repeatable-read snapshot, embeds it, then
+atomically replaces only the selected model/version projection. Other embedding
+spaces remain intact. `processVectorProjectionOutbox()` handles only vector
+jobs, serializes workers with an advisory lock, and leaves failed jobs retryable.
+Embedding generation remains behind `SemanticEmbeddingProvider`; the repository
+never invents embeddings and similarity results never merge identities.
+Incremental processing has one configured active provider/model/version;
+additional stored model/version spaces are rebuildable snapshots unless made
+active explicitly.
+
+## Graph projection
+
+`Neo4jGraphRepository` is the dedicated, rebuildable topology projection.
+Canonical nodes become `:CanonicalNode` nodes keyed by PostgreSQL UUIDs;
+canonical edges become directed `:CANONICAL_RELATION` relationships keyed by
+their PostgreSQL edge UUIDs with exact canonical `relation` values. The stable
+shape supports future type/relation vocabulary without a second graph ontology.
+Only accepted nodes and edges with accepted endpoints are projected, and valid
+self-relations are retained.
+
+`rebuildGraphProjection()` scans complete accepted topology through a keyset-
+paginated repeatable-read PostgreSQL snapshot and replaces Neo4j topology in one
+Neo4j transaction. `processGraphProjectionOutbox()` handles node/edge upsert,
+delete and rebuild with advisory-lock serialization and retryable errors.
+Expansion, relation filtering and directed shortest paths execute in Cypher.
+Canonical status/topology mutations enqueue invalidation in the same PostgreSQL
+transaction: disputed/rejected nodes trigger graph reconciliation and vector
+deletion, edge deletes enqueue graph deletion, and merge uses graph rebuild plus
+survivor/retired vector updates. Projection processing remains asynchronous and
+retryable.
+
+Local defaults from `compose.knowledge.yml` are Bolt
+`bolt://127.0.0.1:57687` and HTTP `http://127.0.0.1:57474`, configurable through
+`KNOWLEDGE_NEO4J_BOLT_PORT`, `KNOWLEDGE_NEO4J_HTTP_PORT`,
+`KNOWLEDGE_NEO4J_USER`, `KNOWLEDGE_NEO4J_PASSWORD` and
+`KNOWLEDGE_NEO4J_DATABASE`.
+
+## Hybrid retrieval
+
+`HybridKnowledgeRetrievalService` is the deterministic retrieval substrate over
+canonical PostgreSQL, Neo4j, pgvector and optional PostGIS candidates. Requests
+can combine explicit canonical IDs/aliases, project or graph roots, workspace
+and entity filters, relation/hop constraints, an internal query vector/model
+space, and bounded evidence/observation/source hydration. Agent-facing tools
+accept `queryText`; the configured embedding provider owns vector generation and
+model/version selection. Neo4j topology is canonically validated, then root
+reachability is recomputed using only current accepted PostgreSQL nodes/edges.
+
+Exact lookup skips graph/vector when unnecessary. Root/project graph results can
+narrow pgvector candidate IDs; unconstrained semantic discovery can optionally
+request bounded graph enrichment. Ranking is transparent: exact/project and
+explicit candidate signals, graph/spatial membership, then semantic cosine
+score. Every discovery hit is rehydrated from canonical PostgreSQL, so an
+unattributed graph/vector object cannot become a result.
+
+Results report which strategies ran, skipped, degraded or were unavailable.
+Missing graph/vector layers degrade independently, but a requested narrowing
+scope never silently widens to global semantic search. Hard limits cover results,
+hops, edges, semantic candidates, provenance rows, sources and a deterministic
+context-unit budget.
+
+## Knowledge Agent
+
+`KnowledgeAgentService` is the bounded cognitive interface over retrieval and
+canonical domain contracts. Navigator tools resolve identities, run hybrid
+retrieval, traverse graph paths, and inspect canonical provenance. Curator tools
+inspect possible duplicates/conflicts/structure and create pending entity,
+claim, relation, evidence, observation, merge, or supersession proposals.
+Their allowlists and policies remain separate even while they share a runtime.
+
+The model boundary is `KnowledgeAgentModelAdapter`; storage has no model-vendor
+dependency. Runs cap tool calls, context characters, graph hops, results, and
+proposal count. Structured audit events record run ID, mode, tools, canonical
+IDs, retrieval degradation, proposal IDs, counts, and outcome without prompts
+or full content by default. No agent tool exposes SQL, Cypher, filesystem,
+proposal acceptance, or direct merge/supersede operations.
+
+The runnable model binding is configured independently by role. Ollama is the
+initial provider (`KNOWLEDGE_AGENT_PROVIDER=ollama`), with a shared
+`KNOWLEDGE_AGENT_MODEL` and optional `KNOWLEDGE_AGENT_NAVIGATOR_MODEL` and
+`KNOWLEDGE_AGENT_CURATOR_MODEL` overrides. From `packages/orchestrator`, run
+`npm run knowledge:agent -- navigator "goal"` (or `curator`). Semantic search
+uses `KNOWLEDGE_EMBEDDING_PROVIDER=ollama`, `KNOWLEDGE_EMBEDDING_MODEL` (default
+`qwen3-embedding:4b`, whose native dimension supports the configured 1536-output), optional
+`KNOWLEDGE_EMBEDDING_MODEL_VERSION`, `OLLAMA_BASE_URL`, and validates output
+against `KNOWLEDGE_VECTOR_DIMENSION` (currently 1536). Malformed model decisions
+fail closed before a tool executes; unavailable embeddings are reported without
+inventing or widening semantic results. The same runtime wires
+`PostgresSpatialRepository`, so `knowledge.spatial_search` executes bounded
+PostGIS meter-distance queries before canonical hydration.
+
+Agent curation never commits permanent truth. Merge and supersession are
+first-class pending proposal kinds; only separate canonical approval executes
+them transactionally. Similarity, label equality, graph proximity, and
+retrieval confidence support inspection, never identity collapse or truth
+arbitration.
+
+## Identity
+
+Every independently referable thing may have one stable canonical UUID. A label,
+workspace, source, repeated observation or semantic similarity is not an
+identity key. Explicit canonical IDs and aliases can reuse an identity; explicit
+merge consolidates IDs only after sameness is established. Ambiguous labels
+remain ambiguous for review.
+
+The initial node vocabulary remains useful, but PostgreSQL accepts future
+referable node kinds without requiring a new identity architecture.
+
+Accepted node proposals append provenance to `knowledge_observations`, including
+explicit `canonicalId` and alias reuse. Rows retain target, event, optional
+source, occurrence kind, timestamp and metadata; normal reads do not write.
+Qualified `supports`, `contradicts` and `test_evidence` live separately in
+`knowledge_evidence` and may target any canonical type. `mentions` is an
+observation rather than evidence.
+
+## Tests
+
+From `packages/orchestrator`:
 
 ```bash
-npx tsx src/index.ts --knowledge proposals
-npx tsx src/index.ts --knowledge accept <proposalId>
-npx tsx src/index.ts --knowledge neighborhood <nodeId>
-npx tsx src/index.ts --knowledge extract --text "Copper losses produce heat that limits continuous torque."
-npx tsx src/index.ts --knowledge ensure-project label=aktuator-v2
-npx tsx src/index.ts --knowledge link nodeId=... projectId=...
-npx tsx src/index.ts --knowledge project-status label=aktuator-v2
-npx tsx src/index.ts --knowledge ingest --text "..."
-npx tsx src/index.ts --knowledge ingest --file notes.md projectLabel=aktuator-v2
-npx tsx src/index.ts --knowledge add-alias aliasLabel=... canonicalNodeId=...
-npx tsx src/index.ts --knowledge merge fromId=... intoId=...
-npx tsx src/index.ts --knowledge contradictions
-npx tsx src/index.ts --knowledge mark-contradiction fromId=... toId=...
-npx tsx src/index.ts --knowledge supersede oldClaimId=... newClaimId=...
-npx tsx src/index.ts --knowledge fp --topic "continuous torque" projectLabel=aktuator-v2
-npx tsx src/index.ts --json --knowledge find label=heat
-npx tsx src/index.ts --json --knowledge neighborhood <nodeId>
-npx tsx src/index.ts --knowledge find label=heat --table
+npm run typecheck
+npm run knowledge:test:postgres
+npm run knowledge:test:canonical
+npm run knowledge:test:vector
+npm run knowledge:test:graph
+npm run knowledge:test:hybrid
+npm run knowledge:test:agent
 ```
 
-Read library: `createKnowledgeReader(store)`, renderers in `@workflows/knowledge`.
-
-Optional HTTP (integration server):
-
-```bash
-# KNOWLEDGE_HTTP_READ=true INTEGRATION_HTTP_PORT=8787 npm run serve
-# GET /v1/knowledge/search?label=heat
-# GET /knowledge  (minimal HTML browse)
-```
-
-Env: `KNOWLEDGE_DB_PATH`, `KNOWLEDGE_HTTP_READ`, plus M11–M16 flags (see AGENTS-M17.md).
+Knowledge smoke scripts create isolated PostgreSQL databases and clean them up.
+No SQLite knowledge import or compatibility runtime exists. SQLite use in memory
+and other independent packages is outside this package.
