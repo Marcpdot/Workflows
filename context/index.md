@@ -3,7 +3,7 @@
 Lean index of why-knowledge. Load a topic file only when relevant.
 
 - [architecture.md](architecture.md) — layered intent; handle pipeline (mode, capture); package shape
-- [milestones.md](milestones.md) — shell-first; **M0–M18** + post-M18 continuous capture
+- [milestones.md](milestones.md) — shell-first; **M0–M18**; **Continuous Cognitive Capture** as the active next phase
 - [packaging.md](packaging.md) — **packages/* + packages/orchestrator**; knowledge vs voice split
 - [routing.md](routing.md) — rule-based local vs frontier selection
 - [policy.md](policy.md) — budget/tier compute policy over the router (M7)
