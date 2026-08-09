@@ -66,6 +66,11 @@ paginated repeatable-read PostgreSQL snapshot and replaces Neo4j topology in one
 Neo4j transaction. `processGraphProjectionOutbox()` handles node/edge upsert,
 delete and rebuild with advisory-lock serialization and retryable errors.
 Expansion, relation filtering and directed shortest paths execute in Cypher.
+Canonical status/topology mutations enqueue invalidation in the same PostgreSQL
+transaction: disputed/rejected nodes trigger graph reconciliation and vector
+deletion, edge deletes enqueue graph deletion, and merge uses graph rebuild plus
+survivor/retired vector updates. Projection processing remains asynchronous and
+retryable.
 
 Local defaults from `compose.knowledge.yml` are Bolt
 `bolt://127.0.0.1:57687` and HTTP `http://127.0.0.1:57474`, configurable through

@@ -372,15 +372,18 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     }
     if (input.createAccepted === false) throw new Error(`ensureProject: no accepted project "${labelValue}" and createAccepted=false`);
     const workspaceId = input.workspaceId !== undefined ? input.workspaceId : this.defaultWorkspaceId ?? null;
-    const result = await this.pool.query(
-      `INSERT INTO knowledge_nodes (id, type, label, normalized_label, description, status, workspace_id)
-       VALUES ($1, 'project', $2, $3, $4, 'accepted', $5) RETURNING *`,
-      [randomUUID(), labelValue, normalizeLabel(labelValue), input.description ?? null, workspaceId]
-    );
-    const created = node(result.rows[0]);
-    await this.queueProjection(this.pool, created.id, "graph", "upsert");
-    await this.queueProjection(this.pool, created.id, "vector", "upsert");
-    return created;
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query(
+        `INSERT INTO knowledge_nodes (id, type, label, normalized_label, description, status, workspace_id)
+         VALUES ($1, 'project', $2, $3, $4, 'accepted', $5) RETURNING *`,
+        [randomUUID(), labelValue, normalizeLabel(labelValue), input.description ?? null, workspaceId]
+      );
+      const created = node(result.rows[0]); await this.queueProjection(client, created.id, "graph", "upsert"); await this.queueProjection(client, created.id, "vector", "upsert");
+      await client.query("COMMIT"); return created;
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
   }
 
   async linkToProject(input: { nodeId: string; projectId: string; relation?: ProjectLinkRelation; sourceEventId?: string }): Promise<KnowledgeEdge> {
@@ -388,7 +391,9 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     if (!source) throw new Error(`linkToProject: unknown nodeId ${input.nodeId}`);
     if (!project || project.type !== "project") throw new Error("linkToProject: projectId must be an accepted project node");
     if (project.status !== "accepted") throw new Error("linkToProject: project is not accepted");
-    return this.insertEdge(this.pool, { id: randomUUID(), fromNodeId: source.id, relation: input.relation ?? "used_in", toNodeId: project.id, sourceEventId: input.sourceEventId, status: "accepted", createdAt: Date.now() });
+    const client = await this.pool.connect();
+    try { await client.query("BEGIN"); const edge = await this.insertEdge(client, { id: randomUUID(), fromNodeId: source.id, relation: input.relation ?? "used_in", toNodeId: project.id, sourceEventId: input.sourceEventId, status: "accepted", createdAt: Date.now() }); await client.query("COMMIT"); return edge; }
+    catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
   }
 
   async unlinkFromProject(input: { nodeId: string; projectId: string }): Promise<boolean> {
@@ -487,16 +492,26 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     if (!(await this.getNode(input.fromId)) || !(await this.getNode(input.toId))) throw new Error("markContradiction: both nodes must exist");
     const existing = (await this.findEdgesByRelation("contradicts", input.fromId, 50)).find((item) => (item.fromNodeId === input.fromId && item.toNodeId === input.toId) || (item.fromNodeId === input.toId && item.toNodeId === input.fromId));
     if (existing) return existing;
-    return this.insertEdge(this.pool, { id: randomUUID(), fromNodeId: input.fromId, relation: "contradicts", toNodeId: input.toId, confidence: input.confidence, sourceEventId: input.sourceEventId, status: "accepted", createdAt: Date.now() });
+    const client = await this.pool.connect();
+    try { await client.query("BEGIN"); const edge = await this.insertEdge(client, { id: randomUUID(), fromNodeId: input.fromId, relation: "contradicts", toNodeId: input.toId, confidence: input.confidence, sourceEventId: input.sourceEventId, status: "accepted", createdAt: Date.now() }); await client.query("COMMIT"); return edge; }
+    catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
   }
 
   async supersedeClaim(input: { oldClaimId: string; newClaimId: string; markOldDisputed?: boolean }): Promise<KnowledgeEdge> {
     if (input.oldClaimId === input.newClaimId) throw new Error("supersedeClaim: old and new must differ");
-    const oldNode = await this.getNode(input.oldClaimId); const newNode = await this.getNode(input.newClaimId);
-    if (oldNode?.type !== "claim") throw new Error("supersedeClaim: oldClaimId must be a claim node"); if (newNode?.type !== "claim") throw new Error("supersedeClaim: newClaimId must be a claim node");
-    const result = await this.insertEdge(this.pool, { id: randomUUID(), fromNodeId: newNode.id, relation: "supersedes", toNodeId: oldNode.id, status: "accepted", createdAt: Date.now() });
-    if (input.markOldDisputed !== false) await this.pool.query("UPDATE knowledge_nodes SET status = 'disputed', description = concat_ws('; ', description, $2::text), updated_at = now(), revision = revision + 1 WHERE id = $1", [oldNode.id, `superseded by ${newNode.id} (${newNode.label})`]);
-    return result;
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const oldNode = await this.getNodeWith(client, input.oldClaimId); const newNode = await this.getNodeWith(client, input.newClaimId);
+      if (oldNode?.type !== "claim") throw new Error("supersedeClaim: oldClaimId must be a claim node"); if (newNode?.type !== "claim") throw new Error("supersedeClaim: newClaimId must be a claim node");
+      const result = await this.insertEdge(client, { id: randomUUID(), fromNodeId: newNode.id, relation: "supersedes", toNodeId: oldNode.id, status: "accepted", createdAt: Date.now() });
+      if (input.markOldDisputed !== false) {
+        await client.query("UPDATE knowledge_nodes SET status = 'disputed', description = concat_ws('; ', description, $2::text), updated_at = now(), revision = revision + 1 WHERE id = $1", [oldNode.id, `superseded by ${newNode.id} (${newNode.label})`]);
+        await this.queueProjection(client, oldNode.id, "graph", "rebuild"); await this.queueProjection(client, oldNode.id, "vector", "delete");
+      }
+      await client.query("COMMIT"); return result;
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
   }
 
   async listAliases(canonicalNodeId?: string): Promise<KnowledgeAlias[]> {

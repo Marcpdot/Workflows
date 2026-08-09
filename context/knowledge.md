@@ -202,6 +202,13 @@ endpoints are excluded. Incremental outbox jobs support node/edge upsert, delete
 and rebuild; merge uses rebuild when local rewiring is unsafe. Failures remain
 retryable and never invalidate canonical PostgreSQL writes.
 
+Canonical accepted-to-non-accepted transitions are projection invalidations,
+not ordinary metadata updates. Supersession atomically records its edge and
+disputed status while enqueueing graph reconciliation and vector deletion.
+Merge similarly rebuilds graph topology and deletes the retired vector identity;
+direct canonical edge deletion enqueues graph deletion. These outbox writes are
+part of the canonical PostgreSQL transaction, while execution remains decoupled.
+
 **Reason:** The shell proved the domain, but SQLite tables and application-side
 indexes do not provide the integrity, spatial capability, traversal ceiling, or
 indexed semantic retrieval required for a knowledge system expected to outgrow

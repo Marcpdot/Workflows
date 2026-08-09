@@ -1,12 +1,14 @@
 import {
-  createKnowledgePostgresPool, createKnowledgeStore, createNeo4jGraphRepository,
-  processGraphProjectionOutbox, rebuildGraphProjection, resolvePostgresKnowledgeConfig,
-  type CanonicalKnowledgeRepository, type GraphRepository, type KnowledgeEdge, type KnowledgeNode,
+  createKnowledgePostgresPool, createKnowledgeStore, createNeo4jGraphRepository, createPostgresVectorRepository,
+  KNOWLEDGE_VECTOR_DIMENSION, processGraphProjectionOutbox, processVectorProjectionOutbox,
+  rebuildGraphProjection, rebuildSemanticVectorProjection, resolvePostgresKnowledgeConfig, semanticVectorRecordId,
+  type CanonicalKnowledgeRepository, type GraphRepository, type KnowledgeEdge, type KnowledgeNode, type SemanticEmbeddingProvider,
 } from "@workflows/knowledge";
 import { startKnowledgePostgresTest } from "./knowledge-postgres-test-runtime.js";
 import { startKnowledgeNeo4jTest } from "./knowledge-neo4j-test-runtime.js";
 
 function assert(condition: unknown, message: string): asserts condition { if (!condition) throw new Error(`ASSERT: ${message}`); }
+const embedder: SemanticEmbeddingProvider = { model: "graph-fixture", modelVersion: "v1", dimension: KNOWLEDGE_VECTOR_DIMENSION, async embed(texts) { return texts.map((text) => { const vector = Array<number>(KNOWLEDGE_VECTOR_DIMENSION).fill(0); vector[[...text].reduce((sum, char) => sum + char.charCodeAt(0), 0) % 32] = 1; return vector; }); } };
 
 async function acceptedNode(store: ReturnType<typeof createKnowledgeStore>, eventId: string, type: string, label: string, workspaceId?: string) {
   const before = new Set((await store.findNodes({ type, label, status: "accepted", limit: 1000 })).map((item) => item.id));
@@ -32,6 +34,7 @@ async function main(): Promise<void> {
   const base = resolvePostgresKnowledgeConfig(); const pool = createKnowledgePostgresPool({ ...base, connectionString: postgresRuntime.connectionString, applicationName: `${base.applicationName}-graph-test` });
   const canonical = createKnowledgeStore({ postgresConfig: { ...base, connectionString: postgresRuntime.connectionString }, pool });
   const graph = createNeo4jGraphRepository(neo4jRuntime.config);
+  const vectors = createPostgresVectorRepository({ ...base, connectionString: postgresRuntime.connectionString, pool });
   try {
     let health = await graph.healthCheck();
     for (let attempt = 0; !health.ok && attempt < 60; attempt++) { await new Promise((resolve) => setTimeout(resolve, 1000)); health = await graph.healthCheck(); }
@@ -71,6 +74,29 @@ async function main(): Promise<void> {
     const scoped = await graph.expand(alpha.id, { hops: 1, workspaceId: "workspace-a" });
     assert(!scoped.nodes.some((item) => item.id === other.id), "workspace filtering excludes another workspace context");
 
+    const oldClaim = await acceptedNode(canonical, event.id, "claim", "Old accepted claim", "workspace-a");
+    const newClaim = await acceptedNode(canonical, event.id, "claim", "Replacement claim", "workspace-a");
+    await acceptedEdge(canonical, event.id, oldClaim.id, "about", gamma.id);
+    await processGraphProjectionOutbox({ pool, canonical, graph, limit: 100 });
+    await rebuildSemanticVectorProjection({ canonical, vector: vectors, embedder, pageSize: 2 });
+    assert((await graph.getNode(oldClaim.id))?.id === oldClaim.id && await vectors.get(semanticVectorRecordId(oldClaim.id, embedder.model, embedder.modelVersion)) !== null, "accepted claim exists in both projections before supersession");
+    await canonical.supersedeClaim({ oldClaimId: oldClaim.id, newClaimId: newClaim.id });
+    assert((await canonical.getNode(oldClaim.id))?.status === "disputed", "supersession changes canonical old claim status");
+    await processGraphProjectionOutbox({ pool, canonical, graph, limit: 100 });
+    await processVectorProjectionOutbox({ pool, canonical, vector: vectors, embedder, limit: 100 });
+    assert(await graph.getNode(oldClaim.id) === null, "disputed superseded claim is removed from accepted graph projection");
+    assert(await vectors.get(semanticVectorRecordId(oldClaim.id, embedder.model, embedder.modelVersion)) === null, "disputed superseded claim is removed from vector projection");
+
+    const mergeFrom = await acceptedNode(canonical, event.id, "concept", "Projection merge source", "workspace-a");
+    const mergeInto = await acceptedNode(canonical, event.id, "concept", "Projection merge survivor", "workspace-a");
+    const mergeEdge = await acceptedEdge(canonical, event.id, mergeFrom.id, "requires", gamma.id);
+    await processGraphProjectionOutbox({ pool, canonical, graph, limit: 100 }); await processVectorProjectionOutbox({ pool, canonical, vector: vectors, embedder, limit: 100 });
+    await canonical.mergeNodes({ fromId: mergeFrom.id, intoId: mergeInto.id });
+    await processGraphProjectionOutbox({ pool, canonical, graph, limit: 100 }); await processVectorProjectionOutbox({ pool, canonical, vector: vectors, embedder, limit: 100 });
+    assert(await graph.getNode(mergeFrom.id) === null && (await graph.getNode(mergeInto.id))?.id === mergeInto.id, "merge graph projection converges on survivor identity");
+    assert((await graph.expand(mergeInto.id, { hops: 1 })).edges.some((item) => item.id === mergeEdge.id && item.fromNodeId === mergeInto.id), "merge rebuild restores rewired canonical topology");
+    assert(await vectors.get(semanticVectorRecordId(mergeFrom.id, embedder.model, embedder.modelVersion)) === null && await vectors.get(semanticVectorRecordId(mergeInto.id, embedder.model, embedder.modelVersion)) !== null, "merge vector projection deletes retired identity and retains survivor");
+
     await processGraphProjectionOutbox({ pool, canonical, graph, limit: 100 });
     const outboxNode = await acceptedNode(canonical, event.id, "future_type", "Incremental graph node", "workspace-a");
     assert((await processGraphProjectionOutbox({ pool, canonical, graph, limit: 100 })).processed > 0 && (await graph.getNode(outboxNode.id))?.id === outboxNode.id, "graph outbox incrementally upserts canonical node");
@@ -94,7 +120,7 @@ async function main(): Promise<void> {
     const failedJob = await pool.query("SELECT last_error, processed_at FROM knowledge_projection_outbox WHERE canonical_id = $1 AND projection = 'graph' ORDER BY created_at DESC LIMIT 1", [failureNode.id]);
     assert(String(failedJob.rows[0]?.last_error).includes("fixture graph failure") && failedJob.rows[0]?.processed_at == null, "failed graph job remains retryable");
     console.log("Neo4j canonical graph projection checks passed.");
-  } finally { await graph.close(); await pool.end(); await neo4jRuntime.dispose(); await postgresRuntime.dispose(); }
+  } finally { await graph.close(); await vectors.close(); await pool.end(); await neo4jRuntime.dispose(); await postgresRuntime.dispose(); }
 }
 
 main().catch((error) => { console.error(error instanceof Error ? error.stack : String(error)); process.exitCode = 1; });
