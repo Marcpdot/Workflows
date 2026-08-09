@@ -31,6 +31,24 @@ Migrations are checksum-verified, advisory-locked and transactional. Accepted
 canonical writes append retryable projection-outbox work; graph and vector
 systems remain rebuildable projections and cannot invalidate PostgreSQL truth.
 
+## Semantic vector projection
+
+`PostgresVectorRepository` stores derived representations in pgvector. Records
+reference canonical target UUIDs plus optional canonical source/chunk UUIDs;
+they contain embedding/filter metadata, not duplicated canonical content.
+Embeddable canonical nodes are all accepted current or future types with their
+type, label and optional description as deterministic semantic text.
+
+The active schema uses `vector(1536)` with an HNSW cosine index. Providers must
+declare model, model version and dimension, and searches require the matching
+model/version so incompatible embedding spaces are not mixed. A different
+dimension requires a forward schema/index migration rather than silent coercion.
+`rebuildSemanticVectorProjection()` embeds canonical state before atomically
+replacing the projection. `processVectorProjectionOutbox()` handles only vector
+jobs, serializes workers with an advisory lock, and leaves failed jobs retryable.
+Embedding generation remains behind `SemanticEmbeddingProvider`; the repository
+never invents embeddings and similarity results never merge identities.
+
 ## Identity
 
 Every independently referable thing may have one stable canonical UUID. A label,

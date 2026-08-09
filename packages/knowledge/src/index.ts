@@ -61,6 +61,12 @@ export {
   type PostgresCanonicalRepositoryConfig,
 } from "./postgres/repository.js";
 export {
+  createPostgresVectorRepository,
+  KNOWLEDGE_VECTOR_DIMENSION,
+  PostgresVectorRepository,
+  type PostgresVectorRepositoryConfig,
+} from "./postgres/vectorRepository.js";
+export {
   EXTRACTION_SCHEMA,
   extractionToProposalItems,
   applyExtractionResult,
@@ -132,6 +138,15 @@ export {
   scoreProposalItem,
   type LimitKind,
 } from "./conversationExtract.js";
+export {
+  canonicalSemanticText,
+  processVectorProjectionOutbox,
+  rebuildSemanticVectorProjection,
+  semanticVectorRecordId,
+  type SemanticEmbeddingProvider,
+  type VectorOutboxResult,
+  type VectorProjectionResult,
+} from "./semanticProjection.js";
 export {
   STRUCTURED_CAPTURE_SCHEMA,
   extractStructuredConversation,

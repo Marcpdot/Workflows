@@ -25,6 +25,10 @@ contracts. PostgreSQL/PostGIS is the sole canonical knowledge runtime.
 - The current node types are an initial ontology, not a closed identity universe.
 - Accepted canonical writes append projection-outbox work in the same
   transaction. Graph/vector backends remain reconstructable and non-canonical.
+- Semantic search runs in PostgreSQL/pgvector against a declared model/version;
+  returned candidates never establish or merge canonical identity.
+- Embedding generation stays behind an explicit provider. Never invent vectors
+  or let projection failure invalidate a canonical transaction.
 - Keep PostgreSQL-specific code inside adapters and the orchestrator thin.
 - Expose controlled domain/tools contracts, not unrestricted SQL access.
 

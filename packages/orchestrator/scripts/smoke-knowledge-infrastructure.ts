@@ -78,6 +78,9 @@ async function main(): Promise<void> {
     migrations.some((migration) => migration.name.includes("universal_canonical_identity")),
     "universal canonical identity migration"
   );
+  const vectorMigration = migrations.find((migration) => migration.name.includes("pgvector_semantic_projection"));
+  assert(vectorMigration?.sql.includes("CREATE TABLE knowledge_semantic_vectors"), "semantic vector projection table migration");
+  assert(vectorMigration?.sql.includes("USING hnsw"), "semantic vector HNSW index migration");
 
   const client = new FakeMigrationClient();
   const initial = await runKnowledgeMigrations(client, migrations);

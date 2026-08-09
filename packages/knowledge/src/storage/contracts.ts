@@ -65,12 +65,15 @@ export interface SemanticVectorRecord {
   id: string;
   canonicalId: string;
   sourceId?: string;
+  chunkId?: string;
   workspaceId?: string | null;
   entityType?: string;
   model: string;
+  modelVersion: string;
   dimension: number;
   vector: readonly number[];
   contentHash?: string;
+  metadata?: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;
 }
@@ -85,16 +88,23 @@ export interface VectorRepository {
   readonly backend: KnowledgeRepositoryBackend;
   healthCheck(): Promise<RepositoryHealth>;
   upsert(record: SemanticVectorRecord): Promise<void>;
+  get(id: string): Promise<SemanticVectorRecord | null>;
   deleteByCanonicalId(canonicalId: string): Promise<number>;
+  /** Atomically replace the entire derived projection after embeddings exist. */
+  replaceAll(records: readonly SemanticVectorRecord[]): Promise<void>;
   search(
     queryVector: readonly number[],
-    options?: {
+    options: {
       limit?: number;
       minScore?: number;
       workspaceId?: string | null;
       canonicalIds?: string[];
       entityTypes?: string[];
-      model?: string;
+      model: string;
+      modelVersion: string;
+      sourceIds?: string[];
+      chunkIds?: string[];
+      metadata?: Record<string, unknown>;
     }
   ): Promise<SemanticVectorHit[]>;
   close(): Promise<void>;

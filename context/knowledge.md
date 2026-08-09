@@ -168,6 +168,22 @@ append retryable projection-outbox work without coupling canonical success to a
 graph/vector backend. There is no SQLite canonical adapter/import/cutover path;
 knowledge moves forward from PostgreSQL canonical truth.
 
+The semantic projection uses pgvector `vector(1536)` with HNSW cosine indexing.
+Each row retains a stable projection ID, canonical target UUID, optional
+canonical source/chunk UUIDs, embedding model/version/dimension, filter metadata
+and timestamps. It does not copy canonical text. Accepted nodes of any present
+or future type are embeddable from type + label + optional description when an
+explicit embedding provider is configured. Rebuild generates all embeddings
+before atomically replacing the derived table; vector outbox failures remain
+retryable and cannot invalidate canonical commits. Search is executed in
+PostgreSQL, requires a matching model/version and returns candidates rather than
+making identity decisions.
+
+**HNSW rationale:** it supports incrementally updated projections without a
+training phase and gives strong query-time recall/latency for the local semantic
+index. Fixed dimension keeps the ANN operator class indexable and makes model
+incompatibility fail explicitly; dimension changes use forward migrations.
+
 **Reason:** The shell proved the domain, but SQLite tables and application-side
 indexes do not provide the integrity, spatial capability, traversal ceiling, or
 indexed semantic retrieval required for a knowledge system expected to outgrow
