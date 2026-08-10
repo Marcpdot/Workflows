@@ -627,6 +627,194 @@ Attention is the bridge that determines what should become active. It should eve
 
 Digital cognition can exploit persistence and parallelism that humans cannot: unresolved problems can remain active in the background for months, and many regions of the world model can be monitored simultaneously.
 
+## Attention: selective activation within cognition
+
+Attention should not be defined as a single global focus or as a requirement that cognition be organized into project and task containers before the system can operate.
+
+Projects, tasks, goals, and other organizational structures can be useful representations inside the world model, but they should not be prerequisites for cognition. The system should still be able to understand and act in a situation that arises naturally from conversation, observation, ongoing work, or the physical world.
+
+A useful definition is:
+
+> Attention is resource-aware selective activation within the cognitive architecture. It determines which information, representations, capabilities, and level of processing are necessary for a given cognitive operation while the rest of the system remains available without needing to participate.
+
+The goal is **selective activation without global blindness**.
+
+The system should not need to load or execute everything it knows and can do for every operation. At the same time, information or processes outside the current active state should not cease to exist or become unreachable.
+
+### Principle 21 — attention is broader than retrieval
+
+Retrieval asks which stored information matches a query. Attention determines what should participate in cognition now.
+
+That may include:
+
+- relevant world-model state
+- purpose-appropriate representations
+- current observations
+- historical experience
+- unresolved uncertainty or missing information
+- causal dependencies
+- contradictions
+- goals or constraints
+- models
+- tools
+- deterministic algorithms
+- simulations
+- language or reasoning models
+
+Semantic similarity can contribute to attention, but should not define it.
+
+### Principle 22 — attention selects what, how, and how much
+
+Selective cognition has at least three dimensions:
+
+```text
+WHAT
+Which information and representations are needed?
+
+HOW
+Which cognitive capabilities, tools, models, or algorithms are needed?
+
+HOW MUCH
+What resolution, depth, latency, and compute are justified?
+```
+
+A simple status question may require only a current measurement and a deterministic comparison. A causal diagnosis of the same system may require history, multiple representations, physical models, simulation, and deeper reasoning.
+
+The same world model can therefore support very different active cognitive assemblies depending on the operation.
+
+### Principle 23 — active cognition can be dynamically composed
+
+Active cognition should not necessarily correspond to a permanently running agent or fixed subsystem.
+
+For a thermal diagnosis, attention may assemble:
+
+```text
+current measurements
++ thermal representation
++ motor parameters
++ relevant experimental history
++ physical model
++ reasoning capability
+```
+
+For a mechanical design operation, it may instead assemble:
+
+```text
+CAD geometry
++ mechanical constraints
++ material properties
++ manufacturing capabilities
++ previous design decisions
++ design tools
+```
+
+The architecture should allow the necessary cognitive resources to be composed for the situation rather than forcing every possible capability to run continuously.
+
+### Principle 24 — continuous does not mean everything runs continuously
+
+Continuous Cognition should be capable of maintaining many latent concerns, observations, and ongoing processes without assigning full reasoning resources to all of them at all times.
+
+A background process may normally be extremely cheap:
+
+```text
+new observation
+→ lightweight check
+→ no meaningful change
+→ return to passive/background state
+```
+
+When something important occurs, attention can escalate:
+
+```text
+anomaly / contradiction / trigger
+→ activate relevant history and representations
+→ allocate deeper cognition
+→ reason / simulate / act / surface to human
+```
+
+This allows the system to remain continuous while respecting finite compute, energy, latency, and hardware.
+
+### Principle 25 — attention can activate missing information
+
+Attention should not only select what the system already knows. It should also be able to recognize when a required variable, representation, observation, or assumption is missing.
+
+Conceptually:
+
+```text
+current cognitive objective
+→ required understanding
+→ missing information or representation
+→ activate the gap
+→ resolve through observation / tool / inference / targeted question
+```
+
+This connects attention directly to representation acquisition and epistemic action.
+
+### Principle 26 — attention can be shaped by experience
+
+The system's accumulated experience should be able to change what it inspects first, which representations it prefers, which failure modes it considers, and how deeply it allocates cognition.
+
+Past outcomes can therefore create priors for future attention without becoming hard-coded truth.
+
+```text
+past experience
+→ attention bias / prior
+→ earlier inspection of relevant possibilities
+→ new evidence
+→ revised experience
+```
+
+### Principle 27 — digital attention need not reproduce human bottlenecks
+
+Human attention is strongly serial and limited. A digital cognitive architecture can exploit persistence and parallelism instead.
+
+Multiple background concerns can remain alive simultaneously. Long-running unresolved problems can remain available for months. Independent monitoring processes can continue without occupying the foreground interaction.
+
+Attention should therefore be designed around efficient resource allocation rather than around copying a single human spotlight.
+
+## The cognitive architecture is the system
+
+Continuous Cognition should not be designed as an LLM surrounded by support infrastructure.
+
+LLMs may be extremely important resources for language, broad interpretation, reasoning, synthesis, and agentic behavior, but they are only some of the mechanisms available to cognition.
+
+Other cognitive resources may include:
+
+```text
+world model
+representations
+memory
+identity
+provenance
+attention
+sensor processing
+state estimation
+graph traversal
+numerical solvers
+physical models
+simulations
+deterministic algorithms
+tools
+local models
+frontier models
+background processes
+feedback and learning
+```
+
+No single component is Continuous Cognition. The integrated architecture is the cognitive entity.
+
+A model can be replaced, an agent can terminate, and a context window can disappear without destroying the identity or accumulated understanding of the system. The persistent world model, experience, representations, and integrated cognitive mechanisms provide continuity across those changes.
+
+A useful architectural test is:
+
+> If the LLM were removed, would what remains still be a coherent observing, remembering, modelling, and continuously operating system, even though its language and general reasoning abilities were greatly reduced?
+
+If the answer is no and the remaining architecture is only a collection of passive support tools, the LLM has effectively remained the system rather than becoming one cognitive resource within it.
+
+The intended direction is therefore:
+
+> The human interacts with the whole cognitive architecture. The architecture uses an LLM when an LLM is the appropriate cognitive resource.
+
 ## Experience vs world model
 
 Do not conflate every captured experience with stable semantic truth.
@@ -676,5 +864,3 @@ As further first-principles rounds produce durable conclusions:
 3. turn validated conclusions into implementation work on the branch,
 4. avoid creating a new branch or planning document for every idea,
 5. split work only when a concrete subsystem becomes independently large enough to justify it.
-
-The next design question is expected to examine how the system selects, combines, and activates the right representations for a given cognitive situation, which begins to connect representation with attention.
