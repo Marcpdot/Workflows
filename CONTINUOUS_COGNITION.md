@@ -197,6 +197,170 @@ A human statement such as "this design feels mechanically unstable" may already 
 
 The long-term model should therefore allow sensor fusion between human observations and digital or physical instrumentation rather than treating one as inherently primary.
 
+## Understanding: first-principles direction
+
+Understanding is not a component owned by one model, agent, tool, or database. It is an emergent property of the integrated architecture.
+
+A useful first-principles definition is:
+
+> To understand is to structure information such that the resulting structure represents reality.
+
+Reasoning, prediction, comparison, explanation, and action are therefore applications and tests of understanding rather than the definition itself.
+
+The architecture should promote understanding by allowing observations, representations, models, tools, memory, attention, reasoning, and feedback to contribute to the same evolving picture of reality.
+
+### Principle 6 — understanding is emergent
+
+No single subsystem is "the understanding layer". A model may interpret, a graph may encode relations, a simulator may express mechanics, a sensor may observe state, and an agent may reason over all of them. Understanding emerges from how well these mechanisms integrate.
+
+Conceptually:
+
+```text
+input
++ identity
++ representations
++ memory
++ models
++ tools
++ attention
++ reasoning
++ background operations
++ feedback
+→ integrated understanding
+```
+
+The system is therefore not one intelligent component with supporting utilities. Continuous Cognition is the integrated dynamics of all of these mechanisms at once.
+
+### Principle 7 — shared reality, not isolated cognitive silos
+
+Different subsystems may use different representations and storage technologies, but they should contribute to, challenge, or refine the same underlying referents and semantics rather than maintaining isolated versions of reality.
+
+For example, the same actuator may simultaneously be represented by:
+
+- a canonical identity
+- CAD geometry
+- sensor streams
+- a thermal model
+- a mechanical model
+- project state
+- conversation-derived hypotheses
+- experimental history
+
+Understanding can emerge from their integration even though no single representation is sufficient on its own.
+
+A shared world model does not imply one database or one data structure. It implies shared referents, interoperable semantics, and the ability to navigate between representations without losing what they refer to.
+
+## World model as cognitive continuity
+
+The world model should not be defined as a particular database.
+
+A stronger definition is:
+
+> The world model is the persistent cognitive continuity of the system: the total integrated set of representations, experiences, models, state, provenance, uncertainty, and learned structure that the system uses to model reality across time.
+
+It is a cognitive "place" in the architecture where the system's understanding continues to exist even when a specific model context ends, an agent run stops, or an individual process is replaced.
+
+Models can be swapped. Agents can terminate. Context windows can clear. The system remains the same system because its world model and accumulated experience persist and continue to shape future cognition.
+
+The world model may span multiple representation forms, including:
+
+```text
+canonical entities
+relationships
+state representations
+time series
+spatial state
+source material
+probabilistic beliefs
+mechanistic models
+simulations
+code models
+project state
+episodic history
+learned patterns
+```
+
+None of these alone is "the world model". The world model is the integrated cognitive continuity across them.
+
+### Representation is not reality
+
+The system must never collapse the distinction between reality and its own model.
+
+Conceptually:
+
+```text
+REALITY
+   ↓
+OBSERVATIONS
+   ↓
+REPRESENTATIONS
+   ↕
+INTEGRATION / REVISION
+   ↓
+UNDERSTANDING
+```
+
+The architecture should behave as though:
+
+```text
+representation ≈ reality
+```
+
+not:
+
+```text
+representation = reality
+```
+
+Confidence, provenance, uncertainty, temporal validity, evidence, contradiction, and revision therefore remain fundamental rather than optional metadata.
+
+## Experience-driven development of cognition
+
+Experience should not merely be stored as historical content. Outcomes of interaction should be able to change how the system behaves in future situations.
+
+Distinguish two complementary forms of development:
+
+```text
+KNOWLEDGE-BASED DEVELOPMENT
+new information
+→ richer world model
+
+EXPERIENCE-BASED DEVELOPMENT
+repeated interaction + outcomes
+→ improved future cognition
+```
+
+Experience-based development may eventually influence:
+
+- which representations the system activates
+- which questions it asks
+- what attention prioritizes
+- which tools it chooses
+- which hypotheses it considers first
+- how much confidence it places in different models
+- which failure modes it expects
+- how it structures new information
+- which actions it predicts will work in a given situation
+
+The relevant loop is:
+
+```text
+situation
+→ representation / prediction
+→ reasoning or action
+→ outcome
+→ evaluation
+→ retained experience
+→ revised world model and/or cognitive behavior
+→ future situation
+```
+
+### Principle 8 — experience must modify future cognition
+
+> Experience should not merely be archived; outcomes of interaction should be able to modify how the system represents, attends to, reasons about, and acts on future situations.
+
+This is the distinction between a system that only accumulates data and one that can become more experienced over time.
+
 ## Active, passive, and background cognition
 
 The complete world model does not need to occupy active model context at once.
@@ -227,7 +391,7 @@ world model
 
 Experiences may include conversations, voice, file edits, code changes, experiments, measurements, research, and other events. The world model is the system's evolving structured understanding derived from those experiences.
 
-This allows high-fidelity episodic history to coexist with a more compact, evolving semantic model.
+High-fidelity episodic history and a more compact evolving semantic model should be able to coexist and interact. Experience can preserve what happened; the world model can preserve what the system currently understands from what happened.
 
 ## Current implementation posture
 
@@ -261,4 +425,4 @@ As further first-principles rounds produce durable conclusions:
 4. avoid creating a new branch or planning document for every idea,
 5. split work only when a concrete subsystem becomes independently large enough to justify it.
 
-The next design area is expected to go deeper into **understanding / representation**.
+The next design area is expected to go deeper into **representations**: what forms understanding can take, how multiple representations of the same reality coexist, and how the system selects or combines them.
