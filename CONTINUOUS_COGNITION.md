@@ -20,6 +20,12 @@ A central implication is:
 
 The objective is not to hard-code every future domain. It is to build general cognitive mechanisms that can acquire and extend representations as the system encounters new phenomena.
 
+Continuous Cognition should also not be designed around the assumption that an LLM is the system and everything else is support infrastructure. Models, agents, databases, tools, sensors, deterministic algorithms, simulations, memory, and attention are all cognitive resources inside the same architecture.
+
+> No single component is Continuous Cognition. The integrated architecture is the cognitive entity.
+
+An LLM may provide language, broad interpretation, reasoning, and agentic behavior, but the system's continuity and understanding should survive model replacement. If one LLM is swapped for another, the system should remain the same system because its world model, experience, identity, representations, and ongoing cognition persist.
+
 ## Core objective
 
 Build a continuous cognitive loop in which human thought and activity can enter the system naturally, become explicit machine-usable understanding, and return as useful context, reasoning, questions, actions, and proactive support with minimal human organizational overhead.
@@ -43,10 +49,8 @@ understanding / representation
     ↓
 world model / memory
     ↕
-passive cognition
-    ↓
 attention
-    ↓
+    ↕
 active cognition
     ↓
 output / action
@@ -56,7 +60,7 @@ human / world
 new input
 ```
 
-Background cognition operates continuously across the world model for consolidation, contradiction detection, relationship discovery, uncertainty updates, reprioritization, and other non-interactive work.
+Background cognition can operate continuously across the world model for consolidation, contradiction detection, relationship discovery, uncertainty updates, reprioritization, monitoring, and other non-interactive work.
 
 ## Fundamental design areas
 
@@ -91,21 +95,19 @@ Possible sources include text, voice, files, code, APIs, databases, application 
 
 Raw data becomes cognitively useful only when the system can connect it to an explicit representation of what it refers to.
 
-Conceptually:
-
 ```text
 signal
 → representation
 → meaning in the world model
 ```
 
-A numeric sensor stream is not yet temperature, vibration, or any other property until the system can bind it to identity, context, units, time, provenance, and relevant state.
+A numeric sensor stream is not yet temperature, vibration, or another property until the system can bind it to identity, context, units, time, provenance, and relevant state.
 
 ### Principle 3 — human-readable form is an interface
 
 Human-readable representation is an interface to cognition, not necessarily the system's native internal substrate.
 
-The system should be free to reason over representations appropriate to the phenomenon: graph structure, vectors, time series, symbolic expressions, geometry, source-code structure, probability distributions, simulations, or other machine-native forms. Human-readable text or visualization can be produced when needed for human interaction.
+The system should be free to reason over representations appropriate to the phenomenon: graph structure, vectors, time series, symbolic expressions, geometry, source-code structure, probability distributions, simulations, or other machine-native forms.
 
 Avoid unnecessary middle layers such as:
 
@@ -124,22 +126,7 @@ when the system can instead process the underlying machine-readable state direct
 
 The architecture should encode general mechanisms for representing new phenomena rather than hard-coding every possible future domain.
 
-Likely foundational capabilities include concepts such as:
-
-- identity
-- observation
-- property / state
-- value
-- relation
-- event
-- time
-- source / provenance
-- context
-- uncertainty
-
-The exact primitive set is still open and should be derived carefully rather than frozen prematurely.
-
-The goal is analogous to a programming language providing general primitives rather than containing one dedicated language feature for every future object that might be represented.
+Likely foundational capabilities include identity, observation, property/state, value, relation, event, time, source/provenance, context, and uncertainty. The exact primitive set remains open and should be derived carefully rather than frozen prematurely.
 
 ### Principle 5 — representation acquisition
 
@@ -155,30 +142,13 @@ metadata
 → targeted human question when necessary
 ```
 
-Questions are therefore not only conversational output; they can be epistemic actions used to improve the system's own ability to model reality.
+Questions are therefore not only conversational output; they can be epistemic actions used to improve the system's ability to model reality.
 
-Example:
-
-```text
-unknown device stream
-→ inspect device metadata
-→ resolve device identity
-→ determine channel semantics / units
-→ bind to physical component
-→ ask only for missing context
-→ establish reusable representation
-→ integrate future observations automatically
-```
-
-The important behavior is not merely that the system can ingest new modalities, but that it can detect a representational gap and actively acquire enough structure to make the signal reusable in future cognition.
+The important behavior is not merely that the system can ingest new modalities, but that it can detect a representational gap, acquire enough structure to make the signal meaningful, and reuse that understanding later without forcing the human to repeat the same organizational work.
 
 ## Identity as a bridge to physical and digital reality
 
 Canonical identity can provide context that raw input does not carry itself.
-
-A sensor stream identified as `sensor T1` can become meaningful because the world model already knows that T1 measures a property of a particular component, belongs to a particular assembly, and participates in a specific test or project context.
-
-Conceptually:
 
 ```text
 sensor T1
@@ -195,25 +165,19 @@ Human observations should be first-class alongside machine measurements.
 
 A human statement such as "this design feels mechanically unstable" may already encode substantial compressed sensory and experiential information. Machine telemetry can later support, contradict, or refine that observation.
 
-The long-term model should therefore allow sensor fusion between human observations and digital or physical instrumentation rather than treating one as inherently primary.
+The long-term model should allow fusion between human observations and digital or physical instrumentation rather than treating one as inherently primary.
 
 ## Understanding: first-principles direction
 
 Understanding is not a component owned by one model, agent, tool, or database. It is an emergent property of the integrated architecture.
 
-A useful first-principles definition is:
-
 > To understand is to structure information such that the resulting structure represents reality.
 
-Reasoning, prediction, comparison, explanation, and action are therefore applications and tests of understanding rather than the definition itself.
-
-The architecture should promote understanding by allowing observations, representations, models, tools, memory, attention, reasoning, and feedback to contribute to the same evolving picture of reality.
+Reasoning, prediction, comparison, explanation, and action are applications and tests of understanding rather than the definition itself.
 
 ### Principle 6 — understanding is emergent
 
-No single subsystem is "the understanding layer". A model may interpret, a graph may encode relations, a simulator may express mechanics, a sensor may observe state, and an agent may reason over all of them. Understanding emerges from how well these mechanisms integrate.
-
-Conceptually:
+No single subsystem is "the understanding layer". A model may interpret, a graph may encode relations, a simulator may express mechanics, a sensor may observe state, and an agent may reason over them. Understanding emerges from how well these mechanisms integrate.
 
 ```text
 input
@@ -229,24 +193,9 @@ input
 → integrated understanding
 ```
 
-The system is therefore not one intelligent component with supporting utilities. Continuous Cognition is the integrated dynamics of all of these mechanisms at once.
-
 ### Principle 7 — shared reality, not isolated cognitive silos
 
 Different subsystems may use different representations and storage technologies, but they should contribute to, challenge, or refine the same underlying referents and semantics rather than maintaining isolated versions of reality.
-
-For example, the same actuator may simultaneously be represented by:
-
-- a canonical identity
-- CAD geometry
-- sensor streams
-- a thermal model
-- a mechanical model
-- project state
-- conversation-derived hypotheses
-- experimental history
-
-Understanding can emerge from their integration even though no single representation is sufficient on its own.
 
 A shared world model does not imply one database or one data structure. It implies shared referents, interoperable semantics, and the ability to navigate between representations without losing what they refer to.
 
@@ -254,39 +203,17 @@ A shared world model does not imply one database or one data structure. It impli
 
 The world model should not be defined as a particular database.
 
-A stronger definition is:
-
 > The world model is the persistent cognitive continuity of the system: the total integrated set of representations, experiences, models, state, provenance, uncertainty, and learned structure that the system uses to model reality across time.
 
-It is a cognitive "place" in the architecture where the system's understanding continues to exist even when a specific model context ends, an agent run stops, or an individual process is replaced.
+It is a cognitive "place" in the architecture where the system's understanding continues to exist even when a model context ends, an agent run stops, or an individual process is replaced.
 
 Models can be swapped. Agents can terminate. Context windows can clear. The system remains the same system because its world model and accumulated experience persist and continue to shape future cognition.
 
-The world model may span multiple representation forms, including:
-
-```text
-canonical entities
-relationships
-state representations
-time series
-spatial state
-source material
-probabilistic beliefs
-mechanistic models
-simulations
-code models
-project state
-episodic history
-learned patterns
-```
-
-None of these alone is "the world model". The world model is the integrated cognitive continuity across them.
+The world model may span canonical entities, relationships, state representations, time series, spatial state, source material, probabilistic beliefs, mechanistic models, simulations, code models, project state, episodic history, and learned patterns. None of these alone is the world model.
 
 ### Representation is not reality
 
 The system must never collapse the distinction between reality and its own model.
-
-Conceptually:
 
 ```text
 REALITY
@@ -318,8 +245,6 @@ Confidence, provenance, uncertainty, temporal validity, evidence, contradiction,
 
 Experience should not merely be stored as historical content. Outcomes of interaction should be able to change how the system behaves in future situations.
 
-Distinguish two complementary forms of development:
-
 ```text
 KNOWLEDGE-BASED DEVELOPMENT
 new information
@@ -330,30 +255,7 @@ repeated interaction + outcomes
 → improved future cognition
 ```
 
-Experience-based development may eventually influence:
-
-- which representations the system activates
-- which questions it asks
-- what attention prioritizes
-- which tools it chooses
-- which hypotheses it considers first
-- how much confidence it places in different models
-- which failure modes it expects
-- how it structures new information
-- which actions it predicts will work in a given situation
-
-The relevant loop is:
-
-```text
-situation
-→ representation / prediction
-→ reasoning or action
-→ outcome
-→ evaluation
-→ retained experience
-→ revised world model and/or cognitive behavior
-→ future situation
-```
+Experience-based development may influence which representations the system activates, which questions it asks, what attention prioritizes, which tools it chooses, which hypotheses it considers first, how much confidence it places in models, which failure modes it expects, how it structures new information, and which actions it predicts will work.
 
 ### Principle 8 — experience must modify future cognition
 
@@ -365,13 +267,11 @@ This is the distinction between a system that only accumulates data and one that
 
 A representation is not synonymous with a database record, graph node, embedding, visualization, or any other particular storage format.
 
-A useful definition is:
-
 > A representation is a form in which information is expressed so that particular aspects of it become readable or usable for a given situation or purpose while preserving the relevant reality of what is being represented.
 
 The same underlying information may therefore support many valid representations.
 
-For a sensor stream, for example:
+For a sensor stream:
 
 ```text
 same underlying measurements
@@ -384,43 +284,21 @@ same underlying measurements
 └─ machine state estimate
 ```
 
-These are different views of the same underlying data. None is universally best. A representation is good when it preserves the structure of reality that matters for the current cognitive purpose without introducing distortion.
+These are different views of the same underlying data. None is universally best.
 
 ### Principle 9 — representation is purpose-relative
 
 The usefulness of a representation depends on the situation and task.
 
-A scalar RMS value may be excellent for threshold monitoring while being insufficient for diagnosing which frequency component causes a vibration problem. A spectrum may be useful for diagnosis while being unnecessary for a simple status check.
-
-The architecture should therefore be able to select, construct, combine, or transform representations according to what aspect of reality matters in the current cognitive context.
-
-Conceptually:
-
-```text
-situation / objective
-      ↓
-what aspect of reality matters?
-      ↓
-which representation preserves that aspect?
-      ↓
-activate / construct / transform
-```
+The architecture should be able to select, construct, combine, or transform representations according to what aspect of reality matters in the current cognitive context.
 
 ### Principle 10 — multiple views of the same reality
 
 One referent may have many simultaneous representations.
 
-A motor, for example, may be represented geometrically, electrically, thermally, mechanically, temporally, semantically, historically, and probabilistically without creating multiple versions of the motor itself.
+A motor may be represented geometrically, electrically, thermally, mechanically, temporally, semantically, historically, and probabilistically without creating multiple versions of the motor itself.
 
-Canonical identity or equivalent referential mechanisms should allow these views to remain anchored to the same underlying reality.
-
-The architecture should therefore avoid assuming:
-
-```text
-entity = representation
-```
-
-and instead support:
+The architecture should support:
 
 ```text
 referent
@@ -430,21 +308,13 @@ referent
 
 ### Principle 11 — fidelity means preserving relevant reality
 
-A useful representation does not need to preserve every detail.
-
-Abstraction and compression are often desirable when they remove irrelevant detail while preserving the structure needed for the current purpose. A road map is useful because it discards most physical detail while preserving roads, connections, direction, and distance.
-
-A core design rule is:
+A useful representation does not need to preserve every detail. Abstraction and compression are desirable when they remove irrelevant detail while preserving the structure needed for the current purpose.
 
 > A representation should preserve the structure of reality that matters for the cognitive task while discarding unnecessary detail.
 
-The system should track both what a representation preserves and what it omits, especially when that omission can make the representation invalid for another purpose.
+The system should track both what a representation preserves and what it omits.
 
 ### Principle 12 — distinguish representations of data from representations of reality
-
-The architecture should distinguish between a representation of observed data and an interpretation or model of the underlying reality that may have produced that data.
-
-For example:
 
 ```text
 REALITY
@@ -462,8 +332,6 @@ A frequency spectrum is a representation of measurements. "Likely bearing defect
 
 Representations may be transformed repeatedly for different purposes, but the primary source should not disappear as those transformations accumulate.
 
-For example:
-
 ```text
 raw sensor stream
 → filtered signal
@@ -472,39 +340,19 @@ raw sensor stream
 → bearing-fault hypothesis
 ```
 
-The final hypothesis should retain a traceable path back through the transformations to the original observation.
-
-A transformation should therefore create a derived representation rather than silently replacing its source.
+A transformation should create a derived representation rather than silently replacing its source.
 
 ### Principle 14 — preserve source lineage across transformation chains
 
 Derived representations should preserve lineage to the observations and representations from which they were produced.
 
-Conceptually:
+The system should retain enough structure to answer what source produced a representation, which transformations were applied, which parameters and assumptions were used, which model or reasoning process created an inference, what uncertainty was introduced, and what information was lost.
 
-```text
-R0 = original observation / source
-R1 = transform(R0)
-R2 = transform(R1)
-R3 = inference(R2)
-```
-
-The system should retain enough structure to answer:
-
-- what source produced this representation?
-- which transformations were applied?
-- which parameters and assumptions were used?
-- which model or reasoning process created the inference?
-- which uncertainty was introduced?
-- what can no longer be recovered from this representation?
-
-This protects the world model from representational drift, where successive summaries and interpretations gradually become detached from the reality that originally grounded them.
+This protects the world model from representational drift.
 
 ### Principle 15 — compression may be informationally irreversible but must remain epistemically reversible
 
 A compressed representation may not contain enough information to reconstruct the original data, but it should preserve the ability to navigate back to the source.
-
-For example, an RMS value cannot recreate millions of original sensor samples. It can still retain links to the source dataset, time window, transformation method, parameters, and provenance.
 
 Distinguish:
 
@@ -523,9 +371,7 @@ interpretation ≠ hypothesis
 hypothesis ≠ established state
 ```
 
-Repeated summarization or inference must not convert a weak statement into a stronger claim merely because the intermediate context was lost.
-
-For example, a human observation such as "this gearbox feels unstable" must not become "the gearbox has confirmed instability" unless new evidence justifies the change in epistemic status.
+Repeated summarization or inference must not convert a weak statement into a stronger claim merely because intermediate context was lost.
 
 ### Principle 17 — all meaningful claims should be traceable and documentable
 
@@ -535,38 +381,13 @@ A meaningful claim in the world model should be able to answer:
 
 > Why does the system believe this?
 
-Where applicable, the system should be able to navigate from a claim through:
-
-```text
-claim
-→ supporting evidence
-→ source observations / documents / measurements
-→ transformations / reasoning steps
-→ assumptions
-→ confidence / uncertainty
-→ contradictions / alternative evidence
-```
+Where applicable, the system should be able to navigate from a claim through supporting evidence, source observations/documents/measurements, transformations or reasoning steps, assumptions, confidence/uncertainty, and contradictions or alternative evidence.
 
 Claims should not become orphan facts detached from their epistemic origin.
 
-If something cannot be documented as established knowledge, its status should remain explicit, for example:
-
-```text
-observed
-supported
-inferred
-hypothesized
-assumed
-unknown
-```
-
-This should apply equally to machine measurements, external sources, model-generated conclusions, and human statements.
-
 ### Principle 18 — traceability should support revision, not only audit
 
-Traceability is not only for explaining past conclusions. It should allow the system to revise dependent understanding when a source, assumption, transformation, or model is later found to be wrong.
-
-Conceptually:
+Traceability should allow the system to revise dependent understanding when a source, assumption, transformation, or model is later found to be wrong.
 
 ```text
 invalidated source / assumption
@@ -580,58 +401,153 @@ predictions / decisions / models
 re-evaluation
 ```
 
-The system should therefore eventually support belief revision across dependency chains rather than merely adding a new contradictory claim beside the old one.
+### Principle 19 — representations should expose purpose, scope, and information loss
 
-### Principle 19 — representations should expose their purpose, scope, and information loss
-
-Where useful, a representation should carry enough context to answer:
-
-- what is this representation for?
-- what aspect of reality does it preserve?
-- what assumptions does it depend on?
-- at what scale or resolution is it valid?
-- what information does it omit?
-- under which conditions does it become unreliable?
-- when was it valid?
-- has it been superseded?
-
-This allows the architecture to avoid using a representation outside the purpose or validity range for which it was constructed.
+Where useful, a representation should carry enough context to answer what it is for, what aspect of reality it preserves, what assumptions it depends on, at what scale or resolution it is valid, what information it omits, under which conditions it becomes unreliable, when it was valid, and whether it has been superseded.
 
 ### Principle 20 — representations should be reconcilable across views
 
 Different representations of the same underlying reality should be able to support, contradict, or refine each other.
 
-If a waveform, frequency-domain view, thermal state estimate, human observation, and mechanical model imply incompatible conclusions, that inconsistency is itself useful information.
-
-The system should eventually be able to detect such disagreement and treat it as a reason to revisit assumptions, acquire more evidence, or construct a better representation.
+If different views imply incompatible conclusions, that inconsistency is itself useful information and may trigger assumption review, evidence acquisition, or construction of a better representation.
 
 ### Representation summary
 
-The current first-principles position is:
-
 > Continuous Cognition should maintain multiple purpose-specific views of reality, preserve their lineage to original evidence, explicitly track what each view preserves and loses, and continuously reconcile them as reality and understanding change.
 
-Representations are therefore not static data formats. They are dynamic cognitive views through which the system makes selected aspects of reality available for understanding, reasoning, comparison, prediction, and action.
+Representations are dynamic cognitive views through which the system makes selected aspects of reality available for understanding, reasoning, comparison, prediction, and action.
+
+## Attention and selective cognition
+
+Attention should not be modeled as a human-style single spotlight or as a project-management hierarchy. The system does not need to reduce itself to one global focus in order to act coherently.
+
+Projects and tasks may be useful representations of activity, but cognition should not depend on the human manually selecting a project, opening a task, or organizing the world into administrative containers before the system can understand what is happening.
+
+The more fundamental concept is selective activation inside the cognitive architecture.
+
+> Attention is the resource-aware process that selects and activates the information, representations, capabilities, and level of processing needed for a cognitive operation while leaving the rest of the system available without requiring it to participate.
+
+### Principle 21 — selective activation without global blindness
+
+Continuous cognition does not mean that every part of the system runs at full depth all the time.
+
+The system may contain a very large world model, many tools, many models, many ongoing concerns, and many background processes. A particular operation should activate only what is necessary.
+
+```text
+TOTAL COGNITIVE SYSTEM
+        │
+        │ attention
+        ▼
+ACTIVE COGNITIVE ASSEMBLY
+        │
+        ▼
+ cognition / action
+```
+
+The rest of the system remains available and can continue lightweight monitoring or background work without being loaded into the current reasoning process.
+
+### Principle 22 — attention selects what, how, and how much
+
+Attention should be able to control at least three dimensions:
+
+```text
+WHAT
+which information / representations are needed?
+
+HOW
+which cognitive mechanisms, models, tools, or algorithms are needed?
+
+HOW MUCH
+what depth, fidelity, resolution, and compute are justified?
+```
+
+A simple threshold question may require only a recent measurement and a deterministic comparison. A causal diagnosis of the same system may require history, several representations, physical models, tools, and deeper reasoning.
+
+### Principle 23 — active cognition may be dynamically composed
+
+Active cognition does not need to be a fixed subsystem or permanent agent hierarchy.
+
+For a thermal diagnosis, the system might temporarily compose:
+
+```text
+thermal representation
++ current measurements
++ motor parameters
++ relevant experimental history
++ physical reasoning
++ simulation capability
+```
+
+For a mechanical design operation, it might instead compose geometry, constraints, manufacturing capabilities, materials, design history, and CAD tooling.
+
+The cognitive assembly should emerge from the operation, not require every possible capability to be active by default.
+
+### Principle 24 — attention can select capabilities, not only knowledge
+
+Attention is not only retrieval.
+
+It may decide whether a cognitive operation needs graph traversal, vector retrieval, a numerical solver, a deterministic algorithm, a simulator, an external tool, a local model, a frontier reasoning model, or no LLM at all.
+
+This makes efficiency a property of the cognitive architecture rather than simply a model-context optimization.
+
+### Principle 25 — continuous processes can remain cheap until escalation is justified
+
+A concern can remain alive without running a full reasoning loop continuously.
+
+For example:
+
+```text
+new temperature measurement
+→ cheap comparison / state update
+→ normal
+→ no escalation
+```
+
+If an anomaly appears:
+
+```text
+anomaly
+→ attention escalation
+→ activate history + related representations
+→ deeper analysis
+→ possible action / human notification
+```
+
+This allows many persistent concerns to coexist without requiring every concern to consume expensive cognition continuously.
+
+### Principle 26 — attention should be grounded in the active cognitive situation, not mandatory administrative focus
+
+The active cognitive situation may include the human, the system, relevant objects, recent observations, current intention, history, and the state of the world.
+
+The system may infer that an activity belongs to a project or task and use that structure as context, but project/task membership should enrich cognition rather than gate it.
+
+This preserves the principle that the system absorbs organizational overhead instead of requiring the human to maintain the structure necessary for cognition.
+
+### Principle 27 — the LLM is a cognitive resource, not the cognitive identity
+
+Language models can be important for general reasoning, interpretation, planning, and agents, but they are one class of cognitive mechanism among many.
+
+Sensor loops, deterministic algorithms, graph operations, estimators, numerical solvers, simulations, retrieval, background monitors, and other components may perform cognition more efficiently or accurately without an LLM.
+
+A useful architecture test is:
+
+> If the current LLM were removed, would the remaining architecture still be a coherent observing, remembering, modeling, and continuously operating system, albeit with reduced general reasoning and language capability?
+
+If the answer is no, the architecture has probably made the LLM the system rather than a resource used by the system.
 
 ## Active, passive, and background cognition
 
-The complete world model does not need to occupy active model context at once.
+The complete world model does not need to occupy active cognition at once.
 
-Distinguish conceptually between:
+- **active cognition** — the dynamically composed state and capabilities currently involved in an operation, interaction, or action
+- **passive cognition** — the large persistent body of knowledge, experience, models, project state, and history available for activation
+- **background cognition** — ongoing processes that monitor, consolidate, reconcile, learn, or update without requiring foreground interaction
 
-- **active cognition** — the small state currently involved in reasoning, conversation, or action
-- **passive cognition** — the large persistent body of knowledge, experience, project state, and history available for later activation
-- **background cognition** — ongoing processes operating over passive state without requiring the current interactive context
-
-Attention is the bridge that determines what should become active. It should eventually be richer than semantic retrieval alone and may consider goals, causal relevance, contradictions, unresolved uncertainty, project state, recency, expected information gain, and long-horizon utility.
-
-Digital cognition can exploit persistence and parallelism that humans cannot: unresolved problems can remain active in the background for months, and many regions of the world model can be monitored simultaneously.
+Digital cognition can exploit persistence and parallelism that humans cannot. Multiple background concerns can remain alive, unresolved problems can persist over long time horizons, and selected processes can escalate only when new information warrants deeper cognition.
 
 ## Experience vs world model
 
 Do not conflate every captured experience with stable semantic truth.
-
-Conceptually distinguish:
 
 ```text
 experience stream
@@ -676,5 +592,3 @@ As further first-principles rounds produce durable conclusions:
 3. turn validated conclusions into implementation work on the branch,
 4. avoid creating a new branch or planning document for every idea,
 5. split work only when a concrete subsystem becomes independently large enough to justify it.
-
-The next design question is expected to examine how the system selects, combines, and activates the right representations for a given cognitive situation, which begins to connect representation with attention.
