@@ -361,6 +361,258 @@ situation
 
 This is the distinction between a system that only accumulates data and one that can become more experienced over time.
 
+## Representations: first-principles direction
+
+A representation is not synonymous with a database record, graph node, embedding, visualization, or any other particular storage format.
+
+A useful definition is:
+
+> A representation is a form in which information is expressed so that particular aspects of it become readable or usable for a given situation or purpose while preserving the relevant reality of what is being represented.
+
+The same underlying information may therefore support many valid representations.
+
+For a sensor stream, for example:
+
+```text
+same underlying measurements
+│
+├─ raw samples
+├─ waveform over time
+├─ frequency spectrum
+├─ summary statistics
+├─ human-readable graph
+└─ machine state estimate
+```
+
+These are different views of the same underlying data. None is universally best. A representation is good when it preserves the structure of reality that matters for the current cognitive purpose without introducing distortion.
+
+### Principle 9 — representation is purpose-relative
+
+The usefulness of a representation depends on the situation and task.
+
+A scalar RMS value may be excellent for threshold monitoring while being insufficient for diagnosing which frequency component causes a vibration problem. A spectrum may be useful for diagnosis while being unnecessary for a simple status check.
+
+The architecture should therefore be able to select, construct, combine, or transform representations according to what aspect of reality matters in the current cognitive context.
+
+Conceptually:
+
+```text
+situation / objective
+      ↓
+what aspect of reality matters?
+      ↓
+which representation preserves that aspect?
+      ↓
+activate / construct / transform
+```
+
+### Principle 10 — multiple views of the same reality
+
+One referent may have many simultaneous representations.
+
+A motor, for example, may be represented geometrically, electrically, thermally, mechanically, temporally, semantically, historically, and probabilistically without creating multiple versions of the motor itself.
+
+Canonical identity or equivalent referential mechanisms should allow these views to remain anchored to the same underlying reality.
+
+The architecture should therefore avoid assuming:
+
+```text
+entity = representation
+```
+
+and instead support:
+
+```text
+referent
+→ represented by
+→ many purpose-specific representations
+```
+
+### Principle 11 — fidelity means preserving relevant reality
+
+A useful representation does not need to preserve every detail.
+
+Abstraction and compression are often desirable when they remove irrelevant detail while preserving the structure needed for the current purpose. A road map is useful because it discards most physical detail while preserving roads, connections, direction, and distance.
+
+A core design rule is:
+
+> A representation should preserve the structure of reality that matters for the cognitive task while discarding unnecessary detail.
+
+The system should track both what a representation preserves and what it omits, especially when that omission can make the representation invalid for another purpose.
+
+### Principle 12 — distinguish representations of data from representations of reality
+
+The architecture should distinguish between a representation of observed data and an interpretation or model of the underlying reality that may have produced that data.
+
+For example:
+
+```text
+REALITY
+   ↓ observation
+DATA
+   ↓ representation
+VIEW OF DATA
+   ↓ interpretation / inference
+REPRESENTATION OF REALITY
+```
+
+A frequency spectrum is a representation of measurements. "Likely bearing defect" is an inferred representation of the underlying physical state. They should not carry the same epistemic status.
+
+### Principle 13 — transformations create derived views, not replacement truth
+
+Representations may be transformed repeatedly for different purposes, but the primary source should not disappear as those transformations accumulate.
+
+For example:
+
+```text
+raw sensor stream
+→ filtered signal
+→ FFT
+→ detected peak
+→ bearing-fault hypothesis
+```
+
+The final hypothesis should retain a traceable path back through the transformations to the original observation.
+
+A transformation should therefore create a derived representation rather than silently replacing its source.
+
+### Principle 14 — preserve source lineage across transformation chains
+
+Derived representations should preserve lineage to the observations and representations from which they were produced.
+
+Conceptually:
+
+```text
+R0 = original observation / source
+R1 = transform(R0)
+R2 = transform(R1)
+R3 = inference(R2)
+```
+
+The system should retain enough structure to answer:
+
+- what source produced this representation?
+- which transformations were applied?
+- which parameters and assumptions were used?
+- which model or reasoning process created the inference?
+- which uncertainty was introduced?
+- what can no longer be recovered from this representation?
+
+This protects the world model from representational drift, where successive summaries and interpretations gradually become detached from the reality that originally grounded them.
+
+### Principle 15 — compression may be informationally irreversible but must remain epistemically reversible
+
+A compressed representation may not contain enough information to reconstruct the original data, but it should preserve the ability to navigate back to the source.
+
+For example, an RMS value cannot recreate millions of original sensor samples. It can still retain links to the source dataset, time window, transformation method, parameters, and provenance.
+
+Distinguish:
+
+- **information fidelity** — how much structure from the source a representation preserves
+- **provenance fidelity** — how well the system preserves where the representation came from and how it was created
+
+A highly compressed representation may have low information fidelity while retaining high provenance fidelity.
+
+### Principle 16 — transformations must not silently upgrade interpretation into reality
+
+The architecture should preserve epistemic distinctions such as:
+
+```text
+observation ≠ interpretation
+interpretation ≠ hypothesis
+hypothesis ≠ established state
+```
+
+Repeated summarization or inference must not convert a weak statement into a stronger claim merely because the intermediate context was lost.
+
+For example, a human observation such as "this gearbox feels unstable" must not become "the gearbox has confirmed instability" unless new evidence justifies the change in epistemic status.
+
+### Principle 17 — all meaningful claims should be traceable and documentable
+
+Traceability is a system property, not optional metadata.
+
+A meaningful claim in the world model should be able to answer:
+
+> Why does the system believe this?
+
+Where applicable, the system should be able to navigate from a claim through:
+
+```text
+claim
+→ supporting evidence
+→ source observations / documents / measurements
+→ transformations / reasoning steps
+→ assumptions
+→ confidence / uncertainty
+→ contradictions / alternative evidence
+```
+
+Claims should not become orphan facts detached from their epistemic origin.
+
+If something cannot be documented as established knowledge, its status should remain explicit, for example:
+
+```text
+observed
+supported
+inferred
+hypothesized
+assumed
+unknown
+```
+
+This should apply equally to machine measurements, external sources, model-generated conclusions, and human statements.
+
+### Principle 18 — traceability should support revision, not only audit
+
+Traceability is not only for explaining past conclusions. It should allow the system to revise dependent understanding when a source, assumption, transformation, or model is later found to be wrong.
+
+Conceptually:
+
+```text
+invalidated source / assumption
+        ↓
+affected representation
+        ↓
+dependent claims
+        ↓
+predictions / decisions / models
+        ↓
+re-evaluation
+```
+
+The system should therefore eventually support belief revision across dependency chains rather than merely adding a new contradictory claim beside the old one.
+
+### Principle 19 — representations should expose their purpose, scope, and information loss
+
+Where useful, a representation should carry enough context to answer:
+
+- what is this representation for?
+- what aspect of reality does it preserve?
+- what assumptions does it depend on?
+- at what scale or resolution is it valid?
+- what information does it omit?
+- under which conditions does it become unreliable?
+- when was it valid?
+- has it been superseded?
+
+This allows the architecture to avoid using a representation outside the purpose or validity range for which it was constructed.
+
+### Principle 20 — representations should be reconcilable across views
+
+Different representations of the same underlying reality should be able to support, contradict, or refine each other.
+
+If a waveform, frequency-domain view, thermal state estimate, human observation, and mechanical model imply incompatible conclusions, that inconsistency is itself useful information.
+
+The system should eventually be able to detect such disagreement and treat it as a reason to revisit assumptions, acquire more evidence, or construct a better representation.
+
+### Representation summary
+
+The current first-principles position is:
+
+> Continuous Cognition should maintain multiple purpose-specific views of reality, preserve their lineage to original evidence, explicitly track what each view preserves and loses, and continuously reconcile them as reality and understanding change.
+
+Representations are therefore not static data formats. They are dynamic cognitive views through which the system makes selected aspects of reality available for understanding, reasoning, comparison, prediction, and action.
+
 ## Active, passive, and background cognition
 
 The complete world model does not need to occupy active model context at once.
@@ -425,4 +677,4 @@ As further first-principles rounds produce durable conclusions:
 4. avoid creating a new branch or planning document for every idea,
 5. split work only when a concrete subsystem becomes independently large enough to justify it.
 
-The next design area is expected to go deeper into **representations**: what forms understanding can take, how multiple representations of the same reality coexist, and how the system selects or combines them.
+The next design question is expected to examine how the system selects, combines, and activates the right representations for a given cognitive situation, which begins to connect representation with attention.
