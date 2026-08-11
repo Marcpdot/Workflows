@@ -772,6 +772,26 @@ Multiple background concerns can remain alive simultaneously. Long-running unres
 
 Attention should therefore be designed around efficient resource allocation rather than around copying a single human spotlight.
 
+## Emergent coordination
+
+Continuous Cognition should not assume that coordination requires a central orchestrator that stands above the rest of the architecture.
+
+If subsystems share coherent identity, representations, world-model state, observations, events, attention, and feedback, then much of the system's coordination can emerge from their interaction. A change in one part of the system can alter relevance, activate other resources, produce new observations, and update shared understanding without requiring a global controller to explicitly schedule every cognitive step.
+
+### Principle 28 — coordination should be an architectural property before it becomes a component
+
+> Coordination should emerge from the integration of the cognitive architecture wherever possible, rather than being centralized by default.
+
+The existence of coordination is not by itself evidence that the architecture needs a dedicated coordination module. Before introducing an orchestrator, manager, scheduler, or equivalent abstraction, the design should first ask whether the required behavior already follows from simpler mechanisms such as shared state, attention, events, dependencies, feedback, and local interaction between subsystems.
+
+This follows a broader design rule:
+
+> Remove mechanisms until a real capability is missing; add back only the smallest mechanism necessary to restore that capability.
+
+If explicit coordination later proves necessary for a particular local process, it can be introduced at that scope without making a central orchestrator the intelligence or control center of the whole system.
+
+Likewise, cognitive processes do not need to become a new top-level object merely because cognition unfolds through processes. Reasoning, monitoring, retrieval, simulation, interaction, and action already form processes through their changing state and interactions. They should be modeled explicitly only where doing so provides a capability the architecture otherwise lacks.
+
 ## The cognitive architecture is the system
 
 Continuous Cognition should not be designed as an LLM surrounded by support infrastructure.
