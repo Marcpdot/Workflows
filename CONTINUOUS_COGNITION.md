@@ -615,17 +615,17 @@ Representations are therefore not static data formats. They are dynamic cognitiv
 
 ## Active, passive, and background cognition
 
-The complete world model does not need to occupy active model context at once.
+The complete world model and the full set of cognitive capabilities do not need to participate in every cognitive operation at once.
 
 Distinguish conceptually between:
 
-- **active cognition** — the small state currently involved in reasoning, conversation, or action
-- **passive cognition** — the large persistent body of knowledge, experience, project state, and history available for later activation
-- **background cognition** — ongoing processes operating over passive state without requiring the current interactive context
+- **active cognition** — the dynamically assembled state, representations, models, tools, and other cognitive resources currently participating in reasoning, interaction, or action
+- **passive cognition** — the persistent body of knowledge, experience, representations, project state, history, and available capabilities that remain accessible without currently participating in the operation
+- **background cognition** — ongoing processes that can monitor, consolidate, compare, update, or otherwise operate independently of the current foreground interaction, often with much lower resource use than full active cognition
 
-Attention is the bridge that determines what should become active. It should eventually be richer than semantic retrieval alone and may consider goals, causal relevance, contradictions, unresolved uncertainty, project state, recency, expected information gain, and long-horizon utility.
+Attention governs selective participation across these states. It does not merely retrieve information from passive memory; it helps determine which information, representations, capabilities, and level of processing should become active for the current cognitive operation.
 
-Digital cognition can exploit persistence and parallelism that humans cannot: unresolved problems can remain active in the background for months, and many regions of the world model can be monitored simultaneously.
+Digital cognition can exploit persistence and parallelism that humans cannot: unresolved problems can remain available for months, many regions of the world model can be monitored simultaneously, and independent background processes can continue without forcing all of them into the active cognitive assembly.
 
 ## Attention: selective activation within cognition
 
