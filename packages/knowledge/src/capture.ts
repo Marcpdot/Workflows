@@ -446,8 +446,19 @@ export async function captureConversationSegment(
   const event = await input.store.createEvent({
     sourceType: "conversation",
     sourceRef,
+    sourceContent: segment,
+    sourceExperienceIds,
     model: mode === "model" ? input.model ?? "structured-capture" : "conversation-heuristic",
     inputHash: hashInput(segment),
+    transformation: {
+      method: mode === "model" ? "conversation_structured_extraction" : "conversation_heuristic_extraction",
+      model: mode === "model" ? input.model ?? "structured-capture" : "conversation-heuristic",
+      representationScope: "durable concepts, claims, relations, assumptions, and evidence",
+      informationLoss: {
+        occurred: true,
+        description: "Process talk, questions, repetition, and source phrasing outside selected graph items are omitted.",
+      },
+    },
   });
   const proposals = await input.store.addProposals(event.id, items);
 

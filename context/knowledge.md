@@ -57,10 +57,12 @@ work and “what is the status of actuator-v2?” need that structure. Those are
 | **Event** | Extraction or analysis event (source type + ref) |
 | **Source** | Conversation id + excerpt, file path, measurement |
 | **Evidence** | Canonical identity ↔ source with qualified stance (`supports`, `contradicts`, `test_evidence`) |
-| **Observation** | Encounter with an identity through an event/source (`mentions`, `observes`, `independently_formulated`, `references`) |
+| **Observation** | Encounter or derivation involving an identity and event/source (`mentions`, `observes`, `independently_formulated`, `references`, `derived_from`) |
 | **Project / artifact** | Optional anchors for work product |
 
-Status on claims/nodes: `proposed | accepted | disputed | rejected`.
+Lifecycle status on claims/nodes is `proposed | accepted | disputed | rejected`.
+Epistemic status is independent: `observed | supported | inferred |
+hypothesized | assumed | established | unknown`.
 
 Invariants that must survive any implementation:
 
@@ -302,6 +304,43 @@ not a restriction on generic evidence.
 **Reason:** Encounters must remain distinguishable by event, source and time
 without duplicating their referent or treating every mention as support. Merge
 retargets evidence and observation history to the surviving canonical UUID.
+
+### Epistemic status and transformation lineage
+
+**Status:** active
+**Evidence:** confirmed
+**Source:** Continuous Cognition WP2 implementation contract; migration `0009_epistemic_lineage.sql`
+**Revisit when:** lineage must represent transformations whose inputs are not canonical nodes/events, or automated belief revision is deliberately introduced
+
+**Decision:** Proposal acceptance and epistemic certainty are orthogonal.
+Accepting a machine-derived claim makes it part of canonical state but does not
+promote it from `hypothesized`, `assumed`, or `inferred` to `established`.
+Canonical nodes expose the existing confidence and temporal-validity fields
+alongside an explicit epistemic status.
+
+Transformation lineage reuses `knowledge_observations`: `derived_from` connects
+a derived canonical target to its source event and, when relevant, canonical
+source claims/assumptions. Its metadata records method/model, assumptions,
+uncertainty, representation scope, confidence/validity, and explicit
+information loss. `knowledge_events` retain the exact source content/reference,
+source experience UUIDs, and event-level transformation metadata; events may be
+explicitly invalidated without deleting their history. Bounded domain read
+helpers traverse lineage in both directions so a claim can explain its origin
+and a disputed/superseded assumption or invalidated event can expose dependent
+claims for reconsideration.
+
+**Reason:** Lifecycle approval answers whether a representation may enter the
+canonical model; it does not prove the represented proposition. Reusing generic
+provenance preserves one canonical truth model, lets merge/supersession retain
+history, and keeps every derived claim traceable to durable experiences even
+after repeated summarization. Storing representation scope and information loss
+makes lossy transformations explicit instead of letting shorter restatements
+silently acquire stronger meaning.
+
+**Rejected alternatives:** equating `accepted` with confirmed truth; encoding
+assumptions in description strings; a parallel lineage/representation database;
+using vector similarity or graph proximity as epistemic evidence; automatic
+truth arbitration or cascading mutation when a source becomes disputed.
 
 ## Knowledge milestone roadmap (M11–M18)
 

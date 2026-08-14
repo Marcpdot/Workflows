@@ -15,6 +15,14 @@ import type {
 } from "./types.js";
 import { hashInput } from "./knowledge.js";
 
+function extractedEpistemicStatus(claim: ExtractionResult["claims"][number]): ExtractionResult["claims"][number]["epistemicStatus"] {
+  const text = `${claim.label} ${claim.description ?? ""}`;
+  if (/\b(assum(?:e|es|ed|ing|ption)|foruts(?:att|etter)|antar)\b/i.test(text)) return "assumed";
+  if (/\b(suspect(?:s|ed|ing)?|hypothes(?:is|ize[sd]?|izing)?|maybe|might|may|perhaps|possibly|possible|mistenker|kanskje|muligens|kan hende)\b/i.test(text)) return "hypothesized";
+  if (claim.epistemicStatus === "established") return "supported";
+  return claim.epistemicStatus ?? "inferred";
+}
+
 export const EXTRACTION_SCHEMA: JsonSchema = {
   type: "object",
   required: ["concepts", "claims", "relations"],
@@ -39,6 +47,18 @@ export const EXTRACTION_SCHEMA: JsonSchema = {
           label: { type: "string" },
           description: { type: "string" },
           confidence: { type: "number" },
+          epistemicStatus: { type: "string" },
+          assumptions: { type: "array", items: { type: "string" } },
+          uncertainty: { type: "string" },
+          derivationMethod: { type: "string" },
+          representationScope: { type: "string" },
+          informationLoss: {
+            type: "object",
+            properties: {
+              occurred: { type: "boolean" },
+              description: { type: "string" },
+            },
+          },
         },
       },
     },
@@ -87,6 +107,16 @@ export function extractionToProposalItems(
         type: "concept",
         label: c.label.trim(),
         description: c.description,
+        epistemicStatus: "unknown",
+        observationKind: "derived_from",
+        derivation: {
+          method: "semantic_extraction",
+          representationScope: "canonical concept label and description",
+          informationLoss: {
+            occurred: true,
+            description: "Source wording and context are not fully represented by a normalized concept.",
+          },
+        },
       },
     });
   }
@@ -99,6 +129,19 @@ export function extractionToProposalItems(
         label: c.label.trim(),
         description: c.description,
         confidence: c.confidence,
+        epistemicStatus: extractedEpistemicStatus(c),
+        observationKind: "derived_from",
+        derivation: {
+          method: c.derivationMethod ?? "semantic_extraction",
+          assumptions: c.assumptions,
+          confidence: c.confidence,
+          uncertainty: c.uncertainty,
+          representationScope: c.representationScope ?? "canonical claim semantics",
+          informationLoss: c.informationLoss ?? {
+            occurred: true,
+            description: "Source wording and context are not fully represented by a normalized claim.",
+          },
+        },
       },
     });
   }
@@ -139,13 +182,26 @@ export async function applyExtractionResult(
     sourceRef: string;
     model?: string;
     rawText?: string;
+    sourceExperienceIds?: string[];
+    transformationMethod?: string;
   }
 ): Promise<{ eventId: string; proposals: KnowledgeProposal[] }> {
   const event = await store.createEvent({
     sourceType: meta.sourceType,
     sourceRef: meta.sourceRef,
+    sourceContent: meta.rawText,
+    sourceExperienceIds: meta.sourceExperienceIds,
     model: meta.model,
     inputHash: meta.rawText ? hashInput(meta.rawText) : undefined,
+    transformation: {
+      method: meta.transformationMethod ?? "structured_extraction",
+      model: meta.model,
+      representationScope: "semantic graph fragment",
+      informationLoss: {
+        occurred: true,
+        description: "Extraction retains selected concepts, claims, relations, and evidence rather than the full source context.",
+      },
+    },
   });
   const items = extractionToProposalItems(result);
   const proposals = await store.addProposals(event.id, items);
@@ -176,10 +232,11 @@ export async function runExtraction(options: {
         role: "system",
         content:
           "Extract a semantic knowledge graph fragment as JSON only. " +
-          'Shape: {"concepts":[{"label","description?"}],"claims":[{"label","description?","confidence?"}],' +
+          'Shape: {"concepts":[{"label","description?"}],"claims":[{"label","description?","confidence?","epistemicStatus?","assumptions?","uncertainty?"}],' +
           '"relations":[{"from","relation","to","confidence?"}],' +
           '"evidence":[{"claimLabel","excerpt","stance"}]}. ' +
-          "Use short labels. Prefer typed relations: requires, limits, causes, increases, reduces, about.",
+          "Use short labels. Prefer typed relations: requires, limits, causes, increases, reduces, about. " +
+          "Lifecycle acceptance is not epistemic certainty: use observed, supported, inferred, hypothesized, assumed, or unknown; never mark model extraction established.",
       },
       {
         role: "user",

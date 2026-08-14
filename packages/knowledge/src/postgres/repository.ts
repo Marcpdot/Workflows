@@ -2,9 +2,13 @@ import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient, QueryResultRow } from "pg";
 import { normalizeLabel } from "../identity.js";
 import type {
+  ClaimLineage,
   ContradictionPair,
+  DependentClaim,
   KnowledgeAlias,
+  KnowledgeDerivation,
   KnowledgeEdge,
+  KnowledgeEpistemicStatus,
   KnowledgeEvent,
   KnowledgeEvidence,
   KnowledgeNode,
@@ -13,6 +17,7 @@ import type {
   KnowledgeObservationKind,
   KnowledgeProposal,
   KnowledgeStatus,
+  KnowledgeTransformation,
   MergeNodesResult,
   ProjectLinkRelation,
   ProjectStatus,
@@ -40,9 +45,51 @@ function node(row: Record<string, unknown>): KnowledgeNode {
     label: String(row.label),
     description: row.description == null ? undefined : String(row.description),
     status: row.status as KnowledgeStatus,
+    epistemicStatus: (row.epistemic_status ?? "unknown") as KnowledgeEpistemicStatus,
+    confidence: row.confidence == null ? undefined : Number(row.confidence),
+    validFrom: row.valid_from == null ? undefined : millis(row.valid_from as Date),
+    validTo: row.valid_to == null ? undefined : millis(row.valid_to as Date),
     workspaceId: row.workspace_id == null ? null : String(row.workspace_id),
     createdAt: millis(row.created_at as Date),
     updatedAt: millis(row.updated_at as Date),
+  };
+}
+
+function object(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? [...new Set(value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean))]
+    : [];
+}
+
+function informationLoss(value: unknown): KnowledgeTransformation["informationLoss"] {
+  const item = object(value);
+  if (typeof item.occurred !== "boolean") return undefined;
+  return {
+    occurred: item.occurred,
+    description: typeof item.description === "string" ? item.description : undefined,
+  };
+}
+
+function transformation(value: unknown): KnowledgeTransformation | undefined {
+  const item = object(value);
+  const method = typeof item.method === "string" ? item.method.trim() : "";
+  if (!method) return undefined;
+  return {
+    method,
+    model: typeof item.model === "string" ? item.model : undefined,
+    assumptions: stringArray(item.assumptions),
+    confidence: item.confidence == null ? undefined : Number(item.confidence),
+    uncertainty: typeof item.uncertainty === "string" ? item.uncertainty : undefined,
+    representationScope: typeof item.representationScope === "string" ? item.representationScope : undefined,
+    informationLoss: informationLoss(item.informationLoss),
+    validFrom: item.validFrom == null ? undefined : Number(item.validFrom),
+    validTo: item.validTo == null ? undefined : Number(item.validTo),
   };
 }
 
@@ -60,12 +107,18 @@ function edge(row: Record<string, unknown>): KnowledgeEdge {
 }
 
 function event(row: Record<string, unknown>): KnowledgeEvent {
+  const metadata = object(row.action_metadata);
   return {
     id: String(row.id),
     sourceType: row.source_type as KnowledgeEvent["sourceType"],
     sourceRef: String(row.source_ref),
+    sourceContent: row.source_content == null ? undefined : String(row.source_content),
+    sourceExperienceIds: stringArray(metadata.sourceExperienceIds),
     model: row.model == null ? undefined : String(row.model),
     inputHash: row.input_hash == null ? undefined : String(row.input_hash),
+    transformation: transformation(metadata.transformation),
+    invalidatedAt: row.invalidated_at == null ? undefined : millis(row.invalidated_at as Date),
+    invalidationReason: row.invalidation_reason == null ? undefined : String(row.invalidation_reason),
     createdAt: millis(row.created_at as Date),
   };
 }
@@ -182,12 +235,16 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     return result.rows[0] ? edge(result.rows[0]) : null;
   }
 
-  async createEvent(input: { sourceType: KnowledgeEvent["sourceType"]; sourceRef: string; model?: string; inputHash?: string }): Promise<KnowledgeEvent> {
+  async createEvent(input: { sourceType: KnowledgeEvent["sourceType"]; sourceRef: string; sourceContent?: string; sourceExperienceIds?: string[]; model?: string; inputHash?: string; transformation?: KnowledgeTransformation }): Promise<KnowledgeEvent> {
     if (!input.sourceRef?.trim()) throw new Error("createEvent: sourceRef is required");
+    const metadata = {
+      sourceExperienceIds: stringArray(input.sourceExperienceIds),
+      transformation: input.transformation,
+    };
     const result = await this.pool.query(
-      `INSERT INTO knowledge_events (id, source_type, source_ref, model, input_hash)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [randomUUID(), input.sourceType, input.sourceRef.trim(), input.model ?? null, input.inputHash ?? null]
+      `INSERT INTO knowledge_events (id, source_type, source_ref, source_content, model, input_hash, action_metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb) RETURNING *`,
+      [randomUUID(), input.sourceType, input.sourceRef.trim(), input.sourceContent ?? null, input.model ?? null, input.inputHash ?? null, JSON.stringify(metadata)]
     );
     return event(result.rows[0]);
   }
@@ -195,6 +252,20 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
   async getEvent(id: string): Promise<KnowledgeEvent | null> {
     const result = await this.pool.query("SELECT * FROM knowledge_events WHERE id = $1", [id]);
     return result.rows[0] ? event(result.rows[0]) : null;
+  }
+
+  async invalidateEvent(id: string, reason: string): Promise<KnowledgeEvent> {
+    if (!reason.trim()) throw new Error("invalidateEvent: reason is required");
+    const result = await this.pool.query(
+      `UPDATE knowledge_events
+       SET invalidated_at = COALESCE(invalidated_at, now()),
+           invalidation_reason = $2
+       WHERE id = $1
+       RETURNING *`,
+      [id, reason.trim()]
+    );
+    if (!result.rows[0]) throw new Error(`invalidateEvent: unknown id ${id}`);
+    return event(result.rows[0]);
   }
 
   async addProposals(eventId: string, items: Array<{ kind: KnowledgeProposal["kind"]; payload: Record<string, unknown> }>): Promise<KnowledgeProposal[]> {
@@ -271,6 +342,130 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
   async listObservations(targetNodeId: string, limit = 100): Promise<KnowledgeObservation[]> {
     const result = await this.pool.query("SELECT * FROM knowledge_observations WHERE target_node_id = $1 ORDER BY observed_at DESC, id ASC LIMIT $2", [targetNodeId, Math.min(Math.max(Math.floor(limit), 0), 1000)]);
     return result.rows.map(observation);
+  }
+
+  async getClaimLineage(claimId: string, options?: { maxDepth?: number }): Promise<ClaimLineage> {
+    const claim = await this.getNode(claimId);
+    if (!claim || claim.type !== "claim") throw new Error(`getClaimLineage: ${claimId} is not a claim`);
+    const maxDepth = Math.min(Math.max(Math.floor(options?.maxDepth ?? 8), 1), 20);
+    const rows: Array<{ item: KnowledgeObservation; depth: number }> = [];
+    const visitedTargets = new Set<string>([claimId]);
+    let frontier = [claimId];
+    for (let depth = 1; depth <= maxDepth && frontier.length > 0; depth++) {
+      const result = await this.pool.query(
+        `SELECT * FROM knowledge_observations
+         WHERE kind = 'derived_from' AND target_node_id = ANY($1::uuid[])
+         ORDER BY observed_at ASC, id ASC`,
+        [frontier]
+      );
+      const level = result.rows.map(observation);
+      rows.push(...level.map((item) => ({ item, depth })));
+      frontier = [...new Set(level.flatMap((item) => item.sourceNodeId ? [item.sourceNodeId] : []))]
+        .filter((id) => !visitedTargets.has(id));
+      for (const id of frontier) visitedTargets.add(id);
+    }
+    let truncated = false;
+    if (frontier.length > 0) {
+      const more = await this.pool.query(
+        `SELECT 1 FROM knowledge_observations
+         WHERE kind = 'derived_from' AND target_node_id = ANY($1::uuid[])
+         LIMIT 1`,
+        [frontier]
+      );
+      truncated = more.rows.length > 0;
+    }
+    const lineageTargetIds = [...visitedTargets];
+    const evidenceRows = await this.pool.query(
+      `SELECT * FROM knowledge_evidence
+       WHERE target_node_id = ANY($1::uuid[])
+       ORDER BY created_at ASC`,
+      [lineageTargetIds]
+    );
+    const evidenceItems = evidenceRows.rows.map(evidence);
+    const sourceNodeIds = [...new Set([
+      ...rows.flatMap(({ item }) => item.sourceNodeId ? [item.sourceNodeId] : []),
+      ...evidenceItems.map((item) => item.sourceNodeId),
+    ])];
+    const sourceEventIds = [...new Set([
+      ...rows.flatMap(({ item }) => item.sourceEventId ? [item.sourceEventId] : []),
+      ...evidenceItems.flatMap((item) => item.sourceEventId ? [item.sourceEventId] : []),
+    ])];
+    const sourceNodes = sourceNodeIds.length === 0 ? [] : (await this.pool.query(
+      "SELECT * FROM knowledge_nodes WHERE id = ANY($1::uuid[]) ORDER BY created_at ASC",
+      [sourceNodeIds]
+    )).rows.map(node);
+    const sourceEvents = sourceEventIds.length === 0 ? [] : (await this.pool.query(
+      "SELECT * FROM knowledge_events WHERE id = ANY($1::uuid[]) ORDER BY created_at ASC",
+      [sourceEventIds]
+    )).rows.map(event);
+    const eventsById = new Map(sourceEvents.map((item) => [item.id, item]));
+    const derivations: KnowledgeDerivation[] = rows.map(({ item, depth }) => {
+      const details = transformation(object(item.metadata).derivation)
+        ?? (item.sourceEventId ? eventsById.get(item.sourceEventId)?.transformation : undefined)
+        ?? { method: "unspecified" };
+      return {
+        ...details,
+        id: item.id,
+        targetNodeId: item.targetNodeId,
+        sourceEventId: item.sourceEventId,
+        sourceNodeId: item.sourceNodeId,
+        createdAt: item.observedAt,
+        depth,
+      };
+    });
+    return { claim, derivations, sourceNodes, sourceEvents, evidence: evidenceItems, maxDepth, truncated };
+  }
+
+  async findDependentClaims(input: { sourceNodeId?: string; sourceEventId?: string; maxDepth?: number }): Promise<DependentClaim[]> {
+    if (!input.sourceNodeId && !input.sourceEventId) throw new Error("findDependentClaims: sourceNodeId or sourceEventId is required");
+    const maxDepth = Math.min(Math.max(Math.floor(input.maxDepth ?? 8), 1), 20);
+    const derivations = new Map<string, Array<{ id: string; depth: number }>>();
+    const visited = new Set<string>();
+    let frontier = input.sourceNodeId ? [input.sourceNodeId] : [];
+    for (let depth = 1; depth <= maxDepth; depth++) {
+      let result;
+      if (depth === 1 && input.sourceEventId) {
+        result = await this.pool.query(
+          `SELECT * FROM knowledge_observations
+           WHERE kind = 'derived_from'
+             AND (source_event_id = $1 OR source_node_id = ANY($2::uuid[]))
+           ORDER BY observed_at ASC, id ASC`,
+          [input.sourceEventId, frontier]
+        );
+      } else if (frontier.length > 0) {
+        result = await this.pool.query(
+          `SELECT * FROM knowledge_observations
+           WHERE kind = 'derived_from' AND source_node_id = ANY($1::uuid[])
+           ORDER BY observed_at ASC, id ASC`,
+          [frontier]
+        );
+      } else break;
+      const level = result.rows.map(observation).filter((item) => !visited.has(item.id));
+      for (const item of level) {
+        visited.add(item.id);
+        const current = derivations.get(item.targetNodeId) ?? [];
+        current.push({ id: item.id, depth });
+        derivations.set(item.targetNodeId, current);
+      }
+      frontier = [...new Set(level.map((item) => item.targetNodeId))];
+    }
+    const ids = [...derivations.keys()];
+    if (ids.length === 0) return [];
+    const nodes = (await this.pool.query(
+      "SELECT * FROM knowledge_nodes WHERE id = ANY($1::uuid[])",
+      [ids]
+    )).rows.map(node);
+    return nodes
+      .filter((item) => item.type === "claim")
+      .map((claim) => {
+        const links = derivations.get(claim.id)!;
+        return {
+          claim,
+          depth: Math.min(...links.map((item) => item.depth)),
+          derivationIds: links.map((item) => item.id),
+        };
+      })
+      .sort((a, b) => a.depth - b.depth || a.claim.id.localeCompare(b.claim.id));
   }
 
   async getNode(id: string): Promise<KnowledgeNode | null> { return this.getNodeWith(this.pool, id); }
@@ -584,6 +779,44 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
 
   private workspace(payload: Record<string, unknown>): string | null { return payload.workspaceId !== undefined ? payload.workspaceId as string | null : this.defaultWorkspaceId ?? null; }
 
+  private epistemicStatus(payload: Record<string, unknown>): KnowledgeEpistemicStatus {
+    const value = String(payload.epistemicStatus ?? "unknown");
+    if (!["observed", "supported", "inferred", "hypothesized", "assumed", "established", "unknown"].includes(value)) {
+      throw new Error(`invalid epistemic status ${value}`);
+    }
+    return value as KnowledgeEpistemicStatus;
+  }
+
+  private confidence(payload: Record<string, unknown>): number | null {
+    if (payload.confidence == null) return null;
+    const value = Number(payload.confidence);
+    if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error("confidence must be between 0 and 1");
+    return value;
+  }
+
+  private timestamp(payload: Record<string, unknown>, field: "validFrom" | "validTo"): Date | null {
+    if (payload[field] == null) return null;
+    const value = typeof payload[field] === "number" ? payload[field] : Date.parse(String(payload[field]));
+    if (!Number.isFinite(value)) throw new Error(`${field} must be a timestamp`);
+    return new Date(value as number);
+  }
+
+  private async insertEncounter(db: Queryable, targetNodeId: string, eventId: string, payload: Record<string, unknown>, encounteredLabel?: string): Promise<void> {
+    const kind = this.observationKind(payload);
+    const metadata = this.observationMetadata(payload, encounteredLabel);
+    const sourceNodeIds = stringArray(payload.sourceNodeIds);
+    if (sourceNodeIds.length === 0) {
+      await this.insertObservation(db, { targetNodeId, sourceEventId: eventId, kind, metadata });
+      return;
+    }
+    for (const sourceNodeId of sourceNodeIds) {
+      if (!UUID.test(sourceNodeId) || !(await this.getNodeWith(db, sourceNodeId))) {
+        throw new Error(`acceptProposal node: unknown sourceNodeId ${sourceNodeId}`);
+      }
+      await this.insertObservation(db, { targetNodeId, sourceEventId: eventId, sourceNodeId, kind, metadata });
+    }
+  }
+
   private async materializeNode(db: Queryable, payload: Record<string, unknown>, eventId: string, recordEncounter = false): Promise<KnowledgeNode> {
     const type = String(payload.type ?? "concept") as KnowledgeNodeType; const labelValue = String(payload.label ?? "").trim(); if (!labelValue) throw new Error("acceptProposal node: label is required");
     const canonicalId = String(payload.canonicalId ?? payload.identityId ?? "").trim();
@@ -591,31 +824,42 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
       if (!UUID.test(canonicalId)) throw new Error("acceptProposal node: canonicalId must be a UUID");
       const existing = await this.getNodeWith(db, canonicalId);
       if (!existing || existing.status === "rejected") throw new Error(`acceptProposal node: canonicalId ${canonicalId} is not reusable`);
-      if (recordEncounter) await this.insertObservation(db, { targetNodeId: existing.id, sourceEventId: eventId, kind: this.observationKind(payload), metadata: this.observationMetadata(payload, labelValue) });
+      if (recordEncounter) await this.insertEncounter(db, existing.id, eventId, payload, labelValue);
       return existing;
     }
-    const knownAlias = await this.getAlias(db, normalizeLabel(labelValue)); if (knownAlias) { const target = await this.getNodeWith(db, knownAlias.canonicalNodeId); if (target && target.status !== "rejected") { if (recordEncounter) await this.insertObservation(db, { targetNodeId: target.id, sourceEventId: eventId, kind: this.observationKind(payload), metadata: this.observationMetadata(payload, labelValue) }); return target; } }
+    const knownAlias = await this.getAlias(db, normalizeLabel(labelValue)); if (knownAlias) { const target = await this.getNodeWith(db, knownAlias.canonicalNodeId); if (target && target.status !== "rejected") { if (recordEncounter) await this.insertEncounter(db, target.id, eventId, payload, labelValue); return target; } }
     const result = await db.query(
-      `INSERT INTO knowledge_nodes (id, type, label, normalized_label, description, status, workspace_id)
-       VALUES ($1, $2, $3, $4, $5, 'accepted', $6) RETURNING *`,
-      [randomUUID(), type, labelValue, normalizeLabel(labelValue), payload.description == null ? `from event ${eventId}` : String(payload.description), this.workspace(payload)]
+      `INSERT INTO knowledge_nodes
+         (id, type, label, normalized_label, description, status,
+          epistemic_status, confidence, workspace_id, valid_from, valid_to)
+       VALUES ($1, $2, $3, $4, $5, 'accepted', $6, $7, $8, $9, $10)
+       RETURNING *`,
+      [
+        randomUUID(), type, labelValue, normalizeLabel(labelValue),
+        payload.description == null ? `from event ${eventId}` : String(payload.description),
+        this.epistemicStatus(payload), this.confidence(payload), this.workspace(payload),
+        this.timestamp(payload, "validFrom"), this.timestamp(payload, "validTo"),
+      ]
     );
     const created = node(result.rows[0]);
     await this.queueProjection(db, created.id, "graph", "upsert");
     await this.queueProjection(db, created.id, "vector", "upsert");
-    if (recordEncounter) await this.insertObservation(db, { targetNodeId: created.id, sourceEventId: eventId, kind: this.observationKind(payload), metadata: this.observationMetadata(payload, labelValue) });
+    if (recordEncounter) await this.insertEncounter(db, created.id, eventId, payload, labelValue);
     return created;
   }
 
   private observationKind(payload: Record<string, unknown>): KnowledgeObservationKind {
     const value = String(payload.observationKind ?? "observes");
-    if (!["mentions", "observes", "independently_formulated", "references"].includes(value)) throw new Error(`invalid observation kind ${value}`);
+    if (!["mentions", "observes", "independently_formulated", "references", "derived_from"].includes(value)) throw new Error(`invalid observation kind ${value}`);
     return value as KnowledgeObservationKind;
   }
 
   private observationMetadata(payload: Record<string, unknown>, encounteredLabel?: string): Record<string, unknown> {
     const supplied = payload.observationMetadata;
     const metadata = supplied && typeof supplied === "object" && !Array.isArray(supplied) ? { ...(supplied as Record<string, unknown>) } : {};
+    if (payload.derivation && typeof payload.derivation === "object" && !Array.isArray(payload.derivation)) {
+      metadata.derivation = payload.derivation;
+    }
     if (encounteredLabel) metadata.encounteredLabel = encounteredLabel;
     return metadata;
   }

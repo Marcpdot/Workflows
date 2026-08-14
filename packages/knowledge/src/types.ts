@@ -17,12 +17,43 @@ export type KnowledgeStatus =
   | "disputed"
   | "rejected";
 
+/** Independent of proposal/lifecycle status: how strongly the content is known. */
+export type KnowledgeEpistemicStatus =
+  | "observed"
+  | "supported"
+  | "inferred"
+  | "hypothesized"
+  | "assumed"
+  | "established"
+  | "unknown";
+
+export interface KnowledgeInformationLoss {
+  occurred: boolean;
+  description?: string;
+}
+
+export interface KnowledgeTransformation {
+  method: string;
+  model?: string;
+  assumptions?: string[];
+  confidence?: number;
+  uncertainty?: string;
+  representationScope?: string;
+  informationLoss?: KnowledgeInformationLoss;
+  validFrom?: number;
+  validTo?: number;
+}
+
 export interface KnowledgeNode {
   id: string;
   type: KnowledgeNodeType;
   label: string;
   description?: string;
   status: KnowledgeStatus;
+  epistemicStatus: KnowledgeEpistemicStatus;
+  confidence?: number;
+  validFrom?: number;
+  validTo?: number;
   workspaceId?: string | null;
   createdAt: number;
   updatedAt: number;
@@ -68,7 +99,7 @@ export interface KnowledgeEvidence {
   createdAt: number;
 }
 
-export type KnowledgeObservationKind = "mentions" | "observes" | "independently_formulated" | "references";
+export type KnowledgeObservationKind = "mentions" | "observes" | "independently_formulated" | "references" | "derived_from";
 
 export interface KnowledgeObservation {
   id: string;
@@ -84,9 +115,39 @@ export interface KnowledgeEvent {
   id: string;
   sourceType: "conversation" | "file" | "project" | "manual";
   sourceRef: string;
+  sourceContent?: string;
+  sourceExperienceIds: string[];
   model?: string;
   inputHash?: string;
+  transformation?: KnowledgeTransformation;
+  invalidatedAt?: number;
+  invalidationReason?: string;
   createdAt: number;
+}
+
+export interface KnowledgeDerivation extends KnowledgeTransformation {
+  id: string;
+  targetNodeId: string;
+  sourceEventId?: string;
+  sourceNodeId?: string;
+  createdAt: number;
+  depth: number;
+}
+
+export interface ClaimLineage {
+  claim: KnowledgeNode;
+  derivations: KnowledgeDerivation[];
+  sourceNodes: KnowledgeNode[];
+  sourceEvents: KnowledgeEvent[];
+  evidence: KnowledgeEvidence[];
+  maxDepth: number;
+  truncated: boolean;
+}
+
+export interface DependentClaim {
+  claim: KnowledgeNode;
+  depth: number;
+  derivationIds: string[];
 }
 
 export interface KnowledgeProposal {
@@ -148,11 +209,16 @@ export interface KnowledgeStore {
   createEvent(input: {
     sourceType: KnowledgeEvent["sourceType"];
     sourceRef: string;
+    sourceContent?: string;
+    sourceExperienceIds?: string[];
     model?: string;
     inputHash?: string;
+    transformation?: KnowledgeTransformation;
   }): Promise<KnowledgeEvent>;
 
   getEvent(id: string): Promise<KnowledgeEvent | null>;
+
+  invalidateEvent(id: string, reason: string): Promise<KnowledgeEvent>;
 
   addProposals(
     eventId: string,
@@ -177,6 +243,17 @@ export interface KnowledgeStore {
   listEvidence(targetNodeId: string, limit?: number): Promise<KnowledgeEvidence[]>;
 
   listObservations(targetNodeId: string, limit?: number): Promise<KnowledgeObservation[]>;
+
+  getClaimLineage(
+    claimId: string,
+    options?: { maxDepth?: number }
+  ): Promise<ClaimLineage>;
+
+  findDependentClaims(input: {
+    sourceNodeId?: string;
+    sourceEventId?: string;
+    maxDepth?: number;
+  }): Promise<DependentClaim[]>;
 
   getNode(id: string): Promise<KnowledgeNode | null>;
 
@@ -294,6 +371,12 @@ export interface ExtractionResult {
     label: string;
     description?: string;
     confidence?: number;
+    epistemicStatus?: KnowledgeEpistemicStatus;
+    assumptions?: string[];
+    uncertainty?: string;
+    derivationMethod?: string;
+    representationScope?: string;
+    informationLoss?: KnowledgeInformationLoss;
   }>;
   relations: Array<{
     from: string;

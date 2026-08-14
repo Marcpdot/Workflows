@@ -155,6 +155,7 @@ try {
       createdEvent = {
         id: "capture-event",
         ...input,
+        sourceExperienceIds: input.sourceExperienceIds ?? [],
         createdAt: Date.now(),
       };
       return createdEvent;

@@ -13,6 +13,7 @@
     "knowledge:migrate": "tsx scripts/migrate-knowledge-postgres.ts",
     "knowledge:test:postgres": "tsx scripts/integration-knowledge-postgres.ts",
     "knowledge:test:canonical": "tsx scripts/integration-knowledge-canonical.ts",
+    "knowledge:test:lineage": "tsx scripts/integration-knowledge-lineage.ts",
     "knowledge:test:vector": "tsx scripts/integration-knowledge-vector.ts",
     "knowledge:test:graph": "tsx scripts/integration-knowledge-graph.ts",
     "knowledge:test:hybrid": "tsx scripts/integration-knowledge-hybrid.ts",
