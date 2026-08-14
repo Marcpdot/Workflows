@@ -283,23 +283,23 @@ export function createIntegrationServer(
         if (config.tools) {
           config.tools = await createRegistryFromConfig();
         }
-
-        const orch = new Orchestrator(config);
         const sessionId = ws.sessionId;
         const useMemory = !parsed.options?.noMemory;
+        const memory = useMemory
+          ? createMemory({
+              dbPath: resolve(
+                process.cwd(),
+                process.env.MEMORY_DB_PATH ?? "./data/memory.db"
+              ),
+            })
+          : null;
+        config.experienceStore = memory ?? undefined;
+        const orch = new Orchestrator(config);
 
         let historyCount = 0;
         try {
           let history: { role: "user" | "assistant" | "system"; content: string }[] =
             [];
-          const memory = useMemory
-            ? createMemory({
-                dbPath: resolve(
-                  process.cwd(),
-                  process.env.MEMORY_DB_PATH ?? "./data/memory.db"
-                ),
-              })
-            : null;
 
           try {
             if (memory) {
@@ -313,6 +313,22 @@ export function createIntegrationServer(
               knowledge: orch.knowledge,
             });
             if (cmd.kind === "handled") {
+              if (memory) {
+                const inputExperience = await memory.addMessage(
+                  sessionId,
+                  { role: "user", content: parsed.prompt },
+                  { workspaceId: ws.id, source: { type: "http" } }
+                );
+                await memory.addMessage(
+                  sessionId,
+                  { role: "assistant", content: cmd.message },
+                  {
+                    workspaceId: ws.id,
+                    source: { type: "command" },
+                    parentExperienceIds: [inputExperience.id],
+                  }
+                );
+              }
               sendJson(res, 200, {
                 reply: cmd.message,
                 sessionId,
@@ -355,17 +371,11 @@ export function createIntegrationServer(
               lastExtractAt: Number.isFinite(lastExtractAt)
                 ? lastExtractAt
                 : undefined,
+              sourcePrompt: parsed.prompt,
+              experienceSource: { type: "http" },
             });
 
             if (memory) {
-              await memory.add(sessionId, {
-                role: "user",
-                content: parsed.prompt,
-              });
-              await memory.add(sessionId, {
-                role: "assistant",
-                content: result.reply,
-              });
               if (result.capture?.ran) {
                 await memory.updateSessionState(sessionId, {
                   lastExtractTurnId: String(Date.now()),

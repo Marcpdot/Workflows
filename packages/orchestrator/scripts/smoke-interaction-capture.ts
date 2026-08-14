@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import { createMemory } from "@workflows/memory";
 import {
   captureConversationSegment,
+  conversationExperienceIds,
   conversationHeuristicExtract,
   createKnowledgeStore,
   isLowSubstanceUserMessage,
@@ -156,6 +157,10 @@ async function main(): Promise<void> {
     const cap = await captureConversationSegment({
       store: knowledge,
       sessionId,
+      experienceIds: [
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222",
+      ],
       force: true,
       minUserMessageLength: 10,
       maxProposalsPerTurn: 8,
@@ -180,6 +185,16 @@ async function main(): Promise<void> {
       "all pending"
     );
     assert(cap.summaries.length === cap.proposals.length, "summaries");
+    assert(
+      conversationExperienceIds(cap.sourceRef).join(",") ===
+        "11111111-1111-4111-8111-111111111111,22222222-2222-4222-8222-222222222222",
+      "capture provenance references exact source experiences"
+    );
+    const captureEvent = await knowledge.getEvent(cap.eventId);
+    assert(
+      conversationExperienceIds(captureEvent?.sourceRef ?? "").length === 2,
+      "proposal event retains exact source experience ids"
+    );
     assert(cap.mode === "model", "structured model is primary path");
     assert(cap.droppedQualityItems >= 1, "open question dropped");
     assert(

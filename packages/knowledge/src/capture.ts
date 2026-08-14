@@ -46,6 +46,8 @@ export interface CaptureConversationInput {
   projectLabel?: string;
   /** Optional turn id for provenance */
   turnId?: string;
+  /** Exact durable source experiences represented by this conversation segment. */
+  experienceIds?: string[];
   /**
    * Rate-limit: skip auto-capture if last extract was this many ms ago (unless force).
    * Default 0 = no time backoff (substance heuristic still applies).
@@ -70,14 +72,39 @@ export interface CaptureConversationResult {
   mode: "heuristic" | "model" | "skipped";
   reason?: string;
   sourceRef: string;
+  sourceExperienceIds: string[];
 }
 
 export function conversationSourceRef(
   sessionId: string,
-  turnId?: string
+  turnId?: string,
+  experienceIds: string[] = []
 ): string {
   const base = `conversation:${sessionId}`;
-  return turnId ? `${base}#turn=${turnId}` : base;
+  const parts: string[] = [];
+  if (turnId) parts.push(`turn=${encodeURIComponent(turnId)}`);
+  for (const id of [...new Set(experienceIds.map((value) => value.trim()))]) {
+    if (id) parts.push(`experience=${encodeURIComponent(id)}`);
+  }
+  return parts.length > 0 ? `${base}#${parts.join("&")}` : base;
+}
+
+/** Exact durable experience ids embedded in a conversation source reference. */
+export function conversationExperienceIds(sourceRef: string): string[] {
+  const fragment = sourceRef.split("#", 2)[1];
+  if (!fragment) return [];
+  const ids: string[] = [];
+  for (const part of fragment.split("&")) {
+    const [key, value = ""] = part.split("=", 2);
+    if (key === "experience" && value) {
+      try {
+        ids.push(decodeURIComponent(value));
+      } catch {
+        // Ignore malformed legacy/external fragments rather than hiding the event.
+      }
+    }
+  }
+  return [...new Set(ids)];
 }
 
 export function proposalToSummary(
@@ -281,7 +308,14 @@ export async function captureConversationSegment(
       ? Math.floor(input.minUserMessageLength)
       : 40;
 
-  const sourceRef = conversationSourceRef(input.sessionId, input.turnId);
+  const sourceExperienceIds = [
+    ...new Set((input.experienceIds ?? []).map((value) => value.trim())),
+  ].filter(Boolean);
+  const sourceRef = conversationSourceRef(
+    input.sessionId,
+    input.turnId,
+    sourceExperienceIds
+  );
 
   if (
     !input.force &&
@@ -299,6 +333,7 @@ export async function captureConversationSegment(
       mode: "skipped",
       reason: `rate-limit: last extract ${Date.now() - input.lastExtractAt}ms ago`,
       sourceRef,
+      sourceExperienceIds,
     };
   }
 
@@ -319,6 +354,7 @@ export async function captureConversationSegment(
       mode: "skipped",
       reason: `low-substance user message (len=${userText.length})`,
       sourceRef,
+      sourceExperienceIds,
     };
   }
 
@@ -336,6 +372,7 @@ export async function captureConversationSegment(
       mode: "skipped",
       reason: "empty segment",
       sourceRef,
+      sourceExperienceIds,
     };
   }
 
@@ -402,6 +439,7 @@ export async function captureConversationSegment(
             ? `model fallback produced no structural extract: ${modelError}`
             : "no structural extract",
       sourceRef,
+      sourceExperienceIds,
     };
   }
 
@@ -422,5 +460,6 @@ export async function captureConversationSegment(
     mode,
     reason: modelError ? `model fallback: ${modelError}` : undefined,
     sourceRef,
+    sourceExperienceIds,
   };
 }

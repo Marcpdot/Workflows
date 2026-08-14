@@ -1,9 +1,15 @@
 export { createMemory } from "./memory.js";
 export type {
   ChatMessage,
+  ExperienceKind,
+  ExperienceQuery,
+  ExperienceRecord,
+  ExperienceSource,
+  ExperienceStore,
   InteractionMode,
   Memory,
   MemoryConfig,
+  RecordExperienceInput,
   SessionState,
   StoredMessage,
 } from "./types.js";

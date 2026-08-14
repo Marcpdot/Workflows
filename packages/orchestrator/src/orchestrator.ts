@@ -36,7 +36,10 @@ import {
 import {
   createLongTermMemory,
   resolveLongTermDbPath,
+  type ExperienceRecord,
+  type ExperienceStore,
   type LongTermMemory,
+  type RecordExperienceInput,
 } from "@workflows/memory";
 import {
   buildKnowledgeInjectBlock,
@@ -74,6 +77,7 @@ import type {
   ModelClient,
   ModelChoice,
   OrchestratorConfig,
+  OrchestratorHandleOptions,
   OrchestratorResult,
   RoutingDecision,
 } from "./types.js";
@@ -88,6 +92,7 @@ export class Orchestrator {
   private readonly policy: ComputePolicy;
   private readonly observer: Observer;
   private readonly obsLogPrompts: boolean;
+  private readonly experiences?: ExperienceStore;
   /** Milestone 3A long-term memory (facts/preferences). Optional. */
   readonly longTerm?: LongTermMemory;
   /** Milestone 12 knowledge store (optional). */
@@ -102,6 +107,7 @@ export class Orchestrator {
   ) {
     this.config = config;
     this.tools = config.tools;
+    this.experiences = config.experienceStore;
     this.longTerm = config.longTerm;
     this.knowledge = config.knowledge;
     this.policy =
@@ -182,6 +188,34 @@ export class Orchestrator {
   /** Milestone 9 resolved workspace context (if configured). */
   getWorkspace(): WorkspaceContext | undefined {
     return this.config.workspace;
+  }
+
+  private async recordExperience(
+    input: RecordExperienceInput
+  ): Promise<ExperienceRecord | undefined> {
+    if (!this.experiences) return undefined;
+    return this.experiences.recordExperience({
+      ...input,
+      workspaceId: input.workspaceId ?? this.config.workspace?.id,
+    });
+  }
+
+  private async sourceExperienceIds(
+    sessionId: string | undefined,
+    currentIds: Array<string | undefined>,
+    maxMessages: number
+  ): Promise<string[]> {
+    const ids: string[] = [];
+    if (this.experiences && sessionId) {
+      const messages = await this.experiences.listExperiences({
+        sessionId,
+        kinds: ["user_message", "assistant_output", "system_message"],
+        limit: maxMessages,
+      });
+      ids.push(...messages.map((record) => record.id));
+    }
+    ids.push(...currentIds.filter((id): id is string => Boolean(id)));
+    return [...new Set(ids)];
   }
 
   /** Execute a registered tool against the configured workspace root. */
@@ -347,20 +381,7 @@ export class Orchestrator {
    */
   async handle(
     prompt: string,
-    options?: {
-      forceModel?: ModelChoice;
-      history?: ChatMessage[];
-      sessionId?: string;
-      /** Session interaction mode (default active) */
-      interactionMode?: InteractionMode;
-      proposalsEnabled?: boolean;
-      /** Force knowledge capture this turn (/capture) */
-      forceCapture?: boolean;
-      maxProposalsPerTurn?: number;
-      minUserMessageLength?: number;
-      lastExtractAt?: number;
-      minCaptureIntervalMs?: number;
-    }
+    options?: OrchestratorHandleOptions
   ): Promise<OrchestratorResult> {
     const started = performance.now();
     const sessionId = options?.sessionId;
@@ -385,24 +406,29 @@ export class Orchestrator {
 
   private async handleInner(
     prompt: string,
-    options: {
-      forceModel?: ModelChoice;
-      history?: ChatMessage[];
-      sessionId?: string;
-      interactionMode?: InteractionMode;
-      proposalsEnabled?: boolean;
-      forceCapture?: boolean;
-      maxProposalsPerTurn?: number;
-      minUserMessageLength?: number;
-      lastExtractAt?: number;
-      minCaptureIntervalMs?: number;
-    } | undefined,
+    options: OrchestratorHandleOptions | undefined,
     started: number,
     sessionId?: string
   ): Promise<OrchestratorResult> {
     const interactionMode: InteractionMode =
       options?.interactionMode === "neutral" ? "neutral" : "active";
     const proposalsEnabled = options?.proposalsEnabled !== false;
+    const experienceTrace: NonNullable<OrchestratorResult["experiences"]> = {
+      modelOutputs: [],
+      toolCalls: [],
+      toolResults: [],
+    };
+    const inputExperience = await this.recordExperience({
+      kind: "user_message",
+      sessionId,
+      content: options?.sourcePrompt ?? prompt,
+      source: options?.experienceSource ?? { type: "chat" },
+      metadata:
+        options?.sourcePrompt != null && options.sourcePrompt !== prompt
+          ? { modelInput: prompt }
+          : undefined,
+    });
+    experienceTrace.input = inputExperience?.id;
     const routing = this.decide(prompt);
 
     // M7: policy wraps router (when off, decide mirrors router)
@@ -593,6 +619,7 @@ export class Orchestrator {
     );
 
     if (useToolLoop && this.tools) {
+      let finalOutputExperienceId: string | undefined;
       const loopResult = await runToolLoop(messages, {
         maxSteps: this.config.toolsMaxSteps,
         workspaceRoot: this.config.workspaceRoot,
@@ -608,9 +635,89 @@ export class Orchestrator {
             toolCalls: response.toolCalls,
           };
         },
+        onModelOutput: async (output) => {
+          if (!output.text) return;
+          const parent =
+            experienceTrace.toolResults.at(-1) ?? experienceTrace.input;
+          const record = await this.recordExperience({
+            kind: "assistant_output",
+            sessionId,
+            content: output.text,
+            source: { type: "model", ref: `${provider}:${modelName}` },
+            parentExperienceIds: parent ? [parent] : undefined,
+            metadata: {
+              model: modelName,
+              provider,
+              intermediate: Boolean(output.toolCalls?.length),
+              historyMessage: !output.toolCalls?.length,
+            },
+          });
+          if (record) {
+            experienceTrace.modelOutputs.push(record.id);
+            if (!output.toolCalls?.length) {
+              finalOutputExperienceId = record.id;
+            }
+          }
+          return record?.id;
+        },
+        onToolCall: async (call, modelOutputExperienceId) => {
+          const parent = modelOutputExperienceId ?? experienceTrace.input;
+          const record = await this.recordExperience({
+            kind: "tool_call",
+            sessionId,
+            content: JSON.stringify({ name: call.name, args: call.args }),
+            source: { type: "model", ref: call.id },
+            parentExperienceIds: parent ? [parent] : undefined,
+            metadata: { tool: call.name, callId: call.id },
+          });
+          if (record) experienceTrace.toolCalls.push(record.id);
+          return record?.id;
+        },
+        onToolResult: async (step, toolCallExperienceId) => {
+          const record = await this.recordExperience({
+            kind: "tool_result",
+            sessionId,
+            content: step.result.output,
+            source: { type: "tool", ref: step.call.name },
+            parentExperienceIds: toolCallExperienceId
+              ? [toolCallExperienceId]
+              : undefined,
+            metadata: {
+              tool: step.call.name,
+              callId: step.call.id,
+              ok: step.result.ok,
+              error: step.result.error,
+              durationMs: step.durationMs,
+            },
+          });
+          if (record) experienceTrace.toolResults.push(record.id);
+          return record?.id;
+        },
       });
 
       const reply = loopResult.finalText;
+      if (!finalOutputExperienceId) {
+        const parent =
+          experienceTrace.toolResults.at(-1) ?? experienceTrace.input;
+        const record = await this.recordExperience({
+          kind: "assistant_output",
+          sessionId,
+          content: reply,
+          source: { type: "model", ref: `${provider}:${modelName}` },
+          parentExperienceIds: parent ? [parent] : undefined,
+          metadata: {
+            model: modelName,
+            provider,
+            historyMessage: true,
+            maxStepsOutcome: loopResult.hitMaxSteps,
+          },
+        });
+        if (record) {
+          experienceTrace.modelOutputs.push(record.id);
+          finalOutputExperienceId = record.id;
+        }
+      }
+      experienceTrace.output = finalOutputExperienceId;
       const tokens =
         estimateTokensFromText(prompt) + estimateTokensFromText(reply);
       // Tool-loop usage often missing — estimate from prompt+reply
@@ -651,7 +758,18 @@ export class Orchestrator {
           retrievalBlock,
           longTermBlock
         ),
+        experiences: this.experiences ? experienceTrace : undefined,
       };
+      const sourceExperienceIds = await this.sourceExperienceIds(
+        sessionId,
+        [
+          experienceTrace.input,
+          ...experienceTrace.modelOutputs,
+          ...experienceTrace.toolCalls,
+          ...experienceTrace.toolResults,
+        ],
+        this.config.knowledgeSettings?.ingestMaxMessages ?? 12
+      );
       await this.attachCapture(
         result,
         history,
@@ -660,7 +778,8 @@ export class Orchestrator {
         sessionId,
         interactionMode,
         proposalsEnabled,
-        options
+        options,
+        sourceExperienceIds
       );
       this.emitRequestEvent(result, {
         sessionId,
@@ -676,6 +795,25 @@ export class Orchestrator {
       messages,
       model: modelName,
     });
+
+    const outputExperience = await this.recordExperience({
+      kind: "assistant_output",
+      sessionId,
+      content: response.content,
+      source: { type: "model", ref: `${response.provider}:${response.model}` },
+      parentExperienceIds: experienceTrace.input
+        ? [experienceTrace.input]
+        : undefined,
+      metadata: {
+        model: response.model,
+        provider: response.provider,
+        usage: response.usage,
+      },
+    });
+    if (outputExperience) {
+      experienceTrace.modelOutputs.push(outputExperience.id);
+      experienceTrace.output = outputExperience.id;
+    }
 
     const tokens =
       response.usage?.totalTokens ??
@@ -705,7 +843,13 @@ export class Orchestrator {
         retrievalBlock,
         longTermBlock
       ),
+      experiences: this.experiences ? experienceTrace : undefined,
     };
+    const sourceExperienceIds = await this.sourceExperienceIds(
+      sessionId,
+      [experienceTrace.input, experienceTrace.output],
+      this.config.knowledgeSettings?.ingestMaxMessages ?? 12
+    );
     await this.attachCapture(
       result,
       history,
@@ -714,7 +858,8 @@ export class Orchestrator {
       sessionId,
       interactionMode,
       proposalsEnabled,
-      options
+      options,
+      sourceExperienceIds
     );
     this.emitRequestEvent(result, {
       sessionId,
@@ -737,13 +882,8 @@ export class Orchestrator {
     sessionId: string | undefined,
     interactionMode: InteractionMode,
     proposalsEnabled: boolean,
-    options?: {
-      forceCapture?: boolean;
-      maxProposalsPerTurn?: number;
-      minUserMessageLength?: number;
-      lastExtractAt?: number;
-      minCaptureIntervalMs?: number;
-    }
+    options?: OrchestratorHandleOptions,
+    sourceExperienceIds: string[] = []
   ): Promise<void> {
     result.interactionMode = interactionMode;
     result.proposalsEnabled = proposalsEnabled;
@@ -808,12 +948,13 @@ export class Orchestrator {
               client: this.local,
               model: kSettings.captureModel ?? this.config.ollamaModel,
             };
-      const turnId = String(Date.now());
+      const turnId = result.experiences?.input ?? String(Date.now());
       const cap = await captureConversationSegment({
         store: this.knowledge,
         messages,
         sessionId: sid,
         turnId,
+        experienceIds: sourceExperienceIds,
         force,
         minUserMessageLength:
           options?.minUserMessageLength ?? kSettings.ingestMinChars,

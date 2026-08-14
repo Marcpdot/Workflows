@@ -84,6 +84,20 @@ export interface ToolLoopOptions {
     messages: ChatMessage[],
     tools: Tool[]
   ) => Promise<ToolLoopCompleteResult>;
+  /** Optional durable-source hook, invoked before this output affects later steps. */
+  onModelOutput?: (
+    output: ToolLoopCompleteResult
+  ) => Promise<string | void>;
+  /** Optional durable-source hook, invoked before tool execution. */
+  onToolCall?: (
+    call: ToolCall,
+    modelOutputExperienceId?: string
+  ) => Promise<string | void>;
+  /** Optional durable-source hook, invoked before another model turn can use the result. */
+  onToolResult?: (
+    step: ToolLoopStep,
+    toolCallExperienceId?: string
+  ) => Promise<string | void>;
 }
 
 export interface ModelToolSchema {

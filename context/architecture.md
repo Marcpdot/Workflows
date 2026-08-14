@@ -4,13 +4,13 @@
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** root `ARCHITECTURE.md`; conversation 2026-08-01; knowledge roadmap 2026-08-02  
+**Source:** root `ARCHITECTURE.md`; conversation 2026-08-01; knowledge roadmap 2026-08-02; PR #33 WP1
 **Revisit when:** layer list or handle pipeline shape changes
 
 Intended layers remain:
 
 1. **Orchestration** — receive, route/policy, call model, return  
-2. **Memory** — short-term + long-term (+ optional embeddings); session namespace per workspace (M9)  
+2. **Memory** — durable raw experiences, compatible short-term history, and long-term memory (+ optional embeddings); session namespace per workspace (M9)
 3. **Knowledge** — explicit concepts, claims, relations, events, provenance; extraction-with-approval; storage-independent canonical/graph/vector/spatial contracts; PostgreSQL/PostGIS canonical target; optional voice I/O adapters only
 4. **Tools** — external capabilities via one interface  
 5. **Evaluation** — fixed cases, tokens/cost  
@@ -45,7 +45,7 @@ See [packaging.md](packaging.md) and [milestones.md](milestones.md).
 **Evidence:** confirmed  
 **Source:** `packages/orchestrator/src/orchestrator.ts`  
 
-Typical `handle()` flow: resolve workspace/session (callers) → load session interaction mode → optional policy → route → retrieve/compress → optional knowledge inject → system prompt shaped by **active/neutral** → complete or tool loop (optional `knowledge_*` tools) → optional suggestions → **continuous conversation capture** (pending proposals only, rate-limited) → observability emit. Optional steps are env-gated so the core chat path stays simple. Pipeline planner can use **structured** plan JSON (M10) without changing raw chat.
+Typical `handle()` flow: resolve workspace/session (callers) → persist the raw user experience → load session interaction mode → optional policy → route → retrieve/compress → optional knowledge inject → system prompt shaped by **active/neutral** → complete or tool loop (tool calls/results persist before later model steps consume them) → persist the final output → optional suggestions → **continuous conversation capture** with exact source experience IDs (pending proposals only, rate-limited) → observability emit. Optional steps are env-gated so the core chat path stays simple. Pipeline planner can use **structured** plan JSON (M10) without changing raw chat.
 
 Knowledge path (M12+): tools in the loop; optional neighborhood/project-status inject; ingest/FP/continuous capture produce **proposals** only; accept remains explicit. Continuous capture uses conversation-optimised extract (post-M18 iteration `7d474bb`), not only generic batch ingest. Voice (M18) is STT→string→same `handle()`; TTS optional and default off. Same brain; no second orchestrator in UI or HTTP.
 

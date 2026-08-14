@@ -19,6 +19,51 @@ From **M9**, effective session ids are **namespaced per workspace** (`ws:<id>:<l
 - **In-memory only** — dies on restart.
 - **Full long-term structured memory in M0** — later milestone.
 
+## Durable experience spine (Continuous Cognition WP1)
+
+**Status:** active
+**Evidence:** confirmed
+**Source:** PR #33 WP1 contract; `packages/memory/src/types.ts`; `packages/memory/src/store.ts`
+**Revisit when:** multi-device experience sync is required, sustained input volume exceeds SQLite, or a modality needs a specialized payload store
+
+Raw interactions are persisted as stable-ID **experience records before semantic
+interpretation**. The minimum source vocabulary covers user messages,
+assistant/model outputs, tool calls, tool results, explicit human corrections,
+and external observations. Session/workspace/source metadata is optional; large
+or future modalities may retain an external payload reference instead of copying
+all bytes into SQLite.
+
+The experience store extends `packages/memory` because that package already owns
+restart-safe interaction continuity and its lifecycle. Existing `messages` and
+`add`/`getHistory` APIs remain as a compatibility projection: new chat writes
+atomically create both the exact source experience and the historical message.
+Legacy message rows receive stable experience IDs when an existing database is
+opened.
+
+Tool calls/results enter this path before later model reasoning can use them.
+Conversation knowledge capture keeps its session-scoped source reference while
+also embedding the exact experience IDs represented by the capture event. An
+experience records what occurred; it does not promote its content to accepted
+truth or bypass knowledge proposals.
+
+**Reason:** Semantic extraction, summaries, and claims are revisable derived
+views. Keeping their exact source independently addressable prevents later
+interpretation from replacing the evidence it came from, while reusing the
+existing memory lifecycle avoids a second interaction database and coordination
+boundary.
+
+**Rejected alternatives:**
+
+- **A new experience package/store for WP1** — duplicates the existing SQLite
+  lifecycle before a distinct scaling or modality requirement exists.
+- **Replace the messages API/table immediately** — breaks established CLI,
+  HTTP, voice, and session-history callers for no capability gain.
+- **Use only observability logs or synthetic session/turn strings** — neither
+  provides a durable, exact source identity for content that influenced
+  reasoning or knowledge capture.
+- **Persist summaries instead of raw source activity** — loses fidelity and
+  allows derived interpretation to displace its evidence.
+
 ## Session interaction state (post-M18 capture)
 
 **Status:** active  

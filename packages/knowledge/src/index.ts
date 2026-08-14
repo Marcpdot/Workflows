@@ -133,6 +133,7 @@ export {
   captureConversationSegment,
   proposalToSummary,
   listPendingForSession,
+  conversationExperienceIds,
   conversationSourceRef,
   type CaptureConversationInput,
   type CaptureConversationResult,

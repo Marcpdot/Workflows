@@ -6,6 +6,8 @@ import type {
   ModelToolSchema,
 } from "@workflows/tools";
 import type {
+  ExperienceSource,
+  ExperienceStore,
   InteractionMode,
   LongTermMemory,
   LongTermSettings,
@@ -110,6 +112,8 @@ export interface OrchestratorConfig {
   workspaceRoot: string;
   /** Milestone 9 resolved workspace (session namespace + project context) */
   workspace?: WorkspaceContext;
+  /** Durable raw experience sink. Caller owns its lifecycle. */
+  experienceStore?: ExperienceStore;
   /**
    * Optional tool registry (Milestone 2).
    * Phase B auto-loop only when toolsEnabled is true.
@@ -213,4 +217,31 @@ export interface OrchestratorResult {
     reason?: string;
     mode?: string;
   };
+  /** Durable source identities created while processing this interaction. */
+  experiences?: {
+    input?: string;
+    modelOutputs: string[];
+    toolCalls: string[];
+    toolResults: string[];
+    output?: string;
+  };
+}
+
+export interface OrchestratorHandleOptions {
+  forceModel?: ModelChoice;
+  history?: ChatMessage[];
+  sessionId?: string;
+  /** Session interaction mode (default active). */
+  interactionMode?: InteractionMode;
+  proposalsEnabled?: boolean;
+  /** Force knowledge capture this turn (/capture). */
+  forceCapture?: boolean;
+  maxProposalsPerTurn?: number;
+  minUserMessageLength?: number;
+  lastExtractAt?: number;
+  minCaptureIntervalMs?: number;
+  /** Exact user input when the model prompt is a derived command prompt. */
+  sourcePrompt?: string;
+  /** Modality/caller metadata for the raw input experience. */
+  experienceSource?: ExperienceSource;
 }
