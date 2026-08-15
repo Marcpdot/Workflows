@@ -236,7 +236,7 @@ try {
   const reopened = createMemory({ dbPath });
   try {
     const restartedHistory = await reopened.getHistory(sessionId);
-    assert(restartedHistory.length === 2, "conversation survives restart");
+    assert(restartedHistory.length === 3, "conversation and later correction survive restart");
     const restartedRecords = await reopened.getHistoryRecords(sessionId);
     assert(
       restartedRecords[0]?.experienceId === result.experiences.input &&
@@ -250,6 +250,10 @@ try {
     assert(
       (await reopened.getExperience(correction.id))?.kind === "human_correction",
       "correction survives restart"
+    );
+    assert(
+      (await reopened.getHistoryRecords(sessionId))[2]?.experienceId === correction.id,
+      "correction remains the authoritative source for its user-history row"
     );
     assert(
       (await reopened.getExperience(external.id))?.payloadRef === external.payloadRef,

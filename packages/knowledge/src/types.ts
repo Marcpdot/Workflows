@@ -361,6 +361,7 @@ export interface KnowledgeStore {
     oldClaimId: string;
     newClaimId: string;
     markOldDisputed?: boolean;
+    sourceEventId?: string;
   }): Promise<KnowledgeEdge>;
 
   listAliases(canonicalNodeId?: string): Promise<KnowledgeAlias[]>;

@@ -10,6 +10,7 @@ export type CapabilityId =
   | "long_term_memory"
   | "knowledge_navigator"
   | "knowledge_curator"
+  | "knowledge_capture"
   | "tools"
   | "local_model"
   | "mid_model"
@@ -56,6 +57,7 @@ export interface ActivationSignals {
   provenance: boolean;
   longTermMemory: boolean;
   tools: boolean;
+  correction: boolean;
 }
 
 export interface CognitiveResourceLimits {
@@ -92,6 +94,8 @@ export interface CapabilityOutput {
   status: "produced" | "empty" | "failed";
   representations: ActivatedRepresentation[];
   detail?: string;
+  /** Operation-local value. Deliberately excluded from the privacy-safe trace. */
+  value?: unknown;
 }
 
 export type ActivationExpansionTrigger =
@@ -154,6 +158,12 @@ export interface RuntimeCapabilityState {
   localModelAvailable?: boolean;
   midModelAvailable?: boolean;
   frontierModelAvailable?: boolean;
+  /** False when another active capability already has a complete response. */
+  responseModelRequired?: boolean;
+  knowledgeCaptureAvailable?: boolean;
+  knowledgeCaptureRequested?: boolean;
+  knowledgeCaptureUsesModel?: boolean;
+  historyCompressionUsesModel?: boolean;
 }
 
 export const DEFAULT_COGNITIVE_LIMITS: CognitiveResourceLimits = {
@@ -175,12 +185,16 @@ const LONG_TERM_RE =
 const TOOL_RE =
   /\b(read|inspect|list|search|open|run|execute|command|shell|file|directory|workspace|repository|repo|les|inspiser|list|søk|åpne|kjør|kommando|fil|mappe|arbeidsområde)\b/i;
 
+const CORRECTION_RE =
+  /\b(actually|correction|correct(?:ion|ing)?|instead|not .{1,80} but|faktisk|rettelse|korriger(?:ing|er|te)?|ikke .{1,80} men)\b/i;
+
 export function detectActivationSignals(input: string): ActivationSignals {
   return {
     storedUnderstanding: STORED_UNDERSTANDING_RE.test(input),
     provenance: PROVENANCE_RE.test(input),
     longTermMemory: LONG_TERM_RE.test(input),
     tools: TOOL_RE.test(input),
+    correction: CORRECTION_RE.test(input),
   };
 }
 
@@ -218,6 +232,12 @@ export function createRuntimeCapabilities(
     ...(["local_model", "mid_model", "frontier_model"] as CapabilityId[]).map(
       (id) => {
         const tier = id.replace("_model", "") as "local" | "mid" | "frontier";
+        const neededForResponse =
+          state.responseModelRequired !== false && id === selectedModelId;
+        const neededForCapture =
+          id === "local_model" && state.knowledgeCaptureUsesModel === true;
+        const neededForTransformation =
+          id === "local_model" && state.historyCompressionUsesModel === true;
         const isAvailable =
           tier === "local"
             ? state.localModelAvailable !== false
@@ -233,11 +253,18 @@ export function createRuntimeCapabilities(
             produces: ["language response"],
           },
           () => ({
-            applicable: id === selectedModelId,
+            applicable:
+              neededForResponse || neededForCapture || neededForTransformation,
             reason:
-              id === selectedModelId
-                ? `compute policy selected ${tier}`
-                : `compute policy selected ${state.selectedModel}`,
+              neededForResponse && (neededForCapture || neededForTransformation)
+                ? `compute policy selected ${tier}; an active local transformation also requires it`
+                : neededForResponse
+                  ? `compute policy selected ${tier}`
+                  : neededForCapture || neededForTransformation
+                    ? "an active bounded transformation uses the configured local model"
+                    : state.responseModelRequired === false && id === selectedModelId
+                      ? "an active deterministic capability already provides the complete response"
+                      : `compute policy selected ${state.selectedModel}`,
           })
         );
       }
@@ -297,11 +324,16 @@ export function createRuntimeCapabilities(
         produces: ["accepted canonical knowledge context"],
       },
       (context) => ({
-        applicable: context.signals.storedUnderstanding || context.signals.provenance,
+        applicable:
+          context.signals.storedUnderstanding ||
+          context.signals.provenance ||
+          context.signals.correction,
         reason:
-          context.signals.storedUnderstanding || context.signals.provenance
-            ? "input requests stored knowledge or its provenance"
-            : "input has no canonical-knowledge signal",
+          context.signals.correction
+            ? "explicit correction requires comparison with persistent understanding"
+            : context.signals.storedUnderstanding || context.signals.provenance
+              ? "input requests stored knowledge or its provenance"
+              : "input has no canonical-knowledge signal",
       })
     ),
     candidate(
@@ -365,6 +397,24 @@ export function createRuntimeCapabilities(
         reason: context.signals.tools
           ? "input requires workspace, file, command, or other tool-capable inspection"
           : "input has no tool-use signal",
+      })
+    ),
+    candidate(
+      {
+        id: "knowledge_capture",
+        kind: "transformation",
+        ...availability(
+          state.knowledgeCaptureAvailable === true,
+          "semantic knowledge capture is unavailable"
+        ),
+        cost: { unit: "calls", maximum: 1 },
+        produces: ["pending knowledge proposals with experience lineage"],
+      },
+      () => ({
+        applicable: state.knowledgeCaptureRequested === true,
+        reason: state.knowledgeCaptureRequested
+          ? "this substantive interaction is eligible for bounded semantic capture"
+          : "semantic capture is disabled, inactive, or unnecessary for this input",
       })
     ),
   ];

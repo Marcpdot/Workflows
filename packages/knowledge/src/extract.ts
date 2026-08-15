@@ -147,6 +147,17 @@ export function extractionToProposalItems(
   }
   for (const r of result.relations ?? []) {
     if (!r.from?.trim() || !r.to?.trim()) continue;
+    if (r.relation?.trim().toLowerCase() === "supersedes") {
+      items.push({
+        kind: "supersede",
+        payload: {
+          newClaimLabel: r.from.trim(),
+          oldClaimLabel: r.to.trim(),
+          markOldDisputed: true,
+        },
+      });
+      continue;
+    }
     items.push({
       kind: "edge",
       payload: {

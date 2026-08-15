@@ -321,7 +321,16 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
       else if (current.kind === "evidence") await this.materializeEvidence(client, payload, current.eventId);
       else if (current.kind === "observation") await this.materializeObservation(client, payload, current.eventId);
       else if (current.kind === "merge") await this.mergeNodesWith(client, { fromId: requiredString(payload.fromId, "merge fromId"), intoId: requiredString(payload.intoId, "merge intoId") });
-      else if (current.kind === "supersede") await this.supersedeClaimWith(client, { oldClaimId: requiredString(payload.oldClaimId, "supersede oldClaimId"), newClaimId: requiredString(payload.newClaimId, "supersede newClaimId"), markOldDisputed: payload.markOldDisputed !== false });
+      else if (current.kind === "supersede") {
+        const oldClaimId = await this.resolveClaimReference(client, payload, "oldClaim");
+        const newClaimId = await this.resolveClaimReference(client, payload, "newClaim");
+        await this.supersedeClaimWith(client, {
+          oldClaimId,
+          newClaimId,
+          markOldDisputed: payload.markOldDisputed !== false,
+          sourceEventId: current.eventId,
+        });
+      }
       else throw new Error(`acceptProposal: unsupported proposal kind ${String(current.kind)}`);
       await client.query("UPDATE knowledge_proposals SET status = 'accepted', resolved_at = now() WHERE id = $1", [id]);
       await client.query("COMMIT");
@@ -716,7 +725,7 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
   }
 
-  async supersedeClaim(input: { oldClaimId: string; newClaimId: string; markOldDisputed?: boolean }): Promise<KnowledgeEdge> {
+  async supersedeClaim(input: { oldClaimId: string; newClaimId: string; markOldDisputed?: boolean; sourceEventId?: string }): Promise<KnowledgeEdge> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN"); const result = await this.supersedeClaimWith(client, input); await client.query("COMMIT"); return result;
@@ -724,11 +733,31 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     finally { client.release(); }
   }
 
-  private async supersedeClaimWith(client: PoolClient, input: { oldClaimId: string; newClaimId: string; markOldDisputed?: boolean }): Promise<KnowledgeEdge> {
+  private async resolveClaimReference(
+    db: Queryable,
+    payload: Record<string, unknown>,
+    prefix: "oldClaim" | "newClaim"
+  ): Promise<string> {
+    const explicitId = String(payload[`${prefix}Id`] ?? "").trim();
+    if (explicitId) {
+      if (!UUID.test(explicitId)) throw new Error(`supersede ${prefix}Id must be a UUID`);
+      const claim = await this.getNodeWith(db, explicitId);
+      if (!claim || claim.type !== "claim") throw new Error(`supersede ${prefix}Id must reference a claim`);
+      return claim.id;
+    }
+    const label = requiredString(payload[`${prefix}Label`], `supersede ${prefix}Label`);
+    const candidates = await this.findIdentityCandidates(db, label, "claim");
+    if (candidates.length !== 1) {
+      throw new Error(`supersede ${prefix}Label must resolve to exactly one accepted claim`);
+    }
+    return candidates[0]!.id;
+  }
+
+  private async supersedeClaimWith(client: PoolClient, input: { oldClaimId: string; newClaimId: string; markOldDisputed?: boolean; sourceEventId?: string }): Promise<KnowledgeEdge> {
       if (input.oldClaimId === input.newClaimId) throw new Error("supersedeClaim: old and new must differ");
       const oldNode = await this.getNodeWith(client, input.oldClaimId); const newNode = await this.getNodeWith(client, input.newClaimId);
       if (oldNode?.type !== "claim") throw new Error("supersedeClaim: oldClaimId must be a claim node"); if (newNode?.type !== "claim") throw new Error("supersedeClaim: newClaimId must be a claim node");
-      const result = await this.insertEdge(client, { id: randomUUID(), fromNodeId: newNode.id, relation: "supersedes", toNodeId: oldNode.id, status: "accepted", createdAt: Date.now() });
+      const result = await this.insertEdge(client, { id: randomUUID(), fromNodeId: newNode.id, relation: "supersedes", toNodeId: oldNode.id, sourceEventId: input.sourceEventId, status: "accepted", createdAt: Date.now() });
       if (input.markOldDisputed !== false) {
         await client.query("UPDATE knowledge_nodes SET status = 'disputed', description = concat_ws('; ', description, $2::text), updated_at = now(), revision = revision + 1 WHERE id = $1", [oldNode.id, `superseded by ${newNode.id} (${newNode.label})`]);
         await this.queueProjection(client, oldNode.id, "graph", "rebuild"); await this.queueProjection(client, oldNode.id, "vector", "delete");

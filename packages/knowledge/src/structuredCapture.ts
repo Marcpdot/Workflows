@@ -303,7 +303,9 @@ export async function extractStructuredConversation(options: {
           "only when the conversation explicitly supports it. Put explicit assumptions in assumptions " +
           "and questions in openQuestions; questions are not graph proposals. Epistemic status is " +
           "independent of acceptance. Use hypothesized for suspicions/possibilities, assumed for assumptions, " +
-          "and inferred for model synthesis; extraction alone must never emit established.",
+          "and inferred for model synthesis; extraction alone must never emit established. " +
+          "When the source explicitly corrects an earlier claim, emit the corrected claim and a supersedes " +
+          "relation from the corrected claim label to the exact earlier claim label; do not erase either claim.",
       },
       {
         role: "user",

@@ -350,6 +350,14 @@ copying durable experience payloads into knowledge events for convenience; or
 forcing unrelated file/manual ingestion through memory solely to remove the
 fallback column.
 
+Explicit natural-language corrections may extract a `supersedes` proposal that
+refers to the old and revised claim labels. It remains pending until the normal
+approval boundary accepts the revised claim and supersession. Acceptance keeps
+the old claim as disputed history, records the supersession edge against the
+correction event, and lets accepted-only retrieval prefer the revision. The
+exact extraction-model output is itself a durable experience and joins the
+knowledge event's source experience IDs before proposals are created.
+
 ## Knowledge milestone roadmap (M11–M18)
 
 **Status:** active (shell track complete; deepen with use)  

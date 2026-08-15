@@ -50,6 +50,8 @@ class SqliteMemory implements Memory {
     const role =
       input.kind === "user_message"
         ? "user"
+        : input.kind === "human_correction"
+          ? "user"
         : input.kind === "assistant_output"
           ? "assistant"
           : input.kind === "system_message"
@@ -65,6 +67,7 @@ class SqliteMemory implements Memory {
         input.sessionId,
         { role, content: input.content },
         {
+          experienceKind: input.kind,
           workspaceId: input.workspaceId,
           source: input.source,
           parentExperienceIds: input.parentExperienceIds,

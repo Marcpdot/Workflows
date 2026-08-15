@@ -229,6 +229,7 @@ export function scoreProposalItem(item: {
   kind: string;
   payload: Record<string, unknown>;
 }): number {
+  if (item.kind === "supersede") return 120;
   if (item.kind === "edge") {
     const rel = String(item.payload.relation ?? "about");
     const structural = [

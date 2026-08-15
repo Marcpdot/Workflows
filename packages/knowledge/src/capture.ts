@@ -59,6 +59,8 @@ export interface CaptureConversationInput {
     role: "system" | "user" | "assistant";
     content: string;
   }>) => Promise<string>;
+  /** Persist the exact extraction-model output before proposals use it. */
+  onModelOutput?: (output: string) => Promise<string | void>;
   /** Model identifier recorded on the provenance event. */
   model?: string;
 }
@@ -128,6 +130,9 @@ export function proposalToSummary(
     label = `${from} -[${relation}]-> ${to}`;
   } else if (p.kind === "evidence") {
     label = String(payload.targetLabel ?? payload.claimLabel ?? payload.claim ?? "evidence");
+  } else if (p.kind === "supersede") {
+    label = `${String(payload.newClaimLabel ?? payload.newClaimId ?? "new claim")} supersedes ${String(payload.oldClaimLabel ?? payload.oldClaimId ?? "old claim")}`;
+    relation = "supersedes";
   } else {
     label = String(payload.targetLabel ?? payload.targetId ?? "observation");
   }
@@ -277,6 +282,16 @@ async function filterResolvableEdges(
   const output: typeof items = [];
   let dropped = 0;
   for (const item of items) {
+    if (item.kind === "supersede") {
+      const oldLabel = String(item.payload.oldClaimLabel ?? "");
+      const newLabel = String(item.payload.newClaimLabel ?? "");
+      if (!(await endpointExists(oldLabel)) || !(await endpointExists(newLabel))) {
+        dropped++;
+        continue;
+      }
+      output.push(item);
+      continue;
+    }
     if (item.kind !== "edge") {
       output.push(item);
       continue;
@@ -311,7 +326,7 @@ export async function captureConversationSegment(
   const sourceExperienceIds = [
     ...new Set((input.experienceIds ?? []).map((value) => value.trim())),
   ].filter(Boolean);
-  const sourceRef = conversationSourceRef(
+  let sourceRef = conversationSourceRef(
     input.sessionId,
     input.turnId,
     sourceExperienceIds
@@ -386,6 +401,15 @@ export async function captureConversationSegment(
         segment,
         complete: input.complete,
       });
+      const outputExperienceId = await input.onModelOutput?.(structured.raw);
+      if (outputExperienceId && !sourceExperienceIds.includes(outputExperienceId)) {
+        sourceExperienceIds.push(outputExperienceId);
+        sourceRef = conversationSourceRef(
+          input.sessionId,
+          input.turnId,
+          sourceExperienceIds
+        );
+      }
       if (structured.ok && structured.extraction) {
         extraction = structured.extraction;
         droppedQualityItems += structured.dropped;

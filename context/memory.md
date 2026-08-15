@@ -41,6 +41,12 @@ Legacy message rows receive stable experience IDs when an existing database is
 opened.
 
 Tool calls/results enter this path before later model reasoning can use them.
+Intermediate model outputs that become cognitive inputs, including history
+summaries and semantic-extraction output, enter the same path before a later
+response or knowledge event consumes them. An explicit human correction keeps
+`human_correction` as its experience kind while the existing messages table
+references that same experience as a user-history row; no duplicate raw source
+record is created.
 Conversation knowledge capture keeps its session-scoped source reference while
 also embedding the exact experience IDs represented by the capture event. An
 experience records what occurred; it does not promote its content to accepted

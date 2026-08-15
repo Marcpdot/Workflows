@@ -7,14 +7,6 @@ import { route, type RouterConfig } from "./router.js";
 import { OllamaCliClient } from "@workflows/models/local";
 import { GrokClient } from "@workflows/models/frontier";
 import {
-  compressHistory,
-  LocalModelSummarizer,
-} from "@workflows/compression";
-import {
-  formatRetrievalBlock,
-  retrieve,
-} from "@workflows/retrieval";
-import {
   resolveProjectLongTermDbPath,
   resolveWorkspace,
   type WorkspaceContext,
@@ -46,9 +38,7 @@ import {
   captureConversationSegment,
   createKnowledgeStore,
   createKnowledgeTools,
-  hydrateKnowledgeLineageContext,
   listPendingForSession,
-  selectKnowledgeContext,
   type KnowledgeProposalSummary,
   type KnowledgeStore,
 } from "@workflows/knowledge";
@@ -84,13 +74,31 @@ import type {
   RoutingDecision,
 } from "./types.js";
 import {
+  buildModelMessages,
+  calculateDeterministicResponse,
+  capabilityValue,
+  contributeContextRetrieval,
+  contributeHistoryCompression,
+  contributeKnowledgeRetrieval,
+  contributeLongTermMemory,
+  contributeModelResponse,
+  contributeOperationStart,
+  contributeProvenanceLineage,
+  contributeToolResponse,
+  isExplicitCorrection,
+  shouldActivateKnowledgeCapture,
+  type CompressionValue,
+  type ContextRetrievalValue,
+  type DeterministicResponseValue,
+  type LongTermMemoryValue,
+} from "./capabilityContributors.js";
+import {
   contributeCapabilityOutput,
   contributeModelOutput,
-  contributeToolOutputs,
   createRuntimeCognitiveContext,
-  expandCapabilities,
   isCapabilityActive,
   recordCapabilityDegradation,
+  type CognitiveOperationContext,
 } from "./capabilityActivation.js";
 
 export class Orchestrator {
@@ -220,10 +228,20 @@ export class Orchestrator {
     if (this.experiences && sessionId) {
       const messages = await this.experiences.listExperiences({
         sessionId,
-        kinds: ["user_message", "assistant_output", "system_message"],
-        limit: maxMessages,
+        kinds: [
+          "user_message",
+          "human_correction",
+          "assistant_output",
+          "system_message",
+        ],
+        limit: Math.max(maxMessages * 3, maxMessages),
       });
-      ids.push(...messages.map((record) => record.id));
+      ids.push(
+        ...messages
+          .filter((record) => record.metadata.historyMessage !== false)
+          .slice(-maxMessages)
+          .map((record) => record.id)
+      );
     }
     ids.push(...currentIds.filter((id): id is string => Boolean(id)));
     return [...new Set(ids)];
@@ -387,8 +405,8 @@ export class Orchestrator {
   }
 
   /**
-   * Compatibility request path with selectively activated existing capabilities.
-   * The larger interactive-loop rewrite remains WP4 work.
+   * Compatibility entrypoint for one selectively assembled cognitive operation.
+   * Package-owned contributors supply operation values; this method wires them.
    */
   async handle(
     prompt: string,
@@ -426,13 +444,16 @@ export class Orchestrator {
     const proposalsEnabled = options?.proposalsEnabled !== false;
     const experienceTrace: NonNullable<OrchestratorResult["experiences"]> = {
       modelOutputs: [],
+      deterministicOutputs: [],
       toolCalls: [],
       toolResults: [],
     };
+    const sourcePrompt = options?.sourcePrompt ?? prompt;
+    const deterministic = calculateDeterministicResponse(prompt);
     const inputExperience = await this.recordExperience({
-      kind: "user_message",
+      kind: isExplicitCorrection(sourcePrompt) ? "human_correction" : "user_message",
       sessionId,
-      content: options?.sourcePrompt ?? prompt,
+      content: sourcePrompt,
       source: options?.experienceSource ?? { type: "chat" },
       metadata:
         options?.sourcePrompt != null && options.sourcePrompt !== prompt
@@ -471,6 +492,17 @@ export class Orchestrator {
 
     const history = options?.history ?? [];
     const originalCount = history.length;
+    const captureRequested = shouldActivateKnowledgeCapture({
+      prompt: sourcePrompt,
+      force: options?.forceCapture === true,
+      interactionMode,
+      proposalsEnabled,
+      settings: this.config.knowledgeSettings,
+      knowledgeAvailable: this.knowledge != null,
+      minUserMessageLength: options?.minUserMessageLength,
+      lastExtractAt: options?.lastExtractAt,
+      minCaptureIntervalMs: options?.minCaptureIntervalMs,
+    });
     let cognition = createRuntimeCognitiveContext({
       currentInput: prompt,
       inputExperienceId: inputExperience?.id,
@@ -492,6 +524,15 @@ export class Orchestrator {
           this.tools != null &&
           this.tools.list().length > 0,
         selectedModel: choice,
+        responseModelRequired: deterministic == null,
+        knowledgeCaptureAvailable: this.knowledge != null,
+        knowledgeCaptureRequested: captureRequested,
+        knowledgeCaptureUsesModel:
+          captureRequested &&
+          this.config.knowledgeSettings?.captureModelTier === "local",
+        historyCompressionUsesModel:
+          !this.config.compression.disabled &&
+          history.length > this.config.compression.threshold,
         localModelAvailable: true,
         midModelAvailable: this.mid != null,
         frontierModelAvailable: true,
@@ -503,113 +544,54 @@ export class Orchestrator {
         toolSteps: this.config.toolsMaxSteps,
       },
     });
-    cognition = contributeCapabilityOutput(cognition, {
-      capabilityId: "deterministic_processing",
-      status: "produced",
-      detail: "routing and bounded activation signals",
-      representations: [],
+    cognition = contributeOperationStart(cognition, { history, deterministic });
+
+    cognition = await contributeContextRetrieval(cognition, {
+      prompt,
+      history,
+      settings: this.config.retrieval,
+      embeddings: this.config.embeddings,
     });
-    if (isCapabilityActive(cognition, "session_history")) {
-      cognition = contributeCapabilityOutput(cognition, {
-        capabilityId: "session_history",
-        status: history.length > 0 ? "produced" : "empty",
-        representations:
-          history.length > 0
-            ? [
-                {
-                  capabilityId: "session_history",
-                  kind: "session_messages",
-                  count: history.length,
-                },
-              ]
-            : [],
+
+    cognition = await contributeHistoryCompression(cognition, {
+      history,
+      settings: this.config.compression,
+      local: this.local,
+      localModel: this.config.ollamaModel,
+    });
+    const compressedHistory = capabilityValue<CompressionValue>(
+      cognition,
+      "history_compression"
+    );
+    if (compressedHistory?.summary) {
+      const historyExperienceIds = (
+        await this.sourceExperienceIds(sessionId, [], history.length + 1)
+      ).filter((id) => id !== inputExperience?.id);
+      const summaryExperience = await this.recordExperience({
+        kind: "assistant_output",
+        sessionId,
+        content: compressedHistory.summary,
+        source: {
+          type: "model",
+          ref: `local:${this.config.ollamaModel}`,
+        },
+        parentExperienceIds: historyExperienceIds,
+        metadata: {
+          model: this.config.ollamaModel,
+          provider: "local",
+          historyCompression: true,
+          historyMessage: false,
+        },
       });
-    }
-
-    // 1) Retrieval
-    let retrievalBlock: string | null = null;
-    let retrievalMeta: OrchestratorResult["retrieval"];
-
-    if (isCapabilityActive(cognition, "context_retrieval")) {
-      try {
-        const chunks = await retrieve(prompt, {
-          sessionMessages: history,
-          contextDir: this.config.retrieval.contextDir,
-          limit: this.config.retrieval.limit,
-          maxChars: this.config.retrieval.maxChars,
-          maxChunkChars: this.config.retrieval.maxChunkChars,
-          embeddings: this.config.embeddings
-            ? {
-                embedder: this.config.embeddings.embedder,
-                store: this.config.embeddings.store,
-                minScore: this.config.embeddings.minScore,
-              }
-            : undefined,
-        });
-        retrievalBlock = formatRetrievalBlock(chunks);
-        retrievalMeta = {
-          chunkCount: chunks.length,
-          sources: chunks.map((c) => c.source),
-          chars: chunks.reduce((n, c) => n + c.text.length, 0),
-        };
-        cognition = contributeCapabilityOutput(cognition, {
-          capabilityId: "context_retrieval",
-          status: chunks.length > 0 ? "produced" : "empty",
-          representations: chunks.map((chunk) => ({
-            capabilityId: "context_retrieval",
-            kind: chunk.source,
-            ids: [chunk.id],
-            characters: chunk.text.length,
-          })),
-        });
-      } catch (error) {
-        cognition = recordCapabilityDegradation(cognition, {
-          capabilityId: "context_retrieval",
-          reason: error instanceof Error ? error.message : String(error),
-          fallback: "continue without retrieved context",
+      if (summaryExperience) {
+        experienceTrace.modelOutputs.push(summaryExperience.id);
+        cognition = contributeModelOutput(cognition, {
+          provider: "local",
+          model: this.config.ollamaModel,
+          experienceId: summaryExperience.id,
+          characters: compressedHistory.summary.length,
         });
       }
-    }
-
-    // 2) Compression
-    let recentMessages: ChatMessage[] = history;
-    let summary: string | null = null;
-    let compressed = false;
-
-    if (isCapabilityActive(cognition, "history_compression")) {
-      const summarizer = new LocalModelSummarizer(
-        this.local,
-        this.config.ollamaModel,
-        this.config.compression.maxSummaryChars
-      );
-
-      const result = await compressHistory(
-        history,
-        {
-          threshold: this.config.compression.threshold,
-          keepRecent: this.config.compression.keepRecent,
-          maxSummaryChars: this.config.compression.maxSummaryChars,
-        },
-        summarizer
-      );
-
-      recentMessages = result.recentMessages;
-      summary = result.summary;
-      compressed = result.compressed;
-      cognition = contributeCapabilityOutput(cognition, {
-        capabilityId: "history_compression",
-        status: result.compressed ? "produced" : "empty",
-        representations: result.summary
-          ? [
-              {
-                capabilityId: "history_compression",
-                kind: "history_summary",
-                count: history.length - result.recentMessages.length,
-                characters: result.summary.length,
-              },
-            ]
-          : [],
-      });
     }
 
     const useToolLoop =
@@ -618,193 +600,68 @@ export class Orchestrator {
       this.tools != null &&
       this.tools.list().length > 0;
 
-    const systemParts = [this.config.systemPrompt];
-    if (useToolLoop && this.tools) {
-      systemParts.push(TOOLS_SYSTEM_ADDENDUM);
-      systemParts.push(formatToolsForPrompt(this.tools.list()));
-    }
-    if (interactionMode === "active") {
-      systemParts.push(
-        "Interaction mode: ACTIVE (sparring). Free-form reasoning partner — do not take over the analysis. " +
-          "Challenge weak assumptions; ask whether limits are fundamental, technological, industrial, economic, or regulatory. " +
-          "Point out missing causal links and ask what the next bottleneck would be if the current one were solved. " +
-          "Help the user state clearer claims. Stay concise. " +
-          "Do not list knowledge proposals; capture runs separately into a pending queue."
-      );
-    } else if (interactionMode === "neutral") {
-      systemParts.push(
-        "Interaction mode: NEUTRAL. Answer helpfully and briefly. " +
-          "Do not challenge, interrogate, or expand into unsolicited first-principles coaching. " +
-          "Knowledge is only stored when the user explicitly captures."
-      );
-    }
+    cognition = await contributeKnowledgeRetrieval(cognition, {
+      store: this.knowledge,
+      prompt,
+      maxChars: cognition.limits.knowledgeChars,
+      hops: this.config.knowledgeSettings?.injectHops ?? 1,
+    });
+    cognition = await contributeProvenanceLineage(cognition, this.knowledge);
 
-    // Accepted knowledge stays package-owned; activation only decides participation.
-    const kSettings = this.config.knowledgeSettings;
-    let knowledgeClaimIds: string[] = [];
-    if (this.knowledge && isCapabilityActive(cognition, "knowledge_retrieval")) {
-      try {
-        const selected = await selectKnowledgeContext(
-          this.knowledge,
-          prompt,
-          {
-            maxChars: cognition.limits.knowledgeChars,
-            hops: kSettings?.injectHops ?? 1,
-          }
-        );
-        if (selected) {
-          systemParts.push(selected.text);
-          knowledgeClaimIds = selected.claimIds;
-          cognition = contributeCapabilityOutput(cognition, {
-            capabilityId: "knowledge_retrieval",
-            status: "produced",
-            representations: [{
-              capabilityId: "knowledge_retrieval",
-              kind: "canonical_knowledge",
-              ids: selected.canonicalIds,
-              count: selected.canonicalIds.length,
-              characters: selected.text.length,
-            }],
-          });
-          if (
-            selected.contradictionIds.length > 0 &&
-            !isCapabilityActive(cognition, "provenance_lineage")
-          ) {
-            cognition = expandCapabilities(cognition, {
-              trigger: "contradiction",
-              reason: "retrieved canonical knowledge contains a contradiction",
-              fromCapabilityId: "knowledge_retrieval",
-              capabilityIds: ["provenance_lineage"],
-            });
-          }
-        } else {
-          cognition = contributeCapabilityOutput(cognition, {
-            capabilityId: "knowledge_retrieval",
-            status: "empty",
-            representations: [],
-          });
+    cognition = await contributeLongTermMemory(cognition, {
+      memory: this.longTerm,
+      prompt,
+      settings: this.config.longTermSettings,
+    });
+
+    const messages = buildModelMessages(cognition, {
+      prompt,
+      systemPrompt: this.config.systemPrompt,
+      interactionMode,
+      tools: this.tools,
+      useTools: useToolLoop,
+      toolsSystemAddendum: TOOLS_SYSTEM_ADDENDUM,
+      formatTools: formatToolsForPrompt,
+    });
+    const compression = capabilityValue<CompressionValue>(cognition, "history_compression");
+    const retrieval = capabilityValue<ContextRetrievalValue>(cognition, "context_retrieval");
+    const longTermBlock = capabilityValue<LongTermMemoryValue>(cognition, "long_term_memory")?.block ?? null;
+    const retrievalBlock = retrieval?.block ?? null;
+    const retrievalMeta: OrchestratorResult["retrieval"] = retrieval
+      ? {
+          chunkCount: retrieval.chunks.length,
+          sources: retrieval.chunks.map((chunk) => chunk.source),
+          chars: retrieval.chunks.reduce((count, chunk) => count + chunk.text.length, 0),
         }
-      } catch (error) {
-        cognition = recordCapabilityDegradation(cognition, {
-          capabilityId: "knowledge_retrieval",
-          reason: error instanceof Error ? error.message : String(error),
-          fallback: "continue with bounded session/workspace context and the selected model",
-        });
-      }
-    }
+      : undefined;
+    const summary = compression?.summary ?? null;
+    const recentMessages = compression?.recentMessages ?? history;
+    const compressed = compression?.compressed ?? false;
 
-    if (this.knowledge && isCapabilityActive(cognition, "provenance_lineage")) {
-      try {
-        const lineage = await hydrateKnowledgeLineageContext(
-          this.knowledge,
-          knowledgeClaimIds,
-          cognition.limits.knowledgeChars
-        );
-        if (lineage.text) systemParts.push(lineage.text);
-        cognition = contributeCapabilityOutput(cognition, {
-          capabilityId: "provenance_lineage",
-          status: lineage.claimIds.length > 0 ? "produced" : "empty",
-          representations: lineage.claimIds.length > 0
-            ? [
-                {
-                  capabilityId: "provenance_lineage",
-                  kind: "claim_lineage",
-                  ids: lineage.claimIds,
-                  count: lineage.claimIds.length,
-                  characters: lineage.text?.length,
-                  detail: `${lineage.eventIds.length} events; ${lineage.experienceIds.length} source experiences`,
-                },
-                ...(lineage.experienceIds.length > 0
-                  ? [{
-                      capabilityId: "provenance_lineage" as const,
-                      kind: "source_experience_references",
-                      ids: lineage.experienceIds,
-                      count: lineage.experienceIds.length,
-                    }]
-                  : []),
-              ]
-            : [],
-        });
-      } catch (error) {
-        cognition = recordCapabilityDegradation(cognition, {
-          capabilityId: "provenance_lineage",
-          reason: error instanceof Error ? error.message : String(error),
-          fallback: "retain canonical knowledge without claiming hydrated provenance",
-        });
-      }
+    if (deterministic) {
+      return this.finishDeterministicOperation({
+        prompt,
+        sourcePrompt,
+        deterministic,
+        routing,
+        policyDecision,
+        cognition,
+        experienceTrace,
+        history,
+        sessionId,
+        interactionMode,
+        proposalsEnabled,
+        options,
+        originalCount,
+        recentMessages,
+        summary,
+        compressed,
+        retrievalMeta,
+        retrievalBlock,
+        longTermBlock,
+        started,
+      });
     }
-
-    // Optional LTM auto-inject (3A flag; default off — full proactivity is 3B)
-    let longTermBlock: string | null = null;
-    const ltm = this.longTerm;
-    const ltmSettings = this.config.longTermSettings;
-    if (ltm && isCapabilityActive(cognition, "long_term_memory")) {
-      try {
-        const hits = await ltm.recall({
-          text: prompt,
-          limit: ltmSettings?.injectLimit ?? 5,
-        });
-        if (hits.length > 0) {
-          let block = hits
-            .map((f) =>
-              f.key ? `- [${f.key}] ${f.content}` : `- ${f.content}`
-            )
-            .join("\n");
-          const maxChars = ltmSettings?.injectMaxChars ?? 1_500;
-          if (block.length > maxChars) {
-            block = block.slice(0, Math.max(0, maxChars - 1)) + "…";
-          }
-          longTermBlock = block;
-        }
-        cognition = contributeCapabilityOutput(cognition, {
-          capabilityId: "long_term_memory",
-          status: hits.length > 0 ? "produced" : "empty",
-          representations: hits.map((fact) => ({
-            capabilityId: "long_term_memory",
-            kind: "memory_fact",
-            ids: [fact.id],
-            characters: fact.content.length,
-          })),
-        });
-      } catch (error) {
-        cognition = recordCapabilityDegradation(cognition, {
-          capabilityId: "long_term_memory",
-          reason: error instanceof Error ? error.message : String(error),
-          fallback: "continue without long-term memory",
-        });
-      }
-    }
-
-    // 3) Build messages
-    const messages: ChatMessage[] = [
-      { role: "system", content: systemParts.join("\n\n") },
-      ...(longTermBlock
-        ? [
-            {
-              role: "system" as const,
-              content: `Long-term memory (relevant facts):\n${longTermBlock}`,
-            },
-          ]
-        : []),
-      ...(retrievalBlock
-        ? [
-            {
-              role: "system" as const,
-              content: `Retrieved context:\n${retrievalBlock}`,
-            },
-          ]
-        : []),
-      ...(summary
-        ? [
-            {
-              role: "system" as const,
-              content: `Earlier in this session:\n${summary}`,
-            },
-          ]
-        : []),
-      ...recentMessages,
-      { role: "user", content: prompt },
-    ];
 
     const { client, modelName, provider } = this.resolveClient(
       choice,
@@ -812,105 +669,26 @@ export class Orchestrator {
     );
 
     if (useToolLoop && this.tools) {
-      let finalOutputExperienceId: string | undefined;
-      const loopResult = await runToolLoop(messages, {
-        maxSteps: this.config.toolsMaxSteps,
-        workspaceRoot: this.config.workspaceRoot,
+      const activated = await contributeToolResponse({
+        client,
+        model: modelName,
+        provider,
+        messages,
+        sessionId,
+        cognition,
+        experiences: experienceTrace,
         registry: this.tools,
-        complete: async (msgs, tools) => {
-          const response = await client.complete({
-            messages: msgs,
-            model: modelName,
-            tools: toModelToolSchemas(tools),
-          });
-          return {
-            text: response.content,
-            toolCalls: response.toolCalls,
-          };
-        },
-        onModelOutput: async (output) => {
-          if (!output.text) return;
-          const parent =
-            experienceTrace.toolResults.at(-1) ?? experienceTrace.input;
-          const record = await this.recordExperience({
-            kind: "assistant_output",
-            sessionId,
-            content: output.text,
-            source: { type: "model", ref: `${provider}:${modelName}` },
-            parentExperienceIds: parent ? [parent] : undefined,
-            metadata: {
-              model: modelName,
-              provider,
-              intermediate: Boolean(output.toolCalls?.length),
-              historyMessage: !output.toolCalls?.length,
-            },
-          });
-          if (record) {
-            experienceTrace.modelOutputs.push(record.id);
-            if (!output.toolCalls?.length) {
-              finalOutputExperienceId = record.id;
-            }
-          }
-          return record?.id;
-        },
-        onToolCall: async (call, modelOutputExperienceId) => {
-          const parent = modelOutputExperienceId ?? experienceTrace.input;
-          const record = await this.recordExperience({
-            kind: "tool_call",
-            sessionId,
-            content: JSON.stringify({ name: call.name, args: call.args }),
-            source: { type: "model", ref: call.id },
-            parentExperienceIds: parent ? [parent] : undefined,
-            metadata: { tool: call.name, callId: call.id },
-          });
-          if (record) experienceTrace.toolCalls.push(record.id);
-          return record?.id;
-        },
-        onToolResult: async (step, toolCallExperienceId) => {
-          const record = await this.recordExperience({
-            kind: "tool_result",
-            sessionId,
-            content: step.result.output,
-            source: { type: "tool", ref: step.call.name },
-            parentExperienceIds: toolCallExperienceId
-              ? [toolCallExperienceId]
-              : undefined,
-            metadata: {
-              tool: step.call.name,
-              callId: step.call.id,
-              ok: step.result.ok,
-              error: step.result.error,
-              durationMs: step.durationMs,
-            },
-          });
-          if (record) experienceTrace.toolResults.push(record.id);
-          return record?.id;
-        },
+        workspaceRoot: this.config.workspaceRoot,
+        maxSteps: this.config.toolsMaxSteps,
+        recordExperience: (record) => this.recordExperience(record),
       });
-
+      cognition = activated.cognition;
+      const loopResult = {
+        finalText: activated.reply,
+        steps: activated.toolSteps ?? [],
+        hitMaxSteps: activated.toolsHitMaxSteps === true,
+      };
       const reply = loopResult.finalText;
-      if (!finalOutputExperienceId) {
-        const parent =
-          experienceTrace.toolResults.at(-1) ?? experienceTrace.input;
-        const record = await this.recordExperience({
-          kind: "assistant_output",
-          sessionId,
-          content: reply,
-          source: { type: "model", ref: `${provider}:${modelName}` },
-          parentExperienceIds: parent ? [parent] : undefined,
-          metadata: {
-            model: modelName,
-            provider,
-            historyMessage: true,
-            maxStepsOutcome: loopResult.hitMaxSteps,
-          },
-        });
-        if (record) {
-          experienceTrace.modelOutputs.push(record.id);
-          finalOutputExperienceId = record.id;
-        }
-      }
-      experienceTrace.output = finalOutputExperienceId;
       const tokens =
         estimateTokensFromText(prompt) + estimateTokensFromText(reply);
       // Tool-loop usage often missing — estimate from prompt+reply
@@ -929,22 +707,6 @@ export class Orchestrator {
           },
         });
       }
-
-      cognition = contributeToolOutputs(
-        cognition,
-        loopResult.steps.map((step, index) => ({
-          name: step.call.name,
-          ok: step.result.ok,
-          characters: step.result.output.length,
-          experienceId: experienceTrace.toolResults[index],
-        }))
-      );
-      cognition = contributeModelOutput(cognition, {
-        provider,
-        model: modelName,
-        experienceId: finalOutputExperienceId,
-        characters: reply.length,
-      });
 
       const result: OrchestratorResult = {
         reply,
@@ -980,17 +742,19 @@ export class Orchestrator {
         ],
         this.config.knowledgeSettings?.ingestMaxMessages ?? 12
       );
-      await this.attachCapture(
+      cognition = await this.attachCapture(
         result,
         history,
-        prompt,
+        sourcePrompt,
         reply,
         sessionId,
         interactionMode,
         proposalsEnabled,
+        cognition,
         options,
         sourceExperienceIds
       );
+      result.activation = cognition.trace;
       this.emitRequestEvent(result, {
         sessionId,
         started,
@@ -1000,30 +764,23 @@ export class Orchestrator {
       return result;
     }
 
-    // Phase A / tools off: single completion
-    const response = await client.complete({
-      messages,
+    const activated = await contributeModelResponse({
+      client,
       model: modelName,
-    });
-
-    const outputExperience = await this.recordExperience({
-      kind: "assistant_output",
+      provider,
+      messages,
       sessionId,
-      content: response.content,
-      source: { type: "model", ref: `${response.provider}:${response.model}` },
-      parentExperienceIds: experienceTrace.input
-        ? [experienceTrace.input]
-        : undefined,
-      metadata: {
-        model: response.model,
-        provider: response.provider,
-        usage: response.usage,
-      },
+      cognition,
+      experiences: experienceTrace,
+      recordExperience: (record) => this.recordExperience(record),
     });
-    if (outputExperience) {
-      experienceTrace.modelOutputs.push(outputExperience.id);
-      experienceTrace.output = outputExperience.id;
-    }
+    cognition = activated.cognition;
+    const response = {
+      content: activated.reply,
+      model: activated.model,
+      provider: activated.provider,
+      usage: activated.usage,
+    };
 
     const tokens =
       response.usage?.totalTokens ??
@@ -1031,13 +788,6 @@ export class Orchestrator {
         estimateTokensFromText(response.content);
     this.policy.recordUsage(policyDecision.tier, {
       tokens,
-    });
-
-    cognition = contributeModelOutput(cognition, {
-      provider: response.provider,
-      model: response.model,
-      experienceId: outputExperience?.id,
-      characters: response.content.length,
     });
 
     const result: OrchestratorResult = {
@@ -1065,25 +815,134 @@ export class Orchestrator {
     };
     const sourceExperienceIds = await this.sourceExperienceIds(
       sessionId,
-      [experienceTrace.input, experienceTrace.output],
+      [
+        experienceTrace.input,
+        ...experienceTrace.modelOutputs,
+        experienceTrace.output,
+      ],
       this.config.knowledgeSettings?.ingestMaxMessages ?? 12
     );
-    await this.attachCapture(
+    cognition = await this.attachCapture(
       result,
       history,
-      prompt,
+      sourcePrompt,
       response.content,
       sessionId,
       interactionMode,
       proposalsEnabled,
+      cognition,
       options,
       sourceExperienceIds
     );
+    result.activation = cognition.trace;
     this.emitRequestEvent(result, {
       sessionId,
       started,
       tokens,
       prompt,
+    });
+    return result;
+  }
+
+  private async finishDeterministicOperation(input: {
+    prompt: string;
+    sourcePrompt: string;
+    deterministic: DeterministicResponseValue;
+    routing: RoutingDecision;
+    policyDecision: PolicyDecision;
+    cognition: CognitiveOperationContext;
+    experienceTrace: NonNullable<OrchestratorResult["experiences"]>;
+    history: ChatMessage[];
+    sessionId?: string;
+    interactionMode: InteractionMode;
+    proposalsEnabled: boolean;
+    options?: OrchestratorHandleOptions;
+    originalCount: number;
+    recentMessages: ChatMessage[];
+    summary: string | null;
+    compressed: boolean;
+    retrievalMeta: OrchestratorResult["retrieval"];
+    retrievalBlock: string | null;
+    longTermBlock: string | null;
+    started: number;
+  }): Promise<OrchestratorResult> {
+    const output = await this.recordExperience({
+      kind: "assistant_output",
+      sessionId: input.sessionId,
+      content: input.deterministic.reply,
+      source: { type: "deterministic", ref: input.deterministic.mechanism },
+      parentExperienceIds: input.experienceTrace.input
+        ? [input.experienceTrace.input]
+        : undefined,
+      metadata: {
+        mechanism: input.deterministic.mechanism,
+        historyMessage: true,
+      },
+    });
+    if (output) {
+      input.experienceTrace.deterministicOutputs.push(output.id);
+      input.experienceTrace.output = output.id;
+    }
+    let cognition = contributeCapabilityOutput(input.cognition, {
+      capabilityId: "deterministic_processing",
+      status: "produced",
+      value: input.deterministic,
+      representations: [{
+        capabilityId: "deterministic_processing",
+        kind: "deterministic_response",
+        ids: output ? [output.id] : undefined,
+        characters: input.deterministic.reply.length,
+        detail: input.deterministic.mechanism,
+      }],
+    });
+    const result: OrchestratorResult = {
+      reply: input.deterministic.reply,
+      routing: input.routing,
+      model: `deterministic:${input.deterministic.mechanism}`,
+      provider: "deterministic",
+      policy: input.policyDecision,
+      compression: {
+        compressed: input.compressed,
+        summary: input.summary,
+        recentCount: input.recentMessages.length,
+        originalCount: input.originalCount,
+      },
+      retrieval: input.retrievalMeta,
+      suggestions: await this.buildSuggestions(
+        input.prompt,
+        input.deterministic.reply,
+        input.retrievalBlock,
+        input.longTermBlock
+      ),
+      experiences: this.experiences ? input.experienceTrace : undefined,
+      activation: cognition.trace,
+    };
+    const sourceExperienceIds = await this.sourceExperienceIds(
+      input.sessionId,
+      [
+        input.experienceTrace.input,
+        ...input.experienceTrace.modelOutputs,
+        input.experienceTrace.output,
+      ],
+      this.config.knowledgeSettings?.ingestMaxMessages ?? 12
+    );
+    cognition = await this.attachCapture(
+      result,
+      input.history,
+      input.sourcePrompt,
+      input.deterministic.reply,
+      input.sessionId,
+      input.interactionMode,
+      input.proposalsEnabled,
+      cognition,
+      input.options,
+      sourceExperienceIds
+    );
+    result.activation = cognition.trace;
+    this.emitRequestEvent(result, {
+      sessionId: input.sessionId,
+      started: input.started,
+      prompt: input.prompt,
     });
     return result;
   }
@@ -1100,9 +959,10 @@ export class Orchestrator {
     sessionId: string | undefined,
     interactionMode: InteractionMode,
     proposalsEnabled: boolean,
+    cognition: CognitiveOperationContext,
     options?: OrchestratorHandleOptions,
     sourceExperienceIds: string[] = []
-  ): Promise<void> {
+  ): Promise<CognitiveOperationContext> {
     result.interactionMode = interactionMode;
     result.proposalsEnabled = proposalsEnabled;
     const sid = sessionId ?? "default";
@@ -1111,7 +971,7 @@ export class Orchestrator {
     if (!this.knowledge || !kSettings) {
       result.capture = { ran: false, reason: "knowledge store closed" };
       result.pendingProposalCount = 0;
-      return;
+      return cognition;
     }
 
     const force = options?.forceCapture === true;
@@ -1149,7 +1009,15 @@ export class Orchestrator {
               : "capture disabled",
       };
       await reportPending();
-      return;
+      return cognition;
+    }
+    if (!isCapabilityActive(cognition, "knowledge_capture")) {
+      result.capture = {
+        ran: false,
+        reason: "bounded activation skipped semantic capture for this input",
+      };
+      await reportPending();
+      return cognition;
     }
 
     try {
@@ -1166,6 +1034,7 @@ export class Orchestrator {
               client: this.local,
               model: kSettings.captureModel ?? this.config.ollamaModel,
             };
+      let captureModelExperienceId: string | undefined;
       const turnId = result.experiences?.input ?? String(Date.now());
       const cap = await captureConversationSegment({
         store: this.knowledge,
@@ -1195,14 +1064,66 @@ export class Orchestrator {
               return response.content;
             }
           : undefined,
+        onModelOutput: captureTarget
+          ? async (output) => {
+              const record = await this.recordExperience({
+                kind: "assistant_output",
+                sessionId,
+                content: output,
+                source: {
+                  type: "model",
+                  ref: `local:${captureTarget.model}`,
+                },
+                parentExperienceIds: sourceExperienceIds,
+                metadata: {
+                  model: captureTarget.model,
+                  provider: "local",
+                  semanticCapture: true,
+                  historyMessage: false,
+                },
+              });
+              if (record) {
+                captureModelExperienceId = record.id;
+                result.experiences?.modelOutputs.push(record.id);
+              }
+              return record?.id;
+            }
+          : undefined,
       });
       result.proposals = cap.summaries as KnowledgeProposalSummary[];
       result.capture = {
         ran: cap.proposals.length > 0,
         reason: cap.reason,
         mode: cap.mode,
+        eventId: cap.eventId || undefined,
+        sourceExperienceIds: cap.sourceExperienceIds,
       };
       await reportPending();
+      if (captureModelExperienceId) {
+        cognition = contributeModelOutput(cognition, {
+          provider: "local",
+          model: captureTarget?.model ?? this.config.ollamaModel,
+          experienceId: captureModelExperienceId,
+          characters:
+            (await this.experiences?.getExperience(captureModelExperienceId))
+              ?.content?.length ?? 0,
+        });
+      }
+      return contributeCapabilityOutput(cognition, {
+        capabilityId: "knowledge_capture",
+        status: cap.proposals.length > 0 ? "produced" : "empty",
+        value: cap,
+        detail: cap.reason,
+        representations: cap.proposals.length > 0
+          ? [{
+              capabilityId: "knowledge_capture",
+              kind: "pending_knowledge_proposals",
+              ids: cap.proposals.map((proposal) => proposal.id),
+              count: cap.proposals.length,
+              detail: `${cap.mode}; event=${cap.eventId}`,
+            }]
+          : [],
+      });
     } catch (err) {
       // Never break the main reply
       result.capture = {
@@ -1210,6 +1131,11 @@ export class Orchestrator {
         reason: err instanceof Error ? err.message : String(err),
       };
       await reportPending();
+      return recordCapabilityDegradation(cognition, {
+        capabilityId: "knowledge_capture",
+        reason: err instanceof Error ? err.message : String(err),
+        fallback: "retain durable experiences and the response; create no semantic proposal",
+      });
     }
   }
 

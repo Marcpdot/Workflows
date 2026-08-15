@@ -182,7 +182,7 @@ export interface OrchestratorResult {
   reply: string;
   routing: RoutingDecision;
   model: string;
-  provider: ModelChoice;
+  provider: ModelChoice | "deterministic";
   usage?: ModelResponse["usage"];
   /** Milestone 7 policy decision (reason + budget) */
   policy?: PolicyDecision;
@@ -217,11 +217,14 @@ export interface OrchestratorResult {
     ran: boolean;
     reason?: string;
     mode?: string;
+    eventId?: string;
+    sourceExperienceIds?: string[];
   };
   /** Durable source identities created while processing this interaction. */
   experiences?: {
     input?: string;
     modelOutputs: string[];
+    deterministicOutputs: string[];
     toolCalls: string[];
     toolResults: string[];
     output?: string;

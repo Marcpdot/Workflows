@@ -202,6 +202,7 @@ export class MessageStore {
     sessionId: string,
     message: ChatMessage,
     context?: {
+      experienceKind?: ExperienceKind;
       workspaceId?: string;
       source?: { type: string; ref?: string };
       parentExperienceIds?: string[];
@@ -224,7 +225,7 @@ export class MessageStore {
     try {
       const insertMessage = this.db.transaction(() => {
         const experience = this.insertExperience({
-          kind: roleToExperienceKind(message.role),
+          kind: context?.experienceKind ?? roleToExperienceKind(message.role),
           sessionId,
           workspaceId: context?.workspaceId,
           content: message.content,
