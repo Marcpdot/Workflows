@@ -4,6 +4,9 @@ export type {
   DependentClaim,
   ExtractionResult,
   KnowledgeAlias,
+  KnowledgeBackgroundWork,
+  KnowledgeBackgroundWorkKind,
+  KnowledgeBackgroundWorkStatus,
   KnowledgeDerivation,
   KnowledgeEdge,
   KnowledgeEpistemicStatus,
@@ -23,6 +26,13 @@ export type {
   ProjectLinkRelation,
   ProjectStatus,
 } from "./types.js";
+export {
+  runKnowledgeBackgroundPass,
+  type BackgroundExperienceSource,
+  type BackgroundWorkPersistence,
+  type KnowledgeBackgroundLimits,
+  type KnowledgeBackgroundPassResult,
+} from "./backgroundCognition.js";
 export {
   validateCanonicalGraph,
   type CanonicalGraphValidation,
@@ -70,6 +80,10 @@ export {
   PostgresCanonicalKnowledgeRepository,
   type PostgresCanonicalRepositoryConfig,
 } from "./postgres/repository.js";
+export {
+  createPostgresBackgroundWorkRepository,
+  PostgresBackgroundWorkRepository,
+} from "./postgres/backgroundRepository.js";
 export {
   createPostgresVectorRepository,
   KNOWLEDGE_VECTOR_DIMENSION,

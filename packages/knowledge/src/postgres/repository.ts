@@ -6,6 +6,9 @@ import type {
   ContradictionPair,
   DependentClaim,
   KnowledgeAlias,
+  KnowledgeBackgroundWork,
+  KnowledgeBackgroundWorkKind,
+  KnowledgeBackgroundWorkStatus,
   KnowledgeDerivation,
   KnowledgeEdge,
   KnowledgeEpistemicStatus,
@@ -262,16 +265,67 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
 
   async invalidateEvent(id: string, reason: string): Promise<KnowledgeEvent> {
     if (!reason.trim()) throw new Error("invalidateEvent: reason is required");
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query(
+        `UPDATE knowledge_events
+         SET invalidated_at = COALESCE(invalidated_at, now()),
+             invalidation_reason = $2
+         WHERE id = $1
+         RETURNING *`,
+        [id, reason.trim()]
+      );
+      if (!result.rows[0]) throw new Error(`invalidateEvent: unknown id ${id}`);
+      await this.enqueueBackgroundWorkWith(client, {
+        kind: "claim_reconsideration",
+        workKey: `invalidated-event:${id}`,
+        sourceEventId: id,
+        payload: { trigger: "source_invalidation", reason: reason.trim() },
+      });
+      await client.query("COMMIT");
+      return event(result.rows[0]);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async enqueueBackgroundWork(input: {
+    kind: KnowledgeBackgroundWorkKind;
+    workKey: string;
+    sourceExperienceId?: string;
+    sourceEventId?: string;
+    targetProposalId?: string;
+    targetNodeId?: string;
+    payload?: Record<string, unknown>;
+    status?: Extract<KnowledgeBackgroundWorkStatus, "pending" | "waiting">;
+  }): Promise<{ work: KnowledgeBackgroundWork; created: boolean }> {
+    return this.enqueueBackgroundWorkWith(this.pool, input);
+  }
+
+  async listBackgroundWork(filter?: {
+    kind?: KnowledgeBackgroundWorkKind;
+    status?: KnowledgeBackgroundWorkStatus;
+    limit?: number;
+    newestFirst?: boolean;
+  }): Promise<KnowledgeBackgroundWork[]> {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    if (filter?.kind) { params.push(filter.kind); clauses.push(`kind = $${params.length}`); }
+    if (filter?.status) { params.push(filter.status); clauses.push(`status = $${params.length}`); }
+    params.push(Math.min(Math.max(Math.floor(filter?.limit ?? 100), 1), 1_000));
+    const direction = filter?.newestFirst ? "DESC" : "ASC";
     const result = await this.pool.query(
-      `UPDATE knowledge_events
-       SET invalidated_at = COALESCE(invalidated_at, now()),
-           invalidation_reason = $2
-       WHERE id = $1
-       RETURNING *`,
-      [id, reason.trim()]
+      `SELECT * FROM knowledge_background_work
+       ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
+       ORDER BY created_at ${direction}, id ${direction}
+       LIMIT $${params.length}`,
+      params
     );
-    if (!result.rows[0]) throw new Error(`invalidateEvent: unknown id ${id}`);
-    return event(result.rows[0]);
+    return result.rows.map(backgroundWork);
   }
 
   async addProposals(eventId: string, items: Array<{ kind: KnowledgeProposal["kind"]; payload: Record<string, unknown> }>): Promise<KnowledgeProposal[]> {
@@ -286,7 +340,18 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
            VALUES ($1, $2, $3, $4::jsonb) RETURNING *`,
           [randomUUID(), eventId, item.kind, JSON.stringify(item.payload)]
         );
-        output.push(proposal(result.rows[0]));
+        const created = proposal(result.rows[0]);
+        output.push(created);
+        if (created.kind === "representation_gap") {
+          await this.enqueueBackgroundWorkWith(client, {
+            kind: "representation_gap_retry",
+            workKey: `representation-gap:${created.id}`,
+            sourceEventId: eventId,
+            targetProposalId: created.id,
+            payload: { trigger: "new_gap" },
+            status: "waiting",
+          });
+        }
       }
       await client.query("COMMIT");
       return output;
@@ -322,6 +387,11 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
       params
     );
     return result.rows.map(proposal);
+  }
+
+  async getProposal(id: string): Promise<KnowledgeProposal | null> {
+    const result = await this.pool.query("SELECT * FROM knowledge_proposals WHERE id = $1", [id]);
+    return result.rows[0] ? proposal(result.rows[0]) : null;
   }
 
   async acceptProposal(id: string, edits?: Record<string, unknown>): Promise<void> {
@@ -686,11 +756,22 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     const normalized = normalizeLabel(input.aliasLabel); if (!normalized) throw new Error("addAlias: aliasLabel is required");
     const canonical = await this.getNode(input.canonicalNodeId); if (!canonical) throw new Error(`addAlias: unknown node ${input.canonicalNodeId}`); if (canonical.status === "rejected") throw new Error("addAlias: canonical node is rejected");
     const existing = await this.getAlias(this.pool, normalized); if (existing) { if (existing.canonicalNodeId === canonical.id) return existing; throw new Error(`addAlias: alias "${normalized}" already points to ${existing.canonicalNodeId}`); }
-    const result = await this.pool.query(
-      `INSERT INTO knowledge_aliases (id, alias_label, normalized_alias_label, canonical_node_id)
-       VALUES ($1, $2, $2, $3) RETURNING *`, [randomUUID(), normalized, canonical.id]
-    );
-    return alias(result.rows[0]);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query(
+        `INSERT INTO knowledge_aliases (id, alias_label, normalized_alias_label, canonical_node_id)
+         VALUES ($1, $2, $2, $3) RETURNING *`, [randomUUID(), normalized, canonical.id]
+      );
+      await this.wakeRepresentationGaps(client, normalized, "new_alias");
+      await client.query("COMMIT");
+      return alias(result.rows[0]);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async resolveCanonical(input: { label: string; type?: KnowledgeNodeType }): Promise<KnowledgeNode | null> {
@@ -837,7 +918,23 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
       [item.id, item.fromNodeId, item.relation, item.toNodeId, item.confidence ?? null, item.sourceEventId ?? null, item.status, item.createdAt]
     );
     const created = edge(result.rows[0]);
-    if (created.status === "accepted") await this.queueProjection(db, created.id, "graph", "upsert");
+    if (created.status === "accepted") {
+      await this.queueProjection(db, created.id, "graph", "upsert");
+      if (created.relation === "contradicts" || created.relation === "supersedes") {
+        await this.enqueueBackgroundWorkWith(db, {
+          kind: "claim_reconsideration",
+          workKey: `${created.relation}:${created.id}`,
+          sourceEventId: created.sourceEventId,
+          targetNodeId: created.relation === "supersedes" ? created.toNodeId : created.fromNodeId,
+          payload: {
+            trigger: created.relation === "contradicts" ? "contradiction" : "supersession",
+            edgeId: created.id,
+            fromNodeId: created.fromNodeId,
+            toNodeId: created.toNodeId,
+          },
+        });
+      }
+    }
     return created;
   }
 
@@ -846,6 +943,66 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
       `INSERT INTO knowledge_projection_outbox (canonical_id, projection, operation)
        VALUES ($1, $2, $3)`,
       [canonicalId, projection, operation]
+    );
+  }
+
+  private async enqueueBackgroundWorkWith(db: Queryable, input: {
+    kind: KnowledgeBackgroundWorkKind;
+    workKey: string;
+    sourceExperienceId?: string;
+    sourceEventId?: string;
+    targetProposalId?: string;
+    targetNodeId?: string;
+    payload?: Record<string, unknown>;
+    status?: Extract<KnowledgeBackgroundWorkStatus, "pending" | "waiting">;
+  }): Promise<{ work: KnowledgeBackgroundWork; created: boolean }> {
+    if (!input.workKey?.trim()) throw new Error("enqueueBackgroundWork: workKey is required");
+    const inserted = await db.query(
+      `INSERT INTO knowledge_background_work
+         (kind, work_key, source_experience_id, source_event_id,
+          target_proposal_id, target_node_id, payload, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+       ON CONFLICT (work_key) DO NOTHING
+       RETURNING *`,
+      [
+        input.kind,
+        input.workKey.trim(),
+        input.sourceExperienceId ?? null,
+        input.sourceEventId ?? null,
+        input.targetProposalId ?? null,
+        input.targetNodeId ?? null,
+        JSON.stringify(input.payload ?? {}),
+        input.status ?? "pending",
+      ]
+    );
+    if (inserted.rows[0]) return { work: backgroundWork(inserted.rows[0]), created: true };
+    const existing = await db.query("SELECT * FROM knowledge_background_work WHERE work_key = $1", [input.workKey.trim()]);
+    if (!existing.rows[0]) throw new Error(`enqueueBackgroundWork: could not read ${input.workKey}`);
+    return { work: backgroundWork(existing.rows[0]), created: false };
+  }
+
+  private async wakeRepresentationGaps(
+    db: Queryable,
+    normalizedUnresolved: string,
+    trigger: "new_alias" | "new_canonical_identity"
+  ): Promise<void> {
+    if (!normalizedUnresolved) return;
+    await db.query(
+      `UPDATE knowledge_background_work AS work
+       SET status = 'pending', available_at = now(), updated_at = now(),
+           payload = work.payload || jsonb_build_object('trigger', $2::text),
+           last_error = NULL
+       FROM knowledge_proposals AS proposal
+       WHERE work.target_proposal_id = proposal.id
+         AND work.kind = 'representation_gap_retry'
+         AND work.status = 'waiting'
+         AND proposal.kind = 'representation_gap'
+         AND proposal.status = 'pending'
+         AND COALESCE(
+           proposal.payload->>'normalizedUnresolved',
+           lower(trim(proposal.payload->>'unresolved'))
+         ) = $1`,
+      [normalizedUnresolved, trigger]
     );
   }
 
@@ -916,6 +1073,7 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     const created = node(result.rows[0]);
     await this.queueProjection(db, created.id, "graph", "upsert");
     await this.queueProjection(db, created.id, "vector", "upsert");
+    await this.wakeRepresentationGaps(db, normalizeLabel(created.label), "new_canonical_identity");
     if (recordEncounter) await this.insertEncounter(db, created.id, eventId, payload, labelValue);
     return created;
   }
@@ -1092,6 +1250,27 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
       },
     });
   }
+}
+
+function backgroundWork(row: Record<string, unknown>): KnowledgeBackgroundWork {
+  return {
+    id: String(row.id),
+    kind: row.kind as KnowledgeBackgroundWorkKind,
+    workKey: String(row.work_key),
+    sourceExperienceId: row.source_experience_id == null ? undefined : String(row.source_experience_id),
+    sourceEventId: row.source_event_id == null ? undefined : String(row.source_event_id),
+    targetProposalId: row.target_proposal_id == null ? undefined : String(row.target_proposal_id),
+    targetNodeId: row.target_node_id == null ? undefined : String(row.target_node_id),
+    payload: object(row.payload),
+    status: row.status as KnowledgeBackgroundWorkStatus,
+    attemptCount: Number(row.attempt_count),
+    availableAt: millis(row.available_at as Date),
+    completedAt: row.completed_at == null ? undefined : millis(row.completed_at as Date),
+    escalatedAt: row.escalated_at == null ? undefined : millis(row.escalated_at as Date),
+    lastError: row.last_error == null ? undefined : String(row.last_error),
+    createdAt: millis(row.created_at as Date),
+    updatedAt: millis(row.updated_at as Date),
+  };
 }
 
 export function createPostgresCanonicalKnowledgeRepository(config: PostgresCanonicalRepositoryConfig): CanonicalKnowledgeRepository {

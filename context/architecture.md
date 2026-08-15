@@ -43,7 +43,7 @@ See [packaging.md](packaging.md) and [milestones.md](milestones.md).
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** `packages/orchestrator/src/orchestrator.ts`  
+**Source:** `packages/orchestrator/src/orchestrator.ts`; PR #33 WP6
 
 Typical `handle()` flow: resolve available workspace/session metadata (callers) → persist the raw user experience → derive a bounded per-operation capability context → activate only justified information, transformations, tools, and models → let package-owned contributor functions append first-class operation values → select an already-produced deterministic result or invoke the required model/tool capability → persist every output that can affect later cognition → **continuous conversation capture** with exact source experience IDs (pending proposals only, rate-limited) → observability emit. Full operation values remain private to the operation; the activation trace records only IDs, counts, budgets, decisions, and degradation metadata. Session history, compression, context/knowledge retrieval, lineage hydration, long-term memory, tools, capture, model tiers, and contextual representation acquisition remain independently owned capabilities rather than mandatory stages. A material unresolved referent can activate canonical/metadata inspection, one bounded tool, or a deterministic clarification response; its durable knowledge proposal/event state closes and becomes reusable without making the orchestrator or activation primitives own identity reasoning. The active set may expand only for a concrete missing dependency or contradiction and within explicit depth/count bounds. Pipeline planner can use **structured** plan JSON (M10) without changing raw chat.
 
@@ -52,3 +52,25 @@ Knowledge path (M12+): tools in the loop; optional neighborhood/project-status i
 **Reason:** Capability contracts plus operation-local values make coordination inspectable without introducing an attention manager or another central intelligence. `Orchestrator.handle()` is the compatibility boundary and failure/observability shell; package-owned contributors perform the selected work. A complete deterministic result can finish an operation without a response-model call, while tools and models remain replaceable resources. Activation decisions expose WHAT participated, HOW it was processed, and HOW MUCH budget was allowed without logging private input, full capability values, or hidden model reasoning.
 
 **Rejected alternatives:** an `AttentionService`/manager, a larger cognitive controller in the orchestrator, an always-on fixed pipeline, unbounded recursive expansion, or learned routing before deterministic activation has produced outcome evidence.
+
+## Background cognition
+
+**Status:** active
+**Evidence:** confirmed
+**Source:** PR #33 WP6
+**Revisit when:** a concrete cross-package background capability cannot be expressed through subsystem-owned persistent state and finite passes
+
+Background cognition is invoked as a finite, bounded pass and then exits. Pending
+semantic consolidation, representation retry, and claim reconsideration are
+persisted as fixed knowledge-owned work references; durable experience remains
+the raw source. Graph/vector repair continues to use the existing projection
+outbox. A pass may persist one bounded escalation for later foreground or curator
+attention, but it does not launch recursive reasoning.
+
+**Reason:** Persistent local state makes retry, restart, and coordination emerge
+without keeping cognition active or introducing a scheduler-brain. Indexed
+pending state keeps an idle pass cheap, while stable work keys make retries
+convergent.
+
+**Rejected alternatives:** a universal cognition scheduler, process-local pending
+queues, polling all experiences or the whole graph, and an always-on model loop.

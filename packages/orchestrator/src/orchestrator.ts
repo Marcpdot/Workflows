@@ -219,10 +219,40 @@ export class Orchestrator {
     input: RecordExperienceInput
   ): Promise<ExperienceRecord | undefined> {
     if (!this.experiences) return undefined;
-    return this.experiences.recordExperience({
+    const record = await this.experiences.recordExperience({
       ...input,
       workspaceId: input.workspaceId ?? this.config.workspace?.id,
     });
+    if (
+      this.knowledge &&
+      ["user_message", "human_correction", "external_observation", "tool_result"].includes(record.kind)
+    ) {
+      try {
+        await this.knowledge.enqueueBackgroundWork({
+          kind: "semantic_consolidation",
+          workKey: `semantic-consolidation:${record.id}`,
+          sourceExperienceId: record.id,
+          payload: {
+            experienceKind: record.kind,
+            sessionId: record.sessionId,
+            workspaceId: record.workspaceId,
+            sourceType: record.source?.type,
+          },
+        });
+      } catch (error) {
+        // Background persistence must not delay or invalidate the foreground
+        // operation. The durable experience remains authoritative and can be
+        // explicitly re-enqueued after the dependency recovers.
+        this.observer.emit({
+          ts: new Date().toISOString(),
+          kind: "error",
+          sessionId: record.sessionId,
+          error: error instanceof Error ? error.message : String(error),
+          meta: { capability: "knowledge_background_enqueue", experienceId: record.id },
+        });
+      }
+    }
+    return record;
   }
 
   private async sourceExperienceIds(

@@ -19,6 +19,7 @@
     "knowledge:test:hybrid": "tsx scripts/integration-knowledge-hybrid.ts",
     "knowledge:test:agent": "tsx scripts/integration-knowledge-agent.ts",
     "knowledge:agent": "tsx scripts/run-knowledge-agent.ts",
+    "knowledge:background": "tsx scripts/run-background-cognition.ts",
     "knowledge:projections": "tsx scripts/reconcile-knowledge-projections.ts",
     "knowledge:projections:rebuild": "tsx scripts/reconcile-knowledge-projections.ts rebuild",
     "typecheck": "tsc --noEmit",

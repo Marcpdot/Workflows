@@ -172,6 +172,37 @@ export interface KnowledgeProposal {
   resolvedAt?: number;
 }
 
+/** Fixed knowledge-local work kinds; deliberately not a generic job model. */
+export type KnowledgeBackgroundWorkKind =
+  | "semantic_consolidation"
+  | "representation_gap_retry"
+  | "claim_reconsideration";
+
+export type KnowledgeBackgroundWorkStatus =
+  | "pending"
+  | "waiting"
+  | "completed"
+  | "escalated";
+
+export interface KnowledgeBackgroundWork {
+  id: string;
+  kind: KnowledgeBackgroundWorkKind;
+  workKey: string;
+  sourceExperienceId?: string;
+  sourceEventId?: string;
+  targetProposalId?: string;
+  targetNodeId?: string;
+  payload: Record<string, unknown>;
+  status: KnowledgeBackgroundWorkStatus;
+  attemptCount: number;
+  availableAt: number;
+  completedAt?: number;
+  escalatedAt?: number;
+  lastError?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 /** Project status summary for tools/CLI (M13) */
 export interface ProjectStatus {
   project: KnowledgeNode;
@@ -233,6 +264,26 @@ export interface KnowledgeStore {
 
   invalidateEvent(id: string, reason: string): Promise<KnowledgeEvent>;
 
+  /** Persist one fixed, idempotent unit for a finite knowledge background pass. */
+  enqueueBackgroundWork(input: {
+    kind: KnowledgeBackgroundWorkKind;
+    workKey: string;
+    sourceExperienceId?: string;
+    sourceEventId?: string;
+    targetProposalId?: string;
+    targetNodeId?: string;
+    payload?: Record<string, unknown>;
+    status?: Extract<KnowledgeBackgroundWorkStatus, "pending" | "waiting">;
+  }): Promise<{ work: KnowledgeBackgroundWork; created: boolean }>;
+
+  /** Bounded audit/read surface for background progress and escalation. */
+  listBackgroundWork(filter?: {
+    kind?: KnowledgeBackgroundWorkKind;
+    status?: KnowledgeBackgroundWorkStatus;
+    limit?: number;
+    newestFirst?: boolean;
+  }): Promise<KnowledgeBackgroundWork[]>;
+
   addProposals(
     eventId: string,
     items: Array<{
@@ -248,6 +299,8 @@ export interface KnowledgeStore {
     limit?: number;
     newestFirst?: boolean;
   }): Promise<KnowledgeProposal[]>;
+
+  getProposal(id: string): Promise<KnowledgeProposal | null>;
 
   acceptProposal(
     id: string,

@@ -32,6 +32,13 @@ contracts. PostgreSQL/PostGIS is the sole canonical knowledge runtime.
 - The current node types are an initial ontology, not a closed identity universe.
 - Accepted canonical writes append projection-outbox work in the same
   transaction. Graph/vector backends remain reconstructable and non-canonical.
+- Background cognition is knowledge-owned, persisted-state-driven, idempotent,
+  and finite-pass. Its narrow work ledger stores references/status only; raw
+  content remains in durable experiences and projection work remains in the
+  projection outbox. Idle passes must not scan all experience or canonical state.
+- Background reconsideration may resolve from strong evidence or persist one
+  bounded escalation. It must not auto-promote semantic truth, repeatedly prompt
+  a human, or launch recursive/model-driven cognition.
 - Semantic search runs in PostgreSQL/pgvector against a declared model/version;
   returned candidates never establish or merge canonical identity.
 - Embedding generation stays behind an explicit provider. Never invent vectors

@@ -389,6 +389,7 @@ async function persistGap(input: {
   });
   const payload: Record<string, unknown> = {
     unresolved: input.unresolved,
+    normalizedUnresolved: normalizeLabel(input.unresolved),
     uncertaintyKind: input.kind,
     candidates: input.candidates,
     confidence: input.confidence,
