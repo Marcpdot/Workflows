@@ -1,5 +1,6 @@
 /**
- * Main orchestrator: route → retrieve → compress → (tool loop | complete) → reply.
+ * Runtime compatibility boundary. Existing capabilities participate selectively
+ * through operation-local activation state; this class remains wiring.
  */
 
 import { route, type RouterConfig } from "./router.js";
@@ -42,11 +43,12 @@ import {
   type RecordExperienceInput,
 } from "@workflows/memory";
 import {
-  buildKnowledgeInjectBlock,
   captureConversationSegment,
   createKnowledgeStore,
   createKnowledgeTools,
+  hydrateKnowledgeLineageContext,
   listPendingForSession,
+  selectKnowledgeContext,
   type KnowledgeProposalSummary,
   type KnowledgeStore,
 } from "@workflows/knowledge";
@@ -81,6 +83,15 @@ import type {
   OrchestratorResult,
   RoutingDecision,
 } from "./types.js";
+import {
+  contributeCapabilityOutput,
+  contributeModelOutput,
+  contributeToolOutputs,
+  createRuntimeCognitiveContext,
+  expandCapabilities,
+  isCapabilityActive,
+  recordCapabilityDegradation,
+} from "./capabilityActivation.js";
 
 export class Orchestrator {
   private readonly config: OrchestratorConfig;
@@ -376,8 +387,8 @@ export class Orchestrator {
   }
 
   /**
-   * Full pipeline: route → retrieve → compress → model (optional tool loop).
-   * Tool loop runs only when toolsEnabled && tools registry is set.
+   * Compatibility request path with selectively activated existing capabilities.
+   * The larger interactive-loop rewrite remains WP4 work.
    */
   async handle(
     prompt: string,
@@ -460,32 +471,104 @@ export class Orchestrator {
 
     const history = options?.history ?? [];
     const originalCount = history.length;
+    let cognition = createRuntimeCognitiveContext({
+      currentInput: prompt,
+      inputExperienceId: inputExperience?.id,
+      sessionId,
+      workspaceId: this.config.workspace?.id,
+      state: {
+        historyCount: history.length,
+        compressionThreshold: this.config.compression.threshold,
+        compressionAvailable: !this.config.compression.disabled,
+        retrievalAvailable: !this.config.retrieval.disabled,
+        knowledgeAvailable:
+          this.knowledge != null &&
+          this.config.knowledgeSettings?.injectEnabled === true,
+        longTermMemoryAvailable:
+          this.longTerm != null &&
+          this.config.longTermSettings?.autoInject === true,
+        toolsAvailable:
+          this.config.toolsEnabled &&
+          this.tools != null &&
+          this.tools.list().length > 0,
+        selectedModel: choice,
+        localModelAvailable: true,
+        midModelAvailable: this.mid != null,
+        frontierModelAvailable: true,
+      },
+      limits: {
+        retrievalChars: this.config.retrieval.maxChars,
+        knowledgeChars: this.config.knowledgeSettings?.injectMaxChars ?? 2_000,
+        historyMessages: Math.max(history.length, 1),
+        toolSteps: this.config.toolsMaxSteps,
+      },
+    });
+    cognition = contributeCapabilityOutput(cognition, {
+      capabilityId: "deterministic_processing",
+      status: "produced",
+      detail: "routing and bounded activation signals",
+      representations: [],
+    });
+    if (isCapabilityActive(cognition, "session_history")) {
+      cognition = contributeCapabilityOutput(cognition, {
+        capabilityId: "session_history",
+        status: history.length > 0 ? "produced" : "empty",
+        representations:
+          history.length > 0
+            ? [
+                {
+                  capabilityId: "session_history",
+                  kind: "session_messages",
+                  count: history.length,
+                },
+              ]
+            : [],
+      });
+    }
 
     // 1) Retrieval
     let retrievalBlock: string | null = null;
     let retrievalMeta: OrchestratorResult["retrieval"];
 
-    if (!this.config.retrieval.disabled) {
-      const chunks = await retrieve(prompt, {
-        sessionMessages: history,
-        contextDir: this.config.retrieval.contextDir,
-        limit: this.config.retrieval.limit,
-        maxChars: this.config.retrieval.maxChars,
-        maxChunkChars: this.config.retrieval.maxChunkChars,
-        embeddings: this.config.embeddings
-          ? {
-              embedder: this.config.embeddings.embedder,
-              store: this.config.embeddings.store,
-              minScore: this.config.embeddings.minScore,
-            }
-          : undefined,
-      });
-      retrievalBlock = formatRetrievalBlock(chunks);
-      retrievalMeta = {
-        chunkCount: chunks.length,
-        sources: chunks.map((c) => c.source),
-        chars: chunks.reduce((n, c) => n + c.text.length, 0),
-      };
+    if (isCapabilityActive(cognition, "context_retrieval")) {
+      try {
+        const chunks = await retrieve(prompt, {
+          sessionMessages: history,
+          contextDir: this.config.retrieval.contextDir,
+          limit: this.config.retrieval.limit,
+          maxChars: this.config.retrieval.maxChars,
+          maxChunkChars: this.config.retrieval.maxChunkChars,
+          embeddings: this.config.embeddings
+            ? {
+                embedder: this.config.embeddings.embedder,
+                store: this.config.embeddings.store,
+                minScore: this.config.embeddings.minScore,
+              }
+            : undefined,
+        });
+        retrievalBlock = formatRetrievalBlock(chunks);
+        retrievalMeta = {
+          chunkCount: chunks.length,
+          sources: chunks.map((c) => c.source),
+          chars: chunks.reduce((n, c) => n + c.text.length, 0),
+        };
+        cognition = contributeCapabilityOutput(cognition, {
+          capabilityId: "context_retrieval",
+          status: chunks.length > 0 ? "produced" : "empty",
+          representations: chunks.map((chunk) => ({
+            capabilityId: "context_retrieval",
+            kind: chunk.source,
+            ids: [chunk.id],
+            characters: chunk.text.length,
+          })),
+        });
+      } catch (error) {
+        cognition = recordCapabilityDegradation(cognition, {
+          capabilityId: "context_retrieval",
+          reason: error instanceof Error ? error.message : String(error),
+          fallback: "continue without retrieved context",
+        });
+      }
     }
 
     // 2) Compression
@@ -493,7 +576,7 @@ export class Orchestrator {
     let summary: string | null = null;
     let compressed = false;
 
-    if (!this.config.compression.disabled && history.length > 0) {
+    if (isCapabilityActive(cognition, "history_compression")) {
       const summarizer = new LocalModelSummarizer(
         this.local,
         this.config.ollamaModel,
@@ -513,10 +596,27 @@ export class Orchestrator {
       recentMessages = result.recentMessages;
       summary = result.summary;
       compressed = result.compressed;
+      cognition = contributeCapabilityOutput(cognition, {
+        capabilityId: "history_compression",
+        status: result.compressed ? "produced" : "empty",
+        representations: result.summary
+          ? [
+              {
+                capabilityId: "history_compression",
+                kind: "history_summary",
+                count: history.length - result.recentMessages.length,
+                characters: result.summary.length,
+              },
+            ]
+          : [],
+      });
     }
 
     const useToolLoop =
-      this.config.toolsEnabled && this.tools != null && this.tools.list().length > 0;
+      isCapabilityActive(cognition, "tools") &&
+      this.config.toolsEnabled &&
+      this.tools != null &&
+      this.tools.list().length > 0;
 
     const systemParts = [this.config.systemPrompt];
     if (useToolLoop && this.tools) {
@@ -539,23 +639,98 @@ export class Orchestrator {
       );
     }
 
-    // M12: optional accepted knowledge neighborhood (default off)
+    // Accepted knowledge stays package-owned; activation only decides participation.
     const kSettings = this.config.knowledgeSettings;
-    if (this.knowledge && kSettings?.injectEnabled) {
+    let knowledgeClaimIds: string[] = [];
+    if (this.knowledge && isCapabilityActive(cognition, "knowledge_retrieval")) {
       try {
-        const kBlock = await buildKnowledgeInjectBlock(
+        const selected = await selectKnowledgeContext(
           this.knowledge,
           prompt,
           {
-            maxChars: kSettings.injectMaxChars,
-            hops: kSettings.injectHops,
+            maxChars: cognition.limits.knowledgeChars,
+            hops: kSettings?.injectHops ?? 1,
           }
         );
-        if (kBlock) {
-          systemParts.push(kBlock);
+        if (selected) {
+          systemParts.push(selected.text);
+          knowledgeClaimIds = selected.claimIds;
+          cognition = contributeCapabilityOutput(cognition, {
+            capabilityId: "knowledge_retrieval",
+            status: "produced",
+            representations: [{
+              capabilityId: "knowledge_retrieval",
+              kind: "canonical_knowledge",
+              ids: selected.canonicalIds,
+              count: selected.canonicalIds.length,
+              characters: selected.text.length,
+            }],
+          });
+          if (
+            selected.contradictionIds.length > 0 &&
+            !isCapabilityActive(cognition, "provenance_lineage")
+          ) {
+            cognition = expandCapabilities(cognition, {
+              trigger: "contradiction",
+              reason: "retrieved canonical knowledge contains a contradiction",
+              fromCapabilityId: "knowledge_retrieval",
+              capabilityIds: ["provenance_lineage"],
+            });
+          }
+        } else {
+          cognition = contributeCapabilityOutput(cognition, {
+            capabilityId: "knowledge_retrieval",
+            status: "empty",
+            representations: [],
+          });
         }
-      } catch {
-        // knowledge inject is best-effort
+      } catch (error) {
+        cognition = recordCapabilityDegradation(cognition, {
+          capabilityId: "knowledge_retrieval",
+          reason: error instanceof Error ? error.message : String(error),
+          fallback: "continue with bounded session/workspace context and the selected model",
+        });
+      }
+    }
+
+    if (this.knowledge && isCapabilityActive(cognition, "provenance_lineage")) {
+      try {
+        const lineage = await hydrateKnowledgeLineageContext(
+          this.knowledge,
+          knowledgeClaimIds,
+          cognition.limits.knowledgeChars
+        );
+        if (lineage.text) systemParts.push(lineage.text);
+        cognition = contributeCapabilityOutput(cognition, {
+          capabilityId: "provenance_lineage",
+          status: lineage.claimIds.length > 0 ? "produced" : "empty",
+          representations: lineage.claimIds.length > 0
+            ? [
+                {
+                  capabilityId: "provenance_lineage",
+                  kind: "claim_lineage",
+                  ids: lineage.claimIds,
+                  count: lineage.claimIds.length,
+                  characters: lineage.text?.length,
+                  detail: `${lineage.eventIds.length} events; ${lineage.experienceIds.length} source experiences`,
+                },
+                ...(lineage.experienceIds.length > 0
+                  ? [{
+                      capabilityId: "provenance_lineage" as const,
+                      kind: "source_experience_references",
+                      ids: lineage.experienceIds,
+                      count: lineage.experienceIds.length,
+                    }]
+                  : []),
+              ]
+            : [],
+        });
+      } catch (error) {
+        cognition = recordCapabilityDegradation(cognition, {
+          capabilityId: "provenance_lineage",
+          reason: error instanceof Error ? error.message : String(error),
+          fallback: "retain canonical knowledge without claiming hydrated provenance",
+        });
       }
     }
 
@@ -563,22 +738,40 @@ export class Orchestrator {
     let longTermBlock: string | null = null;
     const ltm = this.longTerm;
     const ltmSettings = this.config.longTermSettings;
-    if (ltm && ltmSettings?.autoInject) {
-      const hits = await ltm.recall({
-        text: prompt,
-        limit: ltmSettings.injectLimit,
-      });
-      if (hits.length > 0) {
-        let block = hits
-          .map((f) =>
-            f.key ? `- [${f.key}] ${f.content}` : `- ${f.content}`
-          )
-          .join("\n");
-        if (block.length > ltmSettings.injectMaxChars) {
-          block =
-            block.slice(0, Math.max(0, ltmSettings.injectMaxChars - 1)) + "…";
+    if (ltm && isCapabilityActive(cognition, "long_term_memory")) {
+      try {
+        const hits = await ltm.recall({
+          text: prompt,
+          limit: ltmSettings?.injectLimit ?? 5,
+        });
+        if (hits.length > 0) {
+          let block = hits
+            .map((f) =>
+              f.key ? `- [${f.key}] ${f.content}` : `- ${f.content}`
+            )
+            .join("\n");
+          const maxChars = ltmSettings?.injectMaxChars ?? 1_500;
+          if (block.length > maxChars) {
+            block = block.slice(0, Math.max(0, maxChars - 1)) + "…";
+          }
+          longTermBlock = block;
         }
-        longTermBlock = block;
+        cognition = contributeCapabilityOutput(cognition, {
+          capabilityId: "long_term_memory",
+          status: hits.length > 0 ? "produced" : "empty",
+          representations: hits.map((fact) => ({
+            capabilityId: "long_term_memory",
+            kind: "memory_fact",
+            ids: [fact.id],
+            characters: fact.content.length,
+          })),
+        });
+      } catch (error) {
+        cognition = recordCapabilityDegradation(cognition, {
+          capabilityId: "long_term_memory",
+          reason: error instanceof Error ? error.message : String(error),
+          fallback: "continue without long-term memory",
+        });
       }
     }
 
@@ -737,6 +930,22 @@ export class Orchestrator {
         });
       }
 
+      cognition = contributeToolOutputs(
+        cognition,
+        loopResult.steps.map((step, index) => ({
+          name: step.call.name,
+          ok: step.result.ok,
+          characters: step.result.output.length,
+          experienceId: experienceTrace.toolResults[index],
+        }))
+      );
+      cognition = contributeModelOutput(cognition, {
+        provider,
+        model: modelName,
+        experienceId: finalOutputExperienceId,
+        characters: reply.length,
+      });
+
       const result: OrchestratorResult = {
         reply,
         routing,
@@ -759,6 +968,7 @@ export class Orchestrator {
           longTermBlock
         ),
         experiences: this.experiences ? experienceTrace : undefined,
+        activation: cognition.trace,
       };
       const sourceExperienceIds = await this.sourceExperienceIds(
         sessionId,
@@ -823,6 +1033,13 @@ export class Orchestrator {
       tokens,
     });
 
+    cognition = contributeModelOutput(cognition, {
+      provider: response.provider,
+      model: response.model,
+      experienceId: outputExperience?.id,
+      characters: response.content.length,
+    });
+
     const result: OrchestratorResult = {
       reply: response.content,
       routing,
@@ -844,6 +1061,7 @@ export class Orchestrator {
         longTermBlock
       ),
       experiences: this.experiences ? experienceTrace : undefined,
+      activation: cognition.trace,
     };
     const sourceExperienceIds = await this.sourceExperienceIds(
       sessionId,
@@ -1024,6 +1242,7 @@ export class Orchestrator {
         complexity: result.routing.complexity,
         compressed: result.compression?.compressed,
         retrievalChunks: result.retrieval?.chunkCount,
+        activation: result.activation,
         ...(this.obsLogPrompts
           ? { promptPreview: ctx.prompt.slice(0, 200) }
           : {}),

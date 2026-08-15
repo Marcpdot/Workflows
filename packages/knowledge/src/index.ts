@@ -90,7 +90,13 @@ export {
   simpleQueryTokens,
 } from "./formatNeighborhood.js";
 export { createKnowledgeTools } from "./tools.js";
-export { buildKnowledgeInjectBlock } from "./inject.js";
+export {
+  buildKnowledgeInjectBlock,
+  hydrateKnowledgeLineageContext,
+  selectKnowledgeContext,
+  type KnowledgeContextSelection,
+  type KnowledgeLineageContext,
+} from "./inject.js";
 export {
   ingestText,
   ingestFile,

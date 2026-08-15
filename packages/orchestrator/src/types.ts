@@ -21,6 +21,7 @@ import type {
   KnowledgeProposalSummary,
   KnowledgeStore,
 } from "@workflows/knowledge";
+import type { ActivationTrace } from "./capabilityActivation.js";
 
 export type ModelChoice = "local" | "mid" | "frontier";
 
@@ -225,6 +226,8 @@ export interface OrchestratorResult {
     toolResults: string[];
     output?: string;
   };
+  /** Privacy-preserving WHAT / HOW / HOW MUCH capability activation trace. */
+  activation?: ActivationTrace;
 }
 
 export interface OrchestratorHandleOptions {

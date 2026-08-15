@@ -4,7 +4,7 @@
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** root `ARCHITECTURE.md`; conversation 2026-08-01; knowledge roadmap 2026-08-02; PR #33 WP1
+**Source:** root `ARCHITECTURE.md`; conversation 2026-08-01; knowledge roadmap 2026-08-02; PR #33 WP1–WP3
 **Revisit when:** layer list or handle pipeline shape changes
 
 Intended layers remain:
@@ -45,8 +45,10 @@ See [packaging.md](packaging.md) and [milestones.md](milestones.md).
 **Evidence:** confirmed  
 **Source:** `packages/orchestrator/src/orchestrator.ts`  
 
-Typical `handle()` flow: resolve workspace/session (callers) → persist the raw user experience → load session interaction mode → optional policy → route → retrieve/compress → optional knowledge inject → system prompt shaped by **active/neutral** → complete or tool loop (tool calls/results persist before later model steps consume them) → persist the final output → optional suggestions → **continuous conversation capture** with exact source experience IDs (pending proposals only, rate-limited) → observability emit. Optional steps are env-gated so the core chat path stays simple. Pipeline planner can use **structured** plan JSON (M10) without changing raw chat.
+Typical `handle()` flow: resolve workspace/session (callers) → persist the raw user experience → derive a bounded per-operation capability context → deterministically activate only the information, transformations, tools, and model tier justified by the input and current resource limits → let those existing package capabilities contribute representations/results → persist the final output → **continuous conversation capture** with exact source experience IDs (pending proposals only, rate-limited) → observability emit. Session history, compression, context/knowledge retrieval, lineage hydration, long-term memory, tools, and model tiers remain independently owned capabilities rather than mandatory stages. The active set may expand only for a concrete missing dependency or contradiction and within explicit depth/count bounds. Pipeline planner can use **structured** plan JSON (M10) without changing raw chat.
 
 Knowledge path (M12+): tools in the loop; optional neighborhood/project-status inject; ingest/FP/continuous capture produce **proposals** only; accept remains explicit. Continuous capture uses conversation-optimised extract (post-M18 iteration `7d474bb`), not only generic batch ingest. Voice (M18) is STT→string→same `handle()`; TTS optional and default off. Same brain; no second orchestrator in UI or HTTP.
 
-**Reason:** One pipeline owns the vertical; features plug in without forking a second brain in UI or HTTP layers.
+**Reason:** Capability contracts plus operation-local state make coordination inspectable without introducing an attention manager or another central intelligence. The orchestrator remains the compatibility/runtime wiring boundary; activation decisions expose WHAT participated, HOW it was processed, and HOW MUCH budget was allowed without logging private input or hidden model reasoning.
+
+**Rejected alternatives:** an `AttentionService`/manager, a larger cognitive controller in the orchestrator, an always-on fixed pipeline, unbounded recursive expansion, or learned routing before deterministic activation has produced outcome evidence.
