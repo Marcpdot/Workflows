@@ -63,6 +63,9 @@ jobs:
       - name: Run canonical integration test
         run: npm run knowledge:test:canonical
 
+      - name: Run epistemic lineage integration test
+        run: npm run knowledge:test:lineage
+
       - name: Run vector integration test
         run: npm run knowledge:test:vector
 

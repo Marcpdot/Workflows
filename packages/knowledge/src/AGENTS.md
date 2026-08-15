@@ -8,6 +8,9 @@ contracts. PostgreSQL/PostGIS is the sole canonical knowledge runtime.
 - Models and extraction produce proposals; permanent truth requires acceptance.
 - Preserve provenance, evidence, workspace/context, temporal state,
   contradiction and supersession history.
+- Durable experience records are authoritative for raw experienced content.
+  Knowledge events reference their stable IDs and must not copy that payload;
+  `source_content` is only a fallback when no durable experience IDs exist.
 - Every independently referable object can receive one stable canonical UUID.
 - Labels, workspace, source, observation frequency and semantic similarity are
   resolution signals, never identity keys.

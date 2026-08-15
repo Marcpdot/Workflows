@@ -322,9 +322,14 @@ Transformation lineage reuses `knowledge_observations`: `derived_from` connects
 a derived canonical target to its source event and, when relevant, canonical
 source claims/assumptions. Its metadata records method/model, assumptions,
 uncertainty, representation scope, confidence/validity, and explicit
-information loss. `knowledge_events` retain the exact source content/reference,
-source experience UUIDs, and event-level transformation metadata; events may be
-explicitly invalidated without deleting their history. Bounded domain read
+information loss. For experienced input, `knowledge_events` retain stable
+experience UUIDs, source references, and event-level transformation metadata;
+the durable experience records remain the authoritative raw source. Event
+`source_content` is only a subordinate fallback snapshot when no durable
+experience backing exists, such as direct/legacy file or manual ingestion. The
+repository and database reject simultaneous fallback content and non-empty
+experience IDs, preventing normally written events from diverging. Events may
+be explicitly invalidated without deleting their history. Bounded domain read
 helpers traverse lineage in both directions so a claim can explain its origin
 and a disputed/superseded assumption or invalidated event can expose dependent
 claims for reconsideration.
@@ -340,7 +345,10 @@ silently acquire stronger meaning.
 **Rejected alternatives:** equating `accepted` with confirmed truth; encoding
 assumptions in description strings; a parallel lineage/representation database;
 using vector similarity or graph proximity as epistemic evidence; automatic
-truth arbitration or cascading mutation when a source becomes disputed.
+truth arbitration or cascading mutation when a source becomes disputed;
+copying durable experience payloads into knowledge events for convenience; or
+forcing unrelated file/manual ingestion through memory solely to remove the
+fallback column.
 
 ## Knowledge milestone roadmap (M11–M18)
 

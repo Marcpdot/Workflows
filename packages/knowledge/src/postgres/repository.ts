@@ -237,14 +237,20 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
 
   async createEvent(input: { sourceType: KnowledgeEvent["sourceType"]; sourceRef: string; sourceContent?: string; sourceExperienceIds?: string[]; model?: string; inputHash?: string; transformation?: KnowledgeTransformation }): Promise<KnowledgeEvent> {
     if (!input.sourceRef?.trim()) throw new Error("createEvent: sourceRef is required");
+    const sourceExperienceIds = stringArray(input.sourceExperienceIds);
     const metadata = {
-      sourceExperienceIds: stringArray(input.sourceExperienceIds),
+      sourceExperienceIds,
       transformation: input.transformation,
     };
+    // Durable experiences are the source-of-record. Keeping a second raw copy
+    // here would allow the two stores to diverge.
+    const fallbackSourceContent = sourceExperienceIds.length === 0
+      ? input.sourceContent
+      : undefined;
     const result = await this.pool.query(
       `INSERT INTO knowledge_events (id, source_type, source_ref, source_content, model, input_hash, action_metadata)
        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb) RETURNING *`,
-      [randomUUID(), input.sourceType, input.sourceRef.trim(), input.sourceContent ?? null, input.model ?? null, input.inputHash ?? null, JSON.stringify(metadata)]
+      [randomUUID(), input.sourceType, input.sourceRef.trim(), fallbackSourceContent ?? null, input.model ?? null, input.inputHash ?? null, JSON.stringify(metadata)]
     );
     return event(result.rows[0]);
   }

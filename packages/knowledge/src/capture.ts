@@ -446,7 +446,7 @@ export async function captureConversationSegment(
   const event = await input.store.createEvent({
     sourceType: "conversation",
     sourceRef,
-    sourceContent: segment,
+    sourceContent: sourceExperienceIds.length === 0 ? segment : undefined,
     sourceExperienceIds,
     model: mode === "model" ? input.model ?? "structured-capture" : "conversation-heuristic",
     inputHash: hashInput(segment),

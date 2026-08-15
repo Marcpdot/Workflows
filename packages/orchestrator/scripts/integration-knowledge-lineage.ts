@@ -1,8 +1,10 @@
 import {
+  applyExtractionResult,
   createKnowledgePostgresPool,
   createKnowledgeReader,
   createKnowledgeStore,
   extractionToProposalItems,
+  ingestText,
   loadKnowledgeMigrations,
   normalizeStructuredCapture,
   resolvePostgresKnowledgeConfig,
@@ -62,6 +64,44 @@ async function main(): Promise<void> {
         },
       },
     });
+    assert(sourceEvent.sourceContent === undefined, "durable experiences take precedence over duplicate event source content");
+
+    let databaseRejectedDuplicate = false;
+    try {
+      await pool.query(
+        `INSERT INTO knowledge_events
+           (source_type, source_ref, source_content, action_metadata)
+         VALUES ('conversation', 'conversation:invalid-duplicate', 'duplicate', $1::jsonb)`,
+        [JSON.stringify({ sourceExperienceIds: [randomUUID()] })]
+      );
+    } catch {
+      databaseRejectedDuplicate = true;
+    }
+    assert(databaseRejectedDuplicate, "database prevents fallback content from coexisting with durable experience IDs");
+
+    const extracted = await applyExtractionResult(
+      store,
+      { concepts: [{ label: "Experience-backed extraction fixture" }], claims: [], relations: [] },
+      {
+        sourceType: "conversation",
+        sourceRef: "conversation:extraction-fixture",
+        rawText: "This raw text already exists in a durable experience.",
+        sourceExperienceIds: [experienceIds[0]!, " "],
+      }
+    );
+    const extractedEvent = await store.getEvent(extracted.eventId);
+    assert(extractedEvent?.sourceContent === undefined && extractedEvent.sourceExperienceIds.join(",") === experienceIds[0], "experience-backed extraction retains IDs without copying raw content");
+
+    const unbackedText = "Calibration logs show that offset increases with measured temperature.";
+    const unbackedIngest = await ingestText(store, {
+      text: unbackedText,
+      sourceType: "file",
+      sourceRef: "file:calibration-log.txt",
+      dedupeNodes: false,
+    });
+    assert(!!unbackedIngest.eventId, "non-experience-backed ingestion creates a source event");
+    const unbackedEvent = await store.getEvent(unbackedIngest.eventId);
+    assert(unbackedEvent?.sourceExperienceIds.length === 0 && unbackedEvent.sourceContent === unbackedText, "non-experience-backed ingestion retains fallback source content");
 
     const assumptionProposal = (await store.addProposals(sourceEvent.id, [{
       kind: "node",
@@ -130,7 +170,7 @@ async function main(): Promise<void> {
 
     const lineage = await reader.getClaimLineage(claim.id, { maxDepth: 8 });
     assert(lineage.claim.epistemicStatus === "hypothesized", "lineage exposes epistemic status");
-    assert(lineage.sourceEvents.some((item) => item.id === sourceEvent.id && item.sourceContent === sourceContent), "lineage preserves exact source content and reference");
+    assert(lineage.sourceEvents.some((item) => item.id === sourceEvent.id && item.sourceRef === "conversation:lineage-fixture" && item.sourceContent === undefined), "experience-backed lineage preserves its source reference without a duplicate raw payload");
     assert(lineage.sourceEvents.some((item) => experienceIds.every((id) => item.sourceExperienceIds.includes(id))), "lineage reaches exact source experiences");
     assert(lineage.derivations.some((item) => item.method === "model_summarization" && item.model === "fixture-summarizer-v2"), "lineage exposes transformation method and model");
     assert(lineage.derivations.some((item) => item.assumptions?.includes("Calibration remains stable") && item.informationLoss?.occurred), "lineage exposes assumptions and information loss");

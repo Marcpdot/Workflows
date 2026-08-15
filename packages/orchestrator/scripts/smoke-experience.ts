@@ -146,12 +146,7 @@ try {
     async findNodes() {
       return [];
     },
-    async createEvent(input: {
-      sourceType: KnowledgeEvent["sourceType"];
-      sourceRef: string;
-      model?: string;
-      inputHash?: string;
-    }) {
+    async createEvent(input: Parameters<KnowledgeStore["createEvent"]>[0]) {
       createdEvent = {
         id: "capture-event",
         ...input,
@@ -201,6 +196,10 @@ try {
     conversationExperienceIds(createdEvent.sourceRef).join(",") ===
       [result.experiences.input, result.experiences.output].join(","),
     "proposal event traces to the exact source experiences"
+  );
+  assert(
+    createdEvent.sourceContent === undefined,
+    "experience-backed conversation capture does not duplicate raw source content"
   );
 
   const toolResultId = result.experiences.toolResults[0]!;

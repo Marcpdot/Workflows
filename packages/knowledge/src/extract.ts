@@ -186,11 +186,14 @@ export async function applyExtractionResult(
     transformationMethod?: string;
   }
 ): Promise<{ eventId: string; proposals: KnowledgeProposal[] }> {
+  const sourceExperienceIds = [
+    ...new Set((meta.sourceExperienceIds ?? []).map((value) => value.trim())),
+  ].filter(Boolean);
   const event = await store.createEvent({
     sourceType: meta.sourceType,
     sourceRef: meta.sourceRef,
-    sourceContent: meta.rawText,
-    sourceExperienceIds: meta.sourceExperienceIds,
+    sourceContent: sourceExperienceIds.length ? undefined : meta.rawText,
+    sourceExperienceIds,
     model: meta.model,
     inputHash: meta.rawText ? hashInput(meta.rawText) : undefined,
     transformation: {

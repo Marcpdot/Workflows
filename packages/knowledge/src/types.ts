@@ -115,6 +115,11 @@ export interface KnowledgeEvent {
   id: string;
   sourceType: "conversation" | "file" | "project" | "manual";
   sourceRef: string;
+  /**
+   * Fallback source snapshot for events without durable experience backing.
+   * When sourceExperienceIds is non-empty, those experiences are authoritative
+   * and this field is absent.
+   */
   sourceContent?: string;
   sourceExperienceIds: string[];
   model?: string;
@@ -209,6 +214,7 @@ export interface KnowledgeStore {
   createEvent(input: {
     sourceType: KnowledgeEvent["sourceType"];
     sourceRef: string;
+    /** Non-authoritative fallback used only when sourceExperienceIds is empty. */
     sourceContent?: string;
     sourceExperienceIds?: string[];
     model?: string;
