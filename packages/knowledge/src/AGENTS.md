@@ -20,6 +20,10 @@ contracts. PostgreSQL/PostGIS is the sole canonical knowledge runtime.
   supports/contradicts/test evidence. Both may target every canonical type.
 - Reuse requires an explicit canonical ID, explicit alias, or an unambiguous
   resolution decision. Preserve ambiguity instead of silently collapsing IDs.
+- Representation gaps reuse knowledge events/proposals: the proposal ID is the
+  stable gap ID, its event retains experience lineage, and resolution appends a
+  contextual canonical reference without merging identities. Semantic
+  candidates alone can never resolve a gap.
 - Explicit merge is transactional, retains the retired identity as history and
   may only clean conflicts created by that merge. Never perform global graph
   cleanup as a side effect.

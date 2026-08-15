@@ -158,7 +158,14 @@ export interface DependentClaim {
 export interface KnowledgeProposal {
   id: string;
   eventId: string;
-  kind: "node" | "edge" | "evidence" | "observation" | "merge" | "supersede";
+  kind:
+    | "node"
+    | "edge"
+    | "evidence"
+    | "observation"
+    | "merge"
+    | "supersede"
+    | "representation_gap";
   payload: Record<string, unknown>;
   status: "pending" | "accepted" | "rejected";
   createdAt: number;
@@ -237,6 +244,9 @@ export interface KnowledgeStore {
   listProposals(filter?: {
     status?: KnowledgeProposal["status"];
     eventId?: string;
+    kind?: KnowledgeProposal["kind"];
+    limit?: number;
+    newestFirst?: boolean;
   }): Promise<KnowledgeProposal[]>;
 
   acceptProposal(

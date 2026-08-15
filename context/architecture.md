@@ -4,7 +4,7 @@
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** root `ARCHITECTURE.md`; conversation 2026-08-01; knowledge roadmap 2026-08-02; PR #33 WP1–WP4
+**Source:** root `ARCHITECTURE.md`; conversation 2026-08-01; knowledge roadmap 2026-08-02; PR #33 WP1–WP5
 **Revisit when:** layer list or handle pipeline shape changes
 
 Intended layers remain:
@@ -45,7 +45,7 @@ See [packaging.md](packaging.md) and [milestones.md](milestones.md).
 **Evidence:** confirmed  
 **Source:** `packages/orchestrator/src/orchestrator.ts`  
 
-Typical `handle()` flow: resolve available workspace/session metadata (callers) → persist the raw user experience → derive a bounded per-operation capability context → activate only justified information, transformations, tools, and models → let package-owned contributor functions append first-class operation values → select an already-produced deterministic result or invoke the required model/tool capability → persist every output that can affect later cognition → **continuous conversation capture** with exact source experience IDs (pending proposals only, rate-limited) → observability emit. Full operation values remain private to the operation; the activation trace records only IDs, counts, budgets, decisions, and degradation metadata. Session history, compression, context/knowledge retrieval, lineage hydration, long-term memory, tools, capture, and model tiers remain independently owned capabilities rather than mandatory stages. The active set may expand only for a concrete missing dependency or contradiction and within explicit depth/count bounds. Pipeline planner can use **structured** plan JSON (M10) without changing raw chat.
+Typical `handle()` flow: resolve available workspace/session metadata (callers) → persist the raw user experience → derive a bounded per-operation capability context → activate only justified information, transformations, tools, and models → let package-owned contributor functions append first-class operation values → select an already-produced deterministic result or invoke the required model/tool capability → persist every output that can affect later cognition → **continuous conversation capture** with exact source experience IDs (pending proposals only, rate-limited) → observability emit. Full operation values remain private to the operation; the activation trace records only IDs, counts, budgets, decisions, and degradation metadata. Session history, compression, context/knowledge retrieval, lineage hydration, long-term memory, tools, capture, model tiers, and contextual representation acquisition remain independently owned capabilities rather than mandatory stages. A material unresolved referent can activate canonical/metadata inspection, one bounded tool, or a deterministic clarification response; its durable knowledge proposal/event state closes and becomes reusable without making the orchestrator or activation primitives own identity reasoning. The active set may expand only for a concrete missing dependency or contradiction and within explicit depth/count bounds. Pipeline planner can use **structured** plan JSON (M10) without changing raw chat.
 
 Knowledge path (M12+): tools in the loop; optional neighborhood/project-status inject; ingest/FP/continuous capture produce **proposals** only; accept remains explicit. Continuous capture uses conversation-optimised extract (post-M18 iteration `7d474bb`), not only generic batch ingest. Voice (M18) is STT→string→same `handle()`; TTS optional and default off. Same brain; no second orchestrator in UI or HTTP.
 

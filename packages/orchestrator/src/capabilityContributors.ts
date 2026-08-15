@@ -14,12 +14,17 @@ import {
   type RetrievedChunk,
 } from "@workflows/retrieval";
 import {
+  acquireRepresentation,
+  resolveRepresentationClarification,
   hydrateKnowledgeLineageContext,
   isLowSubstanceUserMessage,
   selectKnowledgeContext,
   type KnowledgeContextSelection,
   type KnowledgeLineageContext,
   type KnowledgeStore,
+  type RepresentationAcquisitionResult,
+  type RepresentationGap,
+  type RepresentationSourceMetadata,
 } from "@workflows/knowledge";
 import type {
   ExperienceRecord,
@@ -54,7 +59,14 @@ import {
 
 export interface DeterministicResponseValue {
   reply: string;
-  mechanism: "arithmetic";
+  mechanism:
+    | "arithmetic"
+    | "representation_clarification"
+    | "representation_resolution";
+}
+
+export interface RepresentationAcquisitionValue {
+  result: RepresentationAcquisitionResult;
 }
 
 export interface SessionHistoryValue {
@@ -407,6 +419,194 @@ export function contributeOperationStart(
   return next;
 }
 
+function inspectionMetadata(value: unknown): RepresentationSourceMetadata | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const root = value as Record<string, unknown>;
+  const nested = root.metadata;
+  return nested && typeof nested === "object" && !Array.isArray(nested)
+    ? nested as RepresentationSourceMetadata
+    : root as RepresentationSourceMetadata;
+}
+
+/**
+ * Resolve one operation-local referent through the knowledge package. Tool
+ * execution remains bounded and owned by the existing registry.
+ */
+export async function contributeRepresentationAcquisition(
+  context: CognitiveOperationContext,
+  input: {
+    store?: KnowledgeStore;
+    prompt: string;
+    sourceExperienceId?: string;
+    sessionId?: string;
+    workspaceId?: string;
+    metadata?: RepresentationSourceMetadata;
+    pendingGap?: RepresentationGap | null;
+    inspection?: { toolName: string; args?: Record<string, unknown> };
+    registry?: ToolRegistry;
+    workspaceRoot: string;
+    experiences: NonNullable<OrchestratorResult["experiences"]>;
+    recordExperience(
+      input: RecordExperienceInput
+    ): Promise<ExperienceRecord | undefined>;
+  }
+): Promise<{
+  cognition: CognitiveOperationContext;
+  result?: RepresentationAcquisitionResult;
+}> {
+  if (
+    !input.store ||
+    !input.sourceExperienceId ||
+    !isCapabilityActive(context, "representation_acquisition")
+  ) {
+    return { cognition: context };
+  }
+
+  let next = context;
+  try {
+    const result = input.pendingGap
+      ? await resolveRepresentationClarification({
+          store: input.store,
+          gap: input.pendingGap,
+          answer: input.prompt,
+          clarificationExperienceId: input.sourceExperienceId,
+          canonicalId: input.metadata?.canonicalId,
+          sourceType: input.metadata?.sourceType,
+        })
+      : await acquireRepresentation({
+          store: input.store,
+          content: input.prompt,
+          sourceExperienceId: input.sourceExperienceId,
+          sessionId: input.sessionId,
+          workspaceId: input.workspaceId,
+          metadata: input.metadata,
+          inspect:
+            input.inspection &&
+            input.registry &&
+            isCapabilityActive(next, "tools")
+              ? async () => {
+                  const call = {
+                    id: `${next.operationId}:representation-inspection`,
+                    name: input.inspection!.toolName,
+                    args: input.inspection!.args ?? {},
+                  };
+                  const callExperience = await input.recordExperience({
+                    kind: "tool_call",
+                    sessionId: input.sessionId,
+                    content: JSON.stringify({ name: call.name, args: call.args }),
+                    source: { type: "representation_acquisition", ref: call.id },
+                    parentExperienceIds: [input.sourceExperienceId!],
+                    metadata: {
+                      tool: call.name,
+                      callId: call.id,
+                      representationInspection: true,
+                    },
+                  });
+                  if (callExperience) input.experiences.toolCalls.push(callExperience.id);
+                  const started = performance.now();
+                  const toolResult = await input.registry!.execute(
+                    call.name,
+                    call.args,
+                    { workspaceRoot: input.workspaceRoot }
+                  );
+                  const resultExperience = await input.recordExperience({
+                    kind: "tool_result",
+                    sessionId: input.sessionId,
+                    content: toolResult.output,
+                    source: { type: "tool", ref: call.name },
+                    parentExperienceIds: callExperience ? [callExperience.id] : undefined,
+                    metadata: {
+                      tool: call.name,
+                      callId: call.id,
+                      ok: toolResult.ok,
+                      error: toolResult.error,
+                      durationMs: Math.round(performance.now() - started),
+                      representationInspection: true,
+                    },
+                  });
+                  if (resultExperience) input.experiences.toolResults.push(resultExperience.id);
+                  next = contributeToolOutputs(next, [{
+                    name: call.name,
+                    ok: toolResult.ok,
+                    characters: toolResult.output.length,
+                    experienceId: resultExperience?.id,
+                  }]);
+                  let data = inspectionMetadata(toolResult.data);
+                  if (!data && toolResult.output.trim().startsWith("{")) {
+                    try {
+                      data = inspectionMetadata(JSON.parse(toolResult.output));
+                    } catch {
+                      // A non-JSON tool result simply did not resolve metadata.
+                    }
+                  }
+                  if (!toolResult.ok) {
+                    next = recordCapabilityDegradation(next, {
+                      capabilityId: "tools",
+                      reason: toolResult.error || "representation inspection tool failed",
+                      fallback: "preserve the gap and ask one bounded clarification",
+                    });
+                  }
+                  return {
+                    metadata: data,
+                    sourceExperienceIds: [
+                      ...(callExperience ? [callExperience.id] : []),
+                      ...(resultExperience ? [resultExperience.id] : []),
+                    ],
+                  };
+                }
+              : undefined,
+        });
+    next = contributeCapabilityOutput(next, {
+      capabilityId: "representation_acquisition",
+      status: result.status === "not_applicable" ? "empty" : "produced",
+      value: { result } satisfies RepresentationAcquisitionValue,
+      detail:
+        result.status === "resolved"
+          ? `resolved by ${result.method}`
+          : result.status === "needs_clarification"
+            ? "material ambiguity remains"
+            : "no material representational gap",
+      representations: [
+        ...(result.gap
+          ? [{
+              capabilityId: "representation_acquisition" as const,
+              kind: "representation_gap",
+              ids: [result.gap.id],
+              count: 1,
+              detail: result.gap.status,
+            }]
+          : []),
+        ...(result.canonical
+          ? [{
+              capabilityId: "representation_acquisition" as const,
+              kind: "canonical_identity",
+              ids: [result.canonical.id],
+              count: 1,
+              detail: result.method,
+            }]
+          : []),
+        ...(result.sourceExperienceIds.length
+          ? [{
+              capabilityId: "representation_acquisition" as const,
+              kind: "source_experience_references",
+              ids: result.sourceExperienceIds,
+              count: result.sourceExperienceIds.length,
+            }]
+          : []),
+      ],
+    });
+    return { cognition: next, result };
+  } catch (error) {
+    return {
+      cognition: recordCapabilityDegradation(next, {
+        capabilityId: "representation_acquisition",
+        reason: error instanceof Error ? error.message : String(error),
+        fallback: "preserve existing canonical identities and continue without an identity guess",
+      }),
+    };
+  }
+}
+
 export async function contributeContextRetrieval(
   context: CognitiveOperationContext,
   input: {
@@ -649,6 +849,16 @@ export function buildModelMessages(
       : "Interaction mode: NEUTRAL. Answer helpfully and briefly. Do not expand into unsolicited coaching. Knowledge is only stored when explicitly captured."
   );
   const knowledge = capabilityValue<KnowledgeRetrievalValue>(context, "knowledge_retrieval")?.selected;
+  const representation = capabilityValue<RepresentationAcquisitionValue>(
+    context,
+    "representation_acquisition"
+  )?.result;
+  if (representation?.canonical) {
+    systemParts.push(
+      `Resolved referent (canonical, contextual): ${representation.canonical.label} ` +
+      `(id=${representation.canonical.id}, type=${representation.canonical.type}, method=${representation.method}).`
+    );
+  }
   const lineage = capabilityValue<ProvenanceLineageValue>(context, "provenance_lineage")?.lineage;
   if (knowledge?.text) systemParts.push(knowledge.text);
   if (lineage?.text) systemParts.push(lineage.text);

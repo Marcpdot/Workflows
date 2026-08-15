@@ -38,9 +38,13 @@ import {
   captureConversationSegment,
   createKnowledgeStore,
   createKnowledgeTools,
+  findPendingRepresentationGap,
+  hasRepresentationAcquisitionSignal,
   listPendingForSession,
   type KnowledgeProposalSummary,
   type KnowledgeStore,
+  type RepresentationAcquisitionResult,
+  type RepresentationSourceMetadata,
 } from "@workflows/knowledge";
 import type { InteractionMode } from "@workflows/memory";
 import { createEmbeddingsFromEnv } from "@workflows/embeddings";
@@ -84,6 +88,7 @@ import {
   contributeModelResponse,
   contributeOperationStart,
   contributeProvenanceLineage,
+  contributeRepresentationAcquisition,
   contributeToolResponse,
   isExplicitCorrection,
   shouldActivateKnowledgeCapture,
@@ -96,6 +101,7 @@ import {
   contributeCapabilityOutput,
   contributeModelOutput,
   createRuntimeCognitiveContext,
+  expandCapabilities,
   isCapabilityActive,
   recordCapabilityDegradation,
   type CognitiveOperationContext,
@@ -450,17 +456,50 @@ export class Orchestrator {
     };
     const sourcePrompt = options?.sourcePrompt ?? prompt;
     const deterministic = calculateDeterministicResponse(prompt);
+    const explicitRepresentation = options?.representation;
+    const representationMetadata: RepresentationSourceMetadata | undefined =
+      explicitRepresentation
+        ? {
+            ...explicitRepresentation,
+            sourceType:
+              explicitRepresentation.sourceType ?? options?.experienceSource?.type,
+            sourceRef:
+              explicitRepresentation.sourceRef ?? options?.experienceSource?.ref,
+          }
+        : undefined;
     const inputExperience = await this.recordExperience({
       kind: isExplicitCorrection(sourcePrompt) ? "human_correction" : "user_message",
       sessionId,
       content: sourcePrompt,
       source: options?.experienceSource ?? { type: "chat" },
-      metadata:
-        options?.sourcePrompt != null && options.sourcePrompt !== prompt
+      metadata: {
+        ...(options?.sourcePrompt != null && options.sourcePrompt !== prompt
           ? { modelInput: prompt }
-          : undefined,
+          : {}),
+        ...(explicitRepresentation
+          ? {
+              representationSource: true,
+              stableIdentifier: explicitRepresentation.stableIdentifier,
+              referentLabel: explicitRepresentation.referentLabel,
+              contextKey: explicitRepresentation.contextKey,
+              clarificationGapId: explicitRepresentation.clarificationGapId,
+            }
+          : {}),
+      },
     });
     experienceTrace.input = inputExperience?.id;
+    const shouldResumePendingRepresentation =
+      (explicitRepresentation == null && sessionId != null) ||
+      explicitRepresentation?.clarificationGapId != null;
+    const pendingRepresentationGap = this.knowledge && shouldResumePendingRepresentation
+      ? await findPendingRepresentationGap(this.knowledge, {
+          sessionId,
+          gapId: explicitRepresentation?.clarificationGapId,
+        })
+      : null;
+    const representationRequested =
+      pendingRepresentationGap != null ||
+      hasRepresentationAcquisitionSignal(sourcePrompt, representationMetadata);
     const routing = this.decide(prompt);
 
     // M7: policy wraps router (when off, decide mirrors router)
@@ -524,7 +563,10 @@ export class Orchestrator {
           this.tools != null &&
           this.tools.list().length > 0,
         selectedModel: choice,
-        responseModelRequired: deterministic == null,
+        responseModelRequired: deterministic == null && !representationRequested,
+        representationAcquisitionAvailable: this.knowledge != null,
+        representationAcquisitionRequested: representationRequested,
+        representationToolRequested: explicitRepresentation?.inspection != null,
         knowledgeCaptureAvailable: this.knowledge != null,
         knowledgeCaptureRequested: captureRequested,
         knowledgeCaptureUsesModel:
@@ -545,6 +587,88 @@ export class Orchestrator {
       },
     });
     cognition = contributeOperationStart(cognition, { history, deterministic });
+
+    const representationContribution = await contributeRepresentationAcquisition(
+      cognition,
+      {
+        store: this.knowledge,
+        prompt: sourcePrompt,
+        sourceExperienceId: inputExperience?.id,
+        sessionId,
+        workspaceId: this.config.workspace?.id,
+        metadata: representationMetadata,
+        pendingGap: pendingRepresentationGap,
+        inspection: explicitRepresentation?.inspection,
+        registry: this.tools,
+        workspaceRoot: this.config.workspaceRoot,
+        experiences: experienceTrace,
+        recordExperience: (record) => this.recordExperience(record),
+      }
+    );
+    cognition = representationContribution.cognition;
+    const representationResult = representationContribution.result;
+    const representationSummary: OrchestratorResult["representation"] =
+      representationResult
+        ? {
+            status: representationResult.status,
+            gapId: representationResult.gap?.id,
+            canonicalId: representationResult.canonical?.id,
+            method: representationResult.method,
+            question: representationResult.question,
+            sourceEventId: representationResult.sourceEventId,
+          }
+        : undefined;
+
+    if (
+      representationResult?.status === "needs_clarification" ||
+      (pendingRepresentationGap && representationResult?.status === "resolved")
+    ) {
+      const resolutionReply = representationResult.status === "needs_clarification"
+        ? representationResult.question!
+        : `Understood — I’ll use ${representationResult.canonical!.label} for “${pendingRepresentationGap!.unresolved}” in this context.`;
+      return this.finishDeterministicOperation({
+        prompt,
+        sourcePrompt,
+        deterministic: {
+          reply: resolutionReply,
+          mechanism:
+            representationResult.status === "needs_clarification"
+              ? "representation_clarification"
+              : "representation_resolution",
+        },
+        routing,
+        policyDecision,
+        cognition,
+        experienceTrace,
+        history,
+        sessionId,
+        interactionMode,
+        proposalsEnabled,
+        options,
+        originalCount,
+        recentMessages: history,
+        summary: null,
+        compressed: false,
+        retrievalMeta: undefined,
+        retrievalBlock: null,
+        longTermBlock: null,
+        started,
+        representation: representationSummary,
+        skipCaptureReason: "representation acquisition is already persisted through its gap/event lineage",
+      });
+    }
+
+    if (representationRequested && deterministic == null) {
+      cognition = expandCapabilities(cognition, {
+        trigger: "missing_information",
+        reason:
+          representationResult?.status === "resolved"
+            ? "the referent is resolved; language or general reasoning can now continue"
+            : "representation acquisition found no blocking ambiguity; normal response processing can continue",
+        fromCapabilityId: "representation_acquisition",
+        capabilityIds: [`${choice}_model`],
+      });
+    }
 
     cognition = await contributeContextRetrieval(cognition, {
       prompt,
@@ -596,6 +720,7 @@ export class Orchestrator {
 
     const useToolLoop =
       isCapabilityActive(cognition, "tools") &&
+      cognition.signals.tools &&
       this.config.toolsEnabled &&
       this.tools != null &&
       this.tools.list().length > 0;
@@ -730,6 +855,7 @@ export class Orchestrator {
           longTermBlock
         ),
         experiences: this.experiences ? experienceTrace : undefined,
+        representation: representationSummary,
         activation: cognition.trace,
       };
       const sourceExperienceIds = await this.sourceExperienceIds(
@@ -811,6 +937,7 @@ export class Orchestrator {
         longTermBlock
       ),
       experiences: this.experiences ? experienceTrace : undefined,
+      representation: representationSummary,
       activation: cognition.trace,
     };
     const sourceExperienceIds = await this.sourceExperienceIds(
@@ -865,6 +992,8 @@ export class Orchestrator {
     retrievalBlock: string | null;
     longTermBlock: string | null;
     started: number;
+    representation?: OrchestratorResult["representation"];
+    skipCaptureReason?: string;
   }): Promise<OrchestratorResult> {
     const output = await this.recordExperience({
       kind: "assistant_output",
@@ -915,8 +1044,27 @@ export class Orchestrator {
         input.longTermBlock
       ),
       experiences: this.experiences ? input.experienceTrace : undefined,
+      representation: input.representation,
       activation: cognition.trace,
     };
+    if (input.skipCaptureReason) {
+      result.interactionMode = input.interactionMode;
+      result.proposalsEnabled = input.proposalsEnabled;
+      result.capture = { ran: false, reason: input.skipCaptureReason };
+      try {
+        result.pendingProposalCount = this.knowledge
+          ? (await this.knowledge.listProposals({ status: "pending", limit: 1_000 })).length
+          : 0;
+      } catch {
+        result.pendingProposalCount = 0;
+      }
+      this.emitRequestEvent(result, {
+        sessionId: input.sessionId,
+        started: input.started,
+        prompt: input.prompt,
+      });
+      return result;
+    }
     const sourceExperienceIds = await this.sourceExperienceIds(
       input.sessionId,
       [

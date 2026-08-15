@@ -109,6 +109,23 @@ export {
 } from "./ingest.js";
 export { normalizeLabel, labelsMatch } from "./identity.js";
 export {
+  acquireRepresentation,
+  clarificationQuestion,
+  detectPotentialReferentLabel,
+  findPendingRepresentationGap,
+  hasRepresentationAcquisitionSignal,
+  proposalToRepresentationGap,
+  resolveRepresentationClarification,
+  type RepresentationAcquisitionResult,
+  type RepresentationCandidate,
+  type RepresentationGap,
+  type RepresentationGapKind,
+  type RepresentationInspectionResult,
+  type RepresentationResolution,
+  type RepresentationResolutionMethod,
+  type RepresentationSourceMetadata,
+} from "./representationAcquisition.js";
+export {
   FIRST_PRINCIPLES_STEPS,
   FIRST_PRINCIPLES_SCHEMA,
   heuristicFirstPrinciples,

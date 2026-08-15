@@ -20,6 +20,7 @@ import type { WorkspaceContext } from "@workflows/workspace";
 import type {
   KnowledgeProposalSummary,
   KnowledgeStore,
+  RepresentationSourceMetadata,
 } from "@workflows/knowledge";
 import type { ActivationTrace } from "./capabilityActivation.js";
 
@@ -229,6 +230,15 @@ export interface OrchestratorResult {
     toolResults: string[];
     output?: string;
   };
+  /** Contextual identity acquisition outcome; no raw content is logged here. */
+  representation?: {
+    status: "not_applicable" | "resolved" | "needs_clarification";
+    gapId?: string;
+    canonicalId?: string;
+    method?: string;
+    question?: string;
+    sourceEventId?: string;
+  };
   /** Privacy-preserving WHAT / HOW / HOW MUCH capability activation trace. */
   activation?: ActivationTrace;
 }
@@ -250,4 +260,14 @@ export interface OrchestratorHandleOptions {
   sourcePrompt?: string;
   /** Modality/caller metadata for the raw input experience. */
   experienceSource?: ExperienceSource;
+  /** Structured referent/source facts supplied by an input adapter. */
+  representation?: RepresentationSourceMetadata & {
+    /** Explicit pending gap when a UI/caller already has its stable ID. */
+    clarificationGapId?: string;
+    /** One bounded existing tool call used only to inspect missing metadata. */
+    inspection?: {
+      toolName: string;
+      args?: Record<string, unknown>;
+    };
+  };
 }

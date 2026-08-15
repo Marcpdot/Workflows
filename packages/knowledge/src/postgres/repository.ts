@@ -296,13 +296,30 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     } finally { client.release(); }
   }
 
-  async listProposals(filter?: { status?: KnowledgeProposal["status"]; eventId?: string }): Promise<KnowledgeProposal[]> {
+  async listProposals(filter?: {
+    status?: KnowledgeProposal["status"];
+    eventId?: string;
+    kind?: KnowledgeProposal["kind"];
+    limit?: number;
+    newestFirst?: boolean;
+  }): Promise<KnowledgeProposal[]> {
     const clauses: string[] = [];
     const params: unknown[] = [];
     if (filter?.status) { params.push(filter.status); clauses.push(`status = $${params.length}`); }
     if (filter?.eventId) { params.push(filter.eventId); clauses.push(`event_id = $${params.length}`); }
+    if (filter?.kind) { params.push(filter.kind); clauses.push(`kind = $${params.length}`); }
+    let limitClause = "";
+    if (filter?.limit != null) {
+      const limit = Math.min(Math.max(Math.floor(filter.limit), 1), 1_000);
+      params.push(limit);
+      limitClause = `LIMIT $${params.length}`;
+    }
     const result = await this.pool.query(
-      `SELECT * FROM knowledge_proposals ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""} ORDER BY created_at ASC`, params
+      `SELECT * FROM knowledge_proposals
+       ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
+       ORDER BY created_at ${filter?.newestFirst ? "DESC" : "ASC"}, id ${filter?.newestFirst ? "DESC" : "ASC"}
+       ${limitClause}`,
+      params
     );
     return result.rows.map(proposal);
   }
@@ -331,8 +348,28 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
           sourceEventId: current.eventId,
         });
       }
+      else if (current.kind === "representation_gap") {
+        await this.materializeRepresentationResolution(
+          client,
+          payload,
+          current.eventId,
+          current.id
+        );
+      }
       else throw new Error(`acceptProposal: unsupported proposal kind ${String(current.kind)}`);
-      await client.query("UPDATE knowledge_proposals SET status = 'accepted', resolved_at = now() WHERE id = $1", [id]);
+      if (current.kind === "representation_gap") {
+        await client.query(
+          `UPDATE knowledge_proposals
+           SET payload = $2::jsonb, status = 'accepted', resolved_at = now()
+           WHERE id = $1`,
+          [id, JSON.stringify(payload)]
+        );
+      } else {
+        await client.query(
+          "UPDATE knowledge_proposals SET status = 'accepted', resolved_at = now() WHERE id = $1",
+          [id]
+        );
+      }
       await client.query("COMMIT");
     } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
   }
@@ -994,6 +1031,66 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
       }
     }
     await this.insertObservation(db, { targetNodeId: target.id, sourceEventId: eventId, sourceNodeId: source?.id, kind: this.observationKind(payload), metadata: this.observationMetadata(payload) });
+  }
+
+  private async materializeRepresentationResolution(
+    db: Queryable,
+    payload: Record<string, unknown>,
+    sourceEventId: string,
+    gapId: string
+  ): Promise<void> {
+    const resolution = object(payload.resolution);
+    const canonicalNodeId = requiredString(
+      resolution.canonicalNodeId,
+      "representation gap resolution canonicalNodeId"
+    );
+    if (!UUID.test(canonicalNodeId)) {
+      throw new Error("representation gap resolution canonicalNodeId must be a UUID");
+    }
+    const candidateIds = Array.isArray(payload.candidates)
+      ? payload.candidates
+          .map((item) => object(item).canonicalId)
+          .filter((id): id is string => typeof id === "string")
+      : [];
+    if (candidateIds.length > 0 && !candidateIds.includes(canonicalNodeId)) {
+      throw new Error(
+        "representation gap resolution must select one of the preserved canonical candidates"
+      );
+    }
+    const target = await this.getNodeWith(db, canonicalNodeId);
+    if (!target || target.status !== "accepted") {
+      throw new Error(
+        `representation gap resolution ${canonicalNodeId} must reference an accepted canonical identity`
+      );
+    }
+    const resolutionEventId = typeof resolution.resolutionEventId === "string"
+      ? resolution.resolutionEventId.trim()
+      : sourceEventId;
+    const eventResult = await db.query(
+      "SELECT id FROM knowledge_events WHERE id = $1",
+      [resolutionEventId]
+    );
+    if (!eventResult.rows[0]) {
+      throw new Error(`representation gap resolution event ${resolutionEventId} is unknown`);
+    }
+    await this.insertObservation(db, {
+      targetNodeId: target.id,
+      sourceEventId: resolutionEventId,
+      kind: "references",
+      metadata: {
+        representationGapId: gapId,
+        unresolved: String(payload.unresolved ?? ""),
+        resolutionMethod: String(resolution.method ?? "unknown"),
+        confidence:
+          resolution.confidence == null
+            ? undefined
+            : Number(resolution.confidence),
+        clarificationExperienceId:
+          typeof resolution.clarificationExperienceId === "string"
+            ? resolution.clarificationExperienceId
+            : undefined,
+      },
+    });
   }
 }
 

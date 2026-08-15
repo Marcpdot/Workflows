@@ -5,6 +5,7 @@ export type CapabilityId =
   | "session_history"
   | "history_compression"
   | "context_retrieval"
+  | "representation_acquisition"
   | "knowledge_retrieval"
   | "provenance_lineage"
   | "long_term_memory"
@@ -154,6 +155,9 @@ export interface RuntimeCapabilityState {
   knowledgeAvailable: boolean;
   longTermMemoryAvailable: boolean;
   toolsAvailable: boolean;
+  representationAcquisitionAvailable?: boolean;
+  representationAcquisitionRequested?: boolean;
+  representationToolRequested?: boolean;
   selectedModel: "local" | "mid" | "frontier";
   localModelAvailable?: boolean;
   midModelAvailable?: boolean;
@@ -304,6 +308,25 @@ export function createRuntimeCapabilities(
     ),
     candidate(
       {
+        id: "representation_acquisition",
+        kind: "retrieval",
+        requirements: ["deterministic_processing"],
+        ...availability(
+          state.representationAcquisitionAvailable === true,
+          "canonical representation acquisition is unavailable"
+        ),
+        cost: { unit: "steps", maximum: 5 },
+        produces: ["resolved canonical referent", "bounded representation gap"],
+      },
+      () => ({
+        applicable: state.representationAcquisitionRequested === true,
+        reason: state.representationAcquisitionRequested
+          ? "input or source metadata exposes a possible representational gap"
+          : "input has no unresolved representation signal",
+      })
+    ),
+    candidate(
+      {
         id: "context_retrieval",
         kind: "retrieval",
         ...availability(state.retrievalAvailable, "context retrieval is disabled"),
@@ -393,9 +416,11 @@ export function createRuntimeCapabilities(
         produces: ["tool results"],
       },
       (context) => ({
-        applicable: context.signals.tools,
+        applicable: context.signals.tools || state.representationToolRequested === true,
         reason: context.signals.tools
           ? "input requires workspace, file, command, or other tool-capable inspection"
+          : state.representationToolRequested === true
+            ? "bounded representation acquisition requests one metadata inspection tool"
           : "input has no tool-use signal",
       })
     ),

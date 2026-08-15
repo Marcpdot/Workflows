@@ -305,6 +305,43 @@ not a restriction on generic evidence.
 without duplicating their referent or treating every mention as support. Merge
 retargets evidence and observation history to the surviving canonical UUID.
 
+### Contextual representation gaps
+
+**Status:** active
+**Evidence:** confirmed
+**Source:** Continuous Cognition WP5 implementation contract; migration `0011_representation_gaps.sql`
+**Revisit when:** contextual resolution must survive conflicting defaults across callers that cannot provide a stable source/context key
+
+**Decision:** Material identity/referent ambiguity is retained as a narrow
+`representation_gap` proposal under an ordinary knowledge event. The proposal
+UUID is the stable gap identity; pending/accepted/rejected maps to unresolved,
+resolved, or obsolete. Its event points to the exact input/tool/clarification
+experiences, while the payload retains the unresolved term, bounded canonical
+candidates, ambiguity and eventual contextual resolution. No parallel gap
+table, identity store, or manager is introduced.
+
+Resolution uses strong source metadata and canonical IDs/aliases first, then
+accepted world-model relations, one explicitly bounded inspection tool,
+constrained inference, and finally one discriminating human question. A human
+answer is a new durable experience and event. Resolving the gap records a direct
+`references` observation on the chosen existing canonical identity; it does not
+merge nodes, create a global alias from an ambiguous label, or upgrade an
+interpretation into established truth. Later reuse requires the same exact
+normalized referent and contextual key, and only proceeds when prior resolved
+gaps agree on one canonical target. Conflicting learned resolutions restore
+ambiguity rather than selecting the newest or most similar candidate.
+
+**Reason:** Gaps need persistence and provenance so a clarification improves
+later cognition, but they are operation/context knowledge—not a second ontology.
+Reusing the proposal/event lifecycle preserves history and keeps PostgreSQL
+canonical. Contextual bindings avoid turning one clarification into an unsafe
+global alias, while exact agreement makes repeated questions unnecessary.
+
+**Rejected alternatives:** a representation/gap manager or new database;
+embedding similarity as an identity key; global alias creation from an
+ambiguous human phrase; ephemeral clarification state in model/session context;
+automatic merge or canonical truth promotion during acquisition.
+
 ### Epistemic status and transformation lineage
 
 **Status:** active
