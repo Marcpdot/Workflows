@@ -9,8 +9,10 @@ import {
   type KnowledgeProposal,
 } from "@workflows/knowledge";
 import { createMemory } from "@workflows/memory";
+import { emitSafely, InMemoryObserver } from "@workflows/observability";
 import { MapToolRegistry } from "@workflows/tools";
 import { Orchestrator } from "../src/orchestrator.js";
+import { knowledgeDiagnosticEvent } from "../src/cognitiveObservability.js";
 import type {
   ModelClient,
   ModelRequest,
@@ -112,6 +114,7 @@ function config(input: {
   knowledge: ReturnType<typeof createKnowledgeStore>;
   memory: ReturnType<typeof createMemory>;
   tools: MapToolRegistry;
+  observer: InMemoryObserver;
 }): OrchestratorConfig {
   return {
     ollamaBin: "ollama",
@@ -138,6 +141,7 @@ function config(input: {
     tools: input.tools,
     toolsEnabled: true,
     toolsMaxSteps: 3,
+    observer: input.observer,
     knowledge: input.knowledge,
     knowledgeSettings: {
       toolsEnabled: false,
@@ -190,7 +194,14 @@ const pgConfig = {
   applicationName: "workflows-wp4-smoke",
 };
 const pool = createKnowledgePostgresPool(pgConfig);
-const knowledge = createKnowledgeStore({ postgresConfig: pgConfig, pool });
+const observer = new InMemoryObserver();
+const knowledge = createKnowledgeStore({
+  postgresConfig: pgConfig,
+  pool,
+  diagnosticSink: (record) => {
+    emitSafely(observer, knowledgeDiagnosticEvent(record));
+  },
+});
 const memory = createMemory({ dbPath: memoryPath });
 const tools = new MapToolRegistry();
 tools.register({
@@ -203,11 +214,11 @@ tools.register({
 });
 const firstModel = new FixtureModel("model-a");
 const replacementModel = new FixtureModel("model-b");
-const firstRuntime = new Orchestrator(config({ knowledge, memory, tools }), {
+const firstRuntime = new Orchestrator(config({ knowledge, memory, tools, observer }), {
   local: firstModel,
   frontier: firstModel,
 });
-const replacementRuntime = new Orchestrator(config({ knowledge, memory, tools }), {
+const replacementRuntime = new Orchestrator(config({ knowledge, memory, tools, observer }), {
   local: replacementModel,
   frontier: replacementModel,
 });
@@ -235,6 +246,17 @@ try {
   assert(
     observation.experiences.modelOutputs.every((id) => observationEvent?.sourceExperienceIds.includes(id)),
     "response and extraction model outputs that influenced integration are durable event sources"
+  );
+  const observationTelemetry = observer.events.find(
+    (event) =>
+      event.kind === "cognition" &&
+      event.operationId === observation.activation?.operationId
+  )?.cognition;
+  assert(observationTelemetry, "normal operation emits reconstructable CC telemetry");
+  assert(
+    observationTelemetry.experiences.inputExperienceId === observation.experiences.input &&
+      observationTelemetry.knowledge.sourceEventIds.includes(observation.capture.eventId!),
+    "telemetry joins durable input and semantic event by ID"
   );
   await acceptNodesThenRelations(await proposalsFor(observation, knowledge), knowledge);
   const oldClaim = (await knowledge.findNodes({ type: "claim", label: OLD_CLAIM, status: "accepted" }))[0];
@@ -293,6 +315,27 @@ try {
     [newClaim.id, oldClaim.id]
   );
   assert(supersession.rows[0]?.source_event_id === correctionEvent?.id, "revision edge is provenance-addressable through the correction event");
+  const correctionTelemetry = observer.events.find(
+    (event) =>
+      event.kind === "cognition" &&
+      event.operationId === correction.activation?.operationId
+  )?.cognition;
+  assert(
+    correctionTelemetry?.experiences.correctionExperienceIds.includes(correctionExperience.id),
+    "correction outcome names the exact correction experience"
+  );
+  const supersessionTelemetry = observer.events.find(
+    (event) =>
+      event.kind === "knowledge" &&
+      event.knowledge?.action === "proposal_accepted" &&
+      event.knowledge.proposalKind === "supersede"
+  )?.knowledge;
+  assert(
+    supersessionTelemetry?.oldClaimId === oldClaim.id &&
+      supersessionTelemetry.revisedClaimId === newClaim.id &&
+      supersessionTelemetry.sourceExperienceIds.includes(correctionExperience.id),
+    "accepted correction exposes old/new claim IDs and exact lineage source"
+  );
 
   // Interaction 4: only the accepted revised claim participates in later cognition.
   const revised = await replacementRuntime.handle(

@@ -57,6 +57,7 @@ import {
 } from "@workflows/policy";
 import {
   createObserverFromEnv,
+  emitSafely,
   loadObservabilityConfig,
   type Observer,
 } from "@workflows/observability";
@@ -106,6 +107,10 @@ import {
   recordCapabilityDegradation,
   type CognitiveOperationContext,
 } from "./capabilityActivation.js";
+import {
+  knowledgeDiagnosticEvent,
+  observeCognitiveOperation,
+} from "./cognitiveObservability.js";
 
 export class Orchestrator {
   private readonly config: OrchestratorConfig;
@@ -216,7 +221,8 @@ export class Orchestrator {
   }
 
   private async recordExperience(
-    input: RecordExperienceInput
+    input: RecordExperienceInput,
+    backgroundTrace?: NonNullable<OrchestratorResult["background"]>
   ): Promise<ExperienceRecord | undefined> {
     if (!this.experiences) return undefined;
     const record = await this.experiences.recordExperience({
@@ -228,7 +234,7 @@ export class Orchestrator {
       ["user_message", "human_correction", "external_observation", "tool_result"].includes(record.kind)
     ) {
       try {
-        await this.knowledge.enqueueBackgroundWork({
+        const queued = await this.knowledge.enqueueBackgroundWork({
           kind: "semantic_consolidation",
           workKey: `semantic-consolidation:${record.id}`,
           sourceExperienceId: record.id,
@@ -239,11 +245,19 @@ export class Orchestrator {
             sourceType: record.source?.type,
           },
         });
+        if (backgroundTrace) {
+          if (!backgroundTrace.workIds.includes(queued.work.id)) {
+            backgroundTrace.workIds.push(queued.work.id);
+          }
+          if (!backgroundTrace.sourceExperienceIds.includes(record.id)) {
+            backgroundTrace.sourceExperienceIds.push(record.id);
+          }
+        }
       } catch (error) {
         // Background persistence must not delay or invalidate the foreground
         // operation. The durable experience remains authoritative and can be
         // explicitly re-enqueued after the dependency recovers.
-        this.observer.emit({
+        emitSafely(this.observer, {
           ts: new Date().toISOString(),
           kind: "error",
           sessionId: record.sessionId,
@@ -455,7 +469,7 @@ export class Orchestrator {
       return await this.handleInner(prompt, options, started, sessionId);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.observer.emit({
+      emitSafely(this.observer, {
         ts: new Date().toISOString(),
         kind: "error",
         sessionId,
@@ -483,6 +497,10 @@ export class Orchestrator {
       deterministicOutputs: [],
       toolCalls: [],
       toolResults: [],
+    };
+    const backgroundTrace: NonNullable<OrchestratorResult["background"]> = {
+      workIds: [],
+      sourceExperienceIds: [],
     };
     const sourcePrompt = options?.sourcePrompt ?? prompt;
     const deterministic = calculateDeterministicResponse(prompt);
@@ -516,8 +534,9 @@ export class Orchestrator {
             }
           : {}),
       },
-    });
+    }, backgroundTrace);
     experienceTrace.input = inputExperience?.id;
+    experienceTrace.inputKind = inputExperience?.kind;
     const shouldResumePendingRepresentation =
       (explicitRepresentation == null && sessionId != null) ||
       explicitRepresentation?.clarificationGapId != null;
@@ -632,7 +651,7 @@ export class Orchestrator {
         registry: this.tools,
         workspaceRoot: this.config.workspaceRoot,
         experiences: experienceTrace,
-        recordExperience: (record) => this.recordExperience(record),
+        recordExperience: (record) => this.recordExperience(record, backgroundTrace),
       }
     );
     cognition = representationContribution.cognition;
@@ -670,6 +689,7 @@ export class Orchestrator {
         policyDecision,
         cognition,
         experienceTrace,
+        backgroundTrace,
         history,
         sessionId,
         interactionMode,
@@ -736,7 +756,7 @@ export class Orchestrator {
           historyCompression: true,
           historyMessage: false,
         },
-      });
+      }, backgroundTrace);
       if (summaryExperience) {
         experienceTrace.modelOutputs.push(summaryExperience.id);
         cognition = contributeModelOutput(cognition, {
@@ -802,6 +822,7 @@ export class Orchestrator {
         policyDecision,
         cognition,
         experienceTrace,
+        backgroundTrace,
         history,
         sessionId,
         interactionMode,
@@ -835,7 +856,7 @@ export class Orchestrator {
         registry: this.tools,
         workspaceRoot: this.config.workspaceRoot,
         maxSteps: this.config.toolsMaxSteps,
-        recordExperience: (record) => this.recordExperience(record),
+        recordExperience: (record) => this.recordExperience(record, backgroundTrace),
       });
       cognition = activated.cognition;
       const loopResult = {
@@ -850,7 +871,7 @@ export class Orchestrator {
       this.policy.recordUsage(policyDecision.tier, { tokens });
 
       for (const step of loopResult.steps) {
-        this.observer.emit({
+        emitSafely(this.observer, {
           ts: new Date().toISOString(),
           kind: "tool",
           sessionId,
@@ -885,6 +906,7 @@ export class Orchestrator {
           longTermBlock
         ),
         experiences: this.experiences ? experienceTrace : undefined,
+        background: backgroundTrace.workIds.length ? backgroundTrace : undefined,
         representation: representationSummary,
         activation: cognition.trace,
       };
@@ -908,7 +930,8 @@ export class Orchestrator {
         proposalsEnabled,
         cognition,
         options,
-        sourceExperienceIds
+        sourceExperienceIds,
+        backgroundTrace
       );
       result.activation = cognition.trace;
       this.emitRequestEvent(result, {
@@ -928,7 +951,7 @@ export class Orchestrator {
       sessionId,
       cognition,
       experiences: experienceTrace,
-      recordExperience: (record) => this.recordExperience(record),
+      recordExperience: (record) => this.recordExperience(record, backgroundTrace),
     });
     cognition = activated.cognition;
     const response = {
@@ -967,6 +990,7 @@ export class Orchestrator {
         longTermBlock
       ),
       experiences: this.experiences ? experienceTrace : undefined,
+      background: backgroundTrace.workIds.length ? backgroundTrace : undefined,
       representation: representationSummary,
       activation: cognition.trace,
     };
@@ -989,7 +1013,8 @@ export class Orchestrator {
       proposalsEnabled,
       cognition,
       options,
-      sourceExperienceIds
+      sourceExperienceIds,
+      backgroundTrace
     );
     result.activation = cognition.trace;
     this.emitRequestEvent(result, {
@@ -1009,6 +1034,7 @@ export class Orchestrator {
     policyDecision: PolicyDecision;
     cognition: CognitiveOperationContext;
     experienceTrace: NonNullable<OrchestratorResult["experiences"]>;
+    backgroundTrace: NonNullable<OrchestratorResult["background"]>;
     history: ChatMessage[];
     sessionId?: string;
     interactionMode: InteractionMode;
@@ -1037,7 +1063,7 @@ export class Orchestrator {
         mechanism: input.deterministic.mechanism,
         historyMessage: true,
       },
-    });
+    }, input.backgroundTrace);
     if (output) {
       input.experienceTrace.deterministicOutputs.push(output.id);
       input.experienceTrace.output = output.id;
@@ -1074,6 +1100,9 @@ export class Orchestrator {
         input.longTermBlock
       ),
       experiences: this.experiences ? input.experienceTrace : undefined,
+      background: input.backgroundTrace.workIds.length
+        ? input.backgroundTrace
+        : undefined,
       representation: input.representation,
       activation: cognition.trace,
     };
@@ -1114,7 +1143,8 @@ export class Orchestrator {
       input.proposalsEnabled,
       cognition,
       input.options,
-      sourceExperienceIds
+      sourceExperienceIds,
+      input.backgroundTrace
     );
     result.activation = cognition.trace;
     this.emitRequestEvent(result, {
@@ -1139,7 +1169,8 @@ export class Orchestrator {
     proposalsEnabled: boolean,
     cognition: CognitiveOperationContext,
     options?: OrchestratorHandleOptions,
-    sourceExperienceIds: string[] = []
+    sourceExperienceIds: string[] = [],
+    backgroundTrace?: NonNullable<OrchestratorResult["background"]>
   ): Promise<CognitiveOperationContext> {
     result.interactionMode = interactionMode;
     result.proposalsEnabled = proposalsEnabled;
@@ -1259,7 +1290,7 @@ export class Orchestrator {
                   semanticCapture: true,
                   historyMessage: false,
                 },
-              });
+              }, backgroundTrace);
               if (record) {
                 captureModelExperienceId = record.id;
                 result.experiences?.modelOutputs.push(record.id);
@@ -1275,6 +1306,49 @@ export class Orchestrator {
         mode: cap.mode,
         eventId: cap.eventId || undefined,
         sourceExperienceIds: cap.sourceExperienceIds,
+      };
+      const sourceEvent = cap.eventId
+        ? await this.knowledge.getEvent(cap.eventId)
+        : null;
+      result.semantic = {
+        events: sourceEvent
+          ? [{
+              id: sourceEvent.id,
+              sourceExperienceIds: sourceEvent.sourceExperienceIds,
+              transformationMethod: sourceEvent.transformation?.method,
+            }]
+          : [],
+        proposals: cap.proposals.map((proposal) => {
+          const payload = proposal.payload;
+          const canonicalIds = [
+            payload.canonicalId,
+            payload.canonicalNodeId,
+            payload.targetId,
+            payload.sourceId,
+            payload.fromId,
+            payload.toId,
+          ].filter((value): value is string => typeof value === "string");
+          return {
+            id: proposal.id,
+            kind: proposal.kind,
+            eventId: proposal.eventId,
+            epistemicStatus:
+              typeof payload.epistemicStatus === "string"
+                ? payload.epistemicStatus
+                : undefined,
+            canonicalIds: canonicalIds.length
+              ? [...new Set(canonicalIds)]
+              : undefined,
+            oldClaimId:
+              typeof payload.oldClaimId === "string"
+                ? payload.oldClaimId
+                : undefined,
+            revisedClaimId:
+              typeof payload.newClaimId === "string"
+                ? payload.newClaimId
+                : undefined,
+          };
+        }),
       };
       await reportPending();
       if (captureModelExperienceId) {
@@ -1328,14 +1402,15 @@ export class Orchestrator {
   ): void {
     const toolNames =
       result.toolSteps?.map((s) => s.call.name).filter(Boolean) ?? [];
-    this.observer.emit({
+    const latencyMs = Math.round(performance.now() - ctx.started);
+    emitSafely(this.observer, {
       ts: new Date().toISOString(),
       kind: "request",
       sessionId: ctx.sessionId,
       route: result.routing.model,
       model: result.model,
       provider: result.provider,
-      latencyMs: Math.round(performance.now() - ctx.started),
+      latencyMs,
       tokens: ctx.tokens ?? result.usage?.totalTokens,
       tools: toolNames.length > 0 ? toolNames : undefined,
       meta: {
@@ -1346,12 +1421,30 @@ export class Orchestrator {
         complexity: result.routing.complexity,
         compressed: result.compression?.compressed,
         retrievalChunks: result.retrieval?.chunkCount,
-        activation: result.activation,
         ...(this.obsLogPrompts
           ? { promptPreview: ctx.prompt.slice(0, 200) }
           : {}),
       },
     });
+    const cognition = observeCognitiveOperation(result, {
+      latencyMs,
+      tokens: ctx.tokens,
+      promptPreviewIncluded: this.obsLogPrompts,
+    });
+    if (cognition) {
+      emitSafely(this.observer, {
+        ts: new Date().toISOString(),
+        kind: "cognition",
+        sessionId: ctx.sessionId,
+        operationId: cognition.operationId,
+        model: result.model,
+        provider: result.provider,
+        latencyMs,
+        tokens: ctx.tokens ?? result.usage?.totalTokens,
+        tools: toolNames.length > 0 ? toolNames : undefined,
+        cognition,
+      });
+    }
   }
 
   private resolveClient(
@@ -1467,6 +1560,7 @@ export function loadConfigFromEnv(
   });
   const workspaceRoot = workspace.rootPath;
   const contextDir = workspace.contextDir;
+  const observer = createObserverFromEnv(env);
 
   const toolsDisabled = envFlagTrue(env.TOOLS_DISABLED);
   // Phase B loop is off by default until explicitly enabled.
@@ -1521,6 +1615,9 @@ export function loadConfigFromEnv(
     knowledgeCaptureEnabled
       ? createKnowledgeStore({
           defaultWorkspaceId,
+          diagnosticSink: (record) => {
+            emitSafely(observer, knowledgeDiagnosticEvent(record));
+          },
         })
       : undefined;
 
@@ -1603,7 +1700,7 @@ export function loadConfigFromEnv(
     embeddings,
     policy: new DefaultComputePolicy(loadPolicyConfig(env)),
     midModel: env.POLICY_MID_MODEL?.trim() || undefined,
-    observer: createObserverFromEnv(env),
+    observer,
     obsLogPrompts: loadObservabilityConfig(env).logPrompts,
   };
 }

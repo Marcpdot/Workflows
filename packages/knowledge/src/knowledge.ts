@@ -4,11 +4,13 @@ import type { CanonicalKnowledgeRepository } from "./storage/contracts.js";
 import type { PostgresKnowledgeConfig } from "./postgres/config.js";
 import { resolvePostgresKnowledgeConfig } from "./postgres/config.js";
 import { createPostgresCanonicalKnowledgeRepository } from "./postgres/repository.js";
+import type { KnowledgeDiagnosticSink } from "./types.js";
 
 export interface KnowledgeStoreConfig {
   defaultWorkspaceId?: string | null;
   postgresConfig?: PostgresKnowledgeConfig;
   pool?: Pool;
+  diagnosticSink?: KnowledgeDiagnosticSink;
 }
 
 /** PostgreSQL is the sole canonical knowledge runtime. */
@@ -19,6 +21,7 @@ export function createKnowledgeStore(
     ...(config.postgresConfig ?? resolvePostgresKnowledgeConfig()),
     defaultWorkspaceId: config.defaultWorkspaceId,
     pool: config.pool,
+    diagnosticSink: config.diagnosticSink,
   });
 }
 

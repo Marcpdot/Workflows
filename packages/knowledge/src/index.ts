@@ -8,6 +8,8 @@ export type {
   KnowledgeBackgroundWorkKind,
   KnowledgeBackgroundWorkStatus,
   KnowledgeDerivation,
+  KnowledgeDiagnosticRecord,
+  KnowledgeDiagnosticSink,
   KnowledgeEdge,
   KnowledgeEpistemicStatus,
   KnowledgeEvent,

@@ -16,7 +16,9 @@ import {
   type SemanticEmbeddingProvider,
 } from "@workflows/knowledge";
 import { createMemory } from "@workflows/memory";
+import { InMemoryObserver } from "@workflows/observability";
 import { Orchestrator } from "../src/orchestrator.js";
+import { observeBackgroundPass } from "../src/cognitiveObservability.js";
 import type { ModelClient, OrchestratorConfig } from "../src/types.js";
 import { startKnowledgePostgresTest } from "./knowledge-postgres-test-runtime.js";
 
@@ -133,6 +135,7 @@ async function acceptedNode(
 }
 
 async function main(): Promise<void> {
+  const observer = new InMemoryObserver();
   const runtime = await startKnowledgePostgresTest();
   const memoryPath = resolve(process.cwd(), `data/wp6-memory-${Date.now()}.db`);
   const pool = createKnowledgePostgresPool({ connectionString: runtime.connectionString });
@@ -156,6 +159,33 @@ async function main(): Promise<void> {
     assert(first.modelCallsUsed === 0, "deferred conservative extraction does not invoke a model");
     const completed = (await store.listBackgroundWork({ kind: "semantic_consolidation", status: "completed" }))
       .find((item) => item.sourceExperienceId === foreground.experiences!.input)!;
+    observer.emit({
+      ts: new Date().toISOString(),
+      kind: "background",
+      background: observeBackgroundPass("wp6-first-pass", first, {
+        workIds: [completed.id],
+        work: [{
+          id: completed.id,
+          kind: completed.kind,
+          status: completed.status,
+          sourceExperienceId: completed.sourceExperienceId,
+        }],
+        sourceExperienceIds: [foreground.experiences.input],
+        limits: { maxItems: 20, maxModelCalls: 0 },
+      }),
+    });
+    const firstTelemetry = observer.events.at(-1)?.background;
+    assert(
+      firstTelemetry?.itemsInspected === first.itemsInspected &&
+        firstTelemetry.sourceExperienceIds.includes(foreground.experiences.input) &&
+        firstTelemetry.work[0]?.kind === "semantic_consolidation" &&
+        firstTelemetry.work[0].status === "completed",
+      "background observability reuses pass metrics and exact source IDs"
+    );
+    assert(
+      !JSON.stringify(firstTelemetry).includes("bearing heat above 4700 rpm"),
+      "background telemetry excludes raw source content"
+    );
     const semanticEvent = await store.getEvent(String(completed.payload.eventId));
     assert(semanticEvent?.sourceContent === undefined, "background knowledge never copies authoritative experience content");
     assert(semanticEvent?.sourceExperienceIds.join(",") === foreground.experiences.input, "semantic lineage points to the exact durable experience");
@@ -276,6 +306,25 @@ async function main(): Promise<void> {
     const contradictionWork = (await store.listBackgroundWork({ kind: "claim_reconsideration" }))
       .filter((item) => item.payload.edgeId === contradiction.id);
     assert(contradictionWork.length === 1 && contradictionWork[0]!.status === "escalated", "stable work key prevents duplicate escalation");
+    observer.emit({
+      ts: new Date().toISOString(),
+      kind: "background",
+      background: observeBackgroundPass("wp6-escalation-pass", contradictionPass, {
+        workIds: [contradictionWork[0]!.id],
+        work: [{
+          id: contradictionWork[0]!.id,
+          kind: contradictionWork[0]!.kind,
+          status: contradictionWork[0]!.status,
+          sourceEventId: contradictionWork[0]!.sourceEventId,
+          targetId: contradictionWork[0]!.targetNodeId,
+        }],
+      }),
+    });
+    assert(
+      observer.events.at(-1)?.background?.workIds[0] === contradictionWork[0]!.id &&
+        observer.events.at(-1)?.background?.escalationsCreated === 1,
+      "bounded escalation remains inspectable by stable work ID"
+    );
     const finalIdle = await runKnowledgeBackgroundPass({ pool, canonical: store, experiences: memory });
     assert(finalIdle.itemsInspected === 0 && finalIdle.escalationsCreated === 0, "escalation does not become recursive background reasoning");
 

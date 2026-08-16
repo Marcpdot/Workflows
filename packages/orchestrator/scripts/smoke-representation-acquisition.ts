@@ -10,8 +10,10 @@ import {
   type KnowledgeNode,
 } from "@workflows/knowledge";
 import { createMemory } from "@workflows/memory";
+import { emitSafely, InMemoryObserver } from "@workflows/observability";
 import { MapToolRegistry } from "@workflows/tools";
 import { Orchestrator } from "../src/orchestrator.js";
+import { knowledgeDiagnosticEvent } from "../src/cognitiveObservability.js";
 import type {
   ModelClient,
   ModelRequest,
@@ -66,6 +68,7 @@ function config(input: {
   knowledge: ReturnType<typeof createKnowledgeStore>;
   memory: ReturnType<typeof createMemory>;
   tools: MapToolRegistry;
+  observer: InMemoryObserver;
 }): OrchestratorConfig {
   return {
     ollamaBin: "ollama",
@@ -92,6 +95,7 @@ function config(input: {
     tools: input.tools,
     toolsEnabled: true,
     toolsMaxSteps: 2,
+    observer: input.observer,
     knowledge: input.knowledge,
     knowledgeSettings: {
       toolsEnabled: false,
@@ -120,7 +124,14 @@ const pgConfig = {
   applicationName: "workflows-wp5-smoke",
 };
 const pool = createKnowledgePostgresPool(pgConfig);
-const knowledge = createKnowledgeStore({ postgresConfig: pgConfig, pool });
+const observer = new InMemoryObserver();
+const knowledge = createKnowledgeStore({
+  postgresConfig: pgConfig,
+  pool,
+  diagnosticSink: (record) => {
+    emitSafely(observer, knowledgeDiagnosticEvent(record));
+  },
+});
 const memory = createMemory({ dbPath: memoryPath });
 const tools = new MapToolRegistry();
 tools.register({
@@ -136,7 +147,7 @@ tools.register({
   },
 });
 const model = new FixtureModel();
-const runtime = new Orchestrator(config({ knowledge, memory, tools }), {
+const runtime = new Orchestrator(config({ knowledge, memory, tools, observer }), {
   local: model,
   frontier: model,
 });
@@ -332,6 +343,30 @@ try {
   const clarificationObservations = await knowledge.listObservations(motorRun.id);
   assert(clarificationObservations.some((item) => item.metadata.representationGapId === resolvedGap.id && item.sourceEventId === clarificationEvent.id), "safe direct clarification observation is auditable");
   assert((await knowledge.getNode(motorBench.id))?.status === "accepted", "other plausible identity remains intact");
+  const clarificationTelemetry = observer.events.find(
+    (event) =>
+      event.kind === "cognition" &&
+      event.operationId === clarified.activation?.operationId
+  )?.cognition;
+  assert(
+    clarificationTelemetry?.experiences.clarificationExperienceIds.includes(
+      clarificationExperience.id
+    ) &&
+      clarificationTelemetry.knowledge.gapId === resolvedGap.id &&
+      clarificationTelemetry.knowledge.canonicalIds.includes(motorRun.id),
+    "clarification telemetry joins gap, experience, and canonical resolution"
+  );
+  const resolutionTelemetry = observer.events.find(
+    (event) =>
+      event.kind === "knowledge" &&
+      event.knowledge?.gapId === resolvedGap.id &&
+      event.knowledge.action === "proposal_accepted"
+  )?.knowledge;
+  assert(
+    resolutionTelemetry?.sourceExperienceIds.includes(clarificationExperience.id) &&
+      resolutionTelemetry.resolutionMethod === "human_clarification",
+    "canonical write hook exposes clarification lineage without content"
+  );
 
   // D. A later session reuses the exact contextual resolution without model history.
   const reused = await runtime.handle(
@@ -348,6 +383,16 @@ try {
   assert(!reused.representation.question, "same clarification is not asked again");
   const reusedPrompt = model.requests.at(-1)!.messages.map((message) => message.content).join("\n");
   assert(reusedPrompt.includes(motorRun.id), "replacement context receives canonical identity without prior model history");
+  const reuseTelemetry = observer.events.find(
+    (event) =>
+      event.kind === "cognition" &&
+      event.operationId === reused.activation?.operationId
+  )?.cognition;
+  assert(
+    reuseTelemetry?.outcome.priorClarificationReused === true &&
+      reuseTelemetry.outcome.clarificationResolved === false,
+    "later reuse is a factual outcome hook without another clarification"
+  );
 
   // E. One bounded tool inspection runs before any human question.
   const toolResolved = await runtime.handle(

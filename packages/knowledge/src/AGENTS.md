@@ -39,6 +39,9 @@ contracts. PostgreSQL/PostGIS is the sole canonical knowledge runtime.
 - Background reconsideration may resolve from strong evidence or persist one
   bounded escalation. It must not auto-promote semantic truth, repeatedly prompt
   a human, or launch recursive/model-driven cognition.
+- Knowledge diagnostics are optional, reference-only, and emitted only after a
+  canonical change commits. Sink failure must never affect PostgreSQL truth,
+  projection work, or proposal lifecycle.
 - Semantic search runs in PostgreSQL/pgvector against a declared model/version;
   returned candidates never establish or merge canonical identity.
 - Embedding generation stays behind an explicit provider. Never invent vectors

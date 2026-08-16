@@ -203,6 +203,35 @@ export interface KnowledgeBackgroundWork {
   updatedAt: number;
 }
 
+/**
+ * Non-authoritative, privacy-safe facts about committed knowledge changes.
+ * The sink is optional and failures must never affect canonical transactions.
+ */
+export interface KnowledgeDiagnosticRecord {
+  action:
+    | "event_created"
+    | "proposals_created"
+    | "proposal_accepted"
+    | "proposal_rejected"
+    | "event_invalidated";
+  eventId?: string;
+  proposalIds?: string[];
+  proposalKind?: KnowledgeProposal["kind"];
+  canonicalIds?: string[];
+  sourceExperienceIds?: string[];
+  epistemicStatus?: KnowledgeEpistemicStatus;
+  transformationMethod?: string;
+  gapId?: string;
+  resolutionMethod?: string;
+  oldClaimId?: string;
+  revisedClaimId?: string;
+  contradictionId?: string;
+}
+
+export type KnowledgeDiagnosticSink = (
+  record: KnowledgeDiagnosticRecord
+) => void;
+
 /** Project status summary for tools/CLI (M13) */
 export interface ProjectStatus {
   project: KnowledgeNode;
@@ -283,6 +312,8 @@ export interface KnowledgeStore {
     limit?: number;
     newestFirst?: boolean;
   }): Promise<KnowledgeBackgroundWork[]>;
+
+  getBackgroundWork(id: string): Promise<KnowledgeBackgroundWork | null>;
 
   addProposals(
     eventId: string,

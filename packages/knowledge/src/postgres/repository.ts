@@ -10,6 +10,8 @@ import type {
   KnowledgeBackgroundWorkKind,
   KnowledgeBackgroundWorkStatus,
   KnowledgeDerivation,
+  KnowledgeDiagnosticRecord,
+  KnowledgeDiagnosticSink,
   KnowledgeEdge,
   KnowledgeEpistemicStatus,
   KnowledgeEvent,
@@ -158,6 +160,7 @@ function observation(row: Record<string, unknown>): KnowledgeObservation {
 export interface PostgresCanonicalRepositoryConfig extends PostgresKnowledgeConfig {
   defaultWorkspaceId?: string | null;
   pool?: Pool;
+  diagnosticSink?: KnowledgeDiagnosticSink;
 }
 
 export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeRepository {
@@ -165,11 +168,22 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
   private readonly pool: Pool;
   private readonly ownsPool: boolean;
   private readonly defaultWorkspaceId: string | null | undefined;
+  private readonly diagnosticSink?: KnowledgeDiagnosticSink;
 
   constructor(config: PostgresCanonicalRepositoryConfig) {
     this.pool = config.pool ?? createKnowledgePostgresPool(config);
     this.ownsPool = !config.pool;
     this.defaultWorkspaceId = config.defaultWorkspaceId;
+    this.diagnosticSink = config.diagnosticSink;
+  }
+
+  private emitDiagnostic(record: KnowledgeDiagnosticRecord): void {
+    if (!this.diagnosticSink) return;
+    try {
+      this.diagnosticSink(record);
+    } catch {
+      // Canonical truth never depends on diagnostic delivery.
+    }
   }
 
   async healthCheck(): Promise<RepositoryHealth> {
@@ -255,7 +269,14 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb) RETURNING *`,
       [randomUUID(), input.sourceType, input.sourceRef.trim(), fallbackSourceContent ?? null, input.model ?? null, input.inputHash ?? null, JSON.stringify(metadata)]
     );
-    return event(result.rows[0]);
+    const created = event(result.rows[0]);
+    this.emitDiagnostic({
+      action: "event_created",
+      eventId: created.id,
+      sourceExperienceIds: created.sourceExperienceIds,
+      transformationMethod: created.transformation?.method,
+    });
+    return created;
   }
 
   async getEvent(id: string): Promise<KnowledgeEvent | null> {
@@ -284,7 +305,14 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
         payload: { trigger: "source_invalidation", reason: reason.trim() },
       });
       await client.query("COMMIT");
-      return event(result.rows[0]);
+      const invalidated = event(result.rows[0]);
+      this.emitDiagnostic({
+        action: "event_invalidated",
+        eventId: invalidated.id,
+        sourceExperienceIds: invalidated.sourceExperienceIds,
+        transformationMethod: invalidated.transformation?.method,
+      });
+      return invalidated;
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -328,6 +356,14 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     return result.rows.map(backgroundWork);
   }
 
+  async getBackgroundWork(id: string): Promise<KnowledgeBackgroundWork | null> {
+    const result = await this.pool.query(
+      "SELECT * FROM knowledge_background_work WHERE id = $1",
+      [id]
+    );
+    return result.rows[0] ? backgroundWork(result.rows[0]) : null;
+  }
+
   async addProposals(eventId: string, items: Array<{ kind: KnowledgeProposal["kind"]; payload: Record<string, unknown> }>): Promise<KnowledgeProposal[]> {
     if (!(await this.getEvent(eventId))) throw new Error(`addProposals: unknown eventId ${eventId}`);
     const client = await this.pool.connect();
@@ -354,6 +390,11 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
         }
       }
       await client.query("COMMIT");
+      this.emitDiagnostic({
+        action: "proposals_created",
+        eventId,
+        proposalIds: output.map((item) => item.id),
+      });
       return output;
     } catch (error) {
       await client.query("ROLLBACK");
@@ -396,6 +437,7 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
 
   async acceptProposal(id: string, edits?: Record<string, unknown>): Promise<void> {
     const client = await this.pool.connect();
+    let diagnostic: KnowledgeDiagnosticRecord | undefined;
     try {
       await client.query("BEGIN");
       const result = await client.query("SELECT * FROM knowledge_proposals WHERE id = $1 FOR UPDATE", [id]);
@@ -403,20 +445,35 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
       const current = proposal(result.rows[0]);
       if (current.status !== "pending") throw new Error(`acceptProposal: proposal ${id} is already ${current.status}`);
       const payload = { ...current.payload, ...edits };
-      if (current.kind === "node") await this.materializeNode(client, payload, current.eventId, true);
-      else if (current.kind === "edge") await this.materializeEdge(client, payload, current.eventId);
+      const canonicalIds: string[] = [];
+      let oldClaimId: string | undefined;
+      let revisedClaimId: string | undefined;
+      let contradictionId: string | undefined;
+      if (current.kind === "node") {
+        const created = await this.materializeNode(client, payload, current.eventId, true);
+        canonicalIds.push(created.id);
+      }
+      else if (current.kind === "edge") {
+        const created = await this.materializeEdge(client, payload, current.eventId);
+        canonicalIds.push(created.fromNodeId, created.toNodeId);
+        if (created.relation === "contradicts") contradictionId = created.id;
+      }
       else if (current.kind === "evidence") await this.materializeEvidence(client, payload, current.eventId);
       else if (current.kind === "observation") await this.materializeObservation(client, payload, current.eventId);
-      else if (current.kind === "merge") await this.mergeNodesWith(client, { fromId: requiredString(payload.fromId, "merge fromId"), intoId: requiredString(payload.intoId, "merge intoId") });
+      else if (current.kind === "merge") {
+        const merged = await this.mergeNodesWith(client, { fromId: requiredString(payload.fromId, "merge fromId"), intoId: requiredString(payload.intoId, "merge intoId") });
+        canonicalIds.push(merged.from.id, merged.into.id);
+      }
       else if (current.kind === "supersede") {
-        const oldClaimId = await this.resolveClaimReference(client, payload, "oldClaim");
-        const newClaimId = await this.resolveClaimReference(client, payload, "newClaim");
+        oldClaimId = await this.resolveClaimReference(client, payload, "oldClaim");
+        revisedClaimId = await this.resolveClaimReference(client, payload, "newClaim");
         await this.supersedeClaimWith(client, {
           oldClaimId,
-          newClaimId,
+          newClaimId: revisedClaimId,
           markOldDisputed: payload.markOldDisputed !== false,
           sourceEventId: current.eventId,
         });
+        canonicalIds.push(oldClaimId, revisedClaimId);
       }
       else if (current.kind === "representation_gap") {
         await this.materializeRepresentationResolution(
@@ -425,6 +482,9 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
           current.eventId,
           current.id
         );
+        const resolution = object(payload.resolution);
+        const canonicalId = String(resolution.canonicalNodeId ?? "").trim();
+        if (canonicalId) canonicalIds.push(canonicalId);
       }
       else throw new Error(`acceptProposal: unsupported proposal kind ${String(current.kind)}`);
       if (current.kind === "representation_gap") {
@@ -440,7 +500,39 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
           [id]
         );
       }
+      const resolution = object(payload.resolution);
+      const diagnosticSourceEventId =
+        typeof resolution.resolutionEventId === "string"
+          ? resolution.resolutionEventId
+          : current.eventId;
+      const eventResult = await client.query(
+        "SELECT * FROM knowledge_events WHERE id = $1",
+        [diagnosticSourceEventId]
+      );
+      const sourceEvent = eventResult.rows[0]
+        ? event(eventResult.rows[0])
+        : undefined;
+      diagnostic = {
+        action: "proposal_accepted",
+        eventId: current.eventId,
+        proposalIds: [current.id],
+        proposalKind: current.kind,
+        canonicalIds: [...new Set(canonicalIds)],
+        sourceExperienceIds: sourceEvent?.sourceExperienceIds ?? [],
+        epistemicStatus:
+          typeof payload.epistemicStatus === "string"
+            ? payload.epistemicStatus as KnowledgeEpistemicStatus
+            : undefined,
+        transformationMethod: sourceEvent?.transformation?.method,
+        gapId: current.kind === "representation_gap" ? current.id : undefined,
+        resolutionMethod:
+          typeof resolution.method === "string" ? resolution.method : undefined,
+        oldClaimId,
+        revisedClaimId,
+        contradictionId,
+      };
       await client.query("COMMIT");
+      this.emitDiagnostic(diagnostic);
     } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
   }
 
@@ -454,6 +546,7 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
       if (!current.rows[0]) throw new Error(`rejectProposal: unknown id ${id}`);
       throw new Error(`rejectProposal: proposal ${id} is already ${current.rows[0].status}`);
     }
+    this.emitDiagnostic({ action: "proposal_rejected", proposalIds: [id] });
   }
 
   async listEvidence(targetNodeId: string, limit = 50): Promise<KnowledgeEvidence[]> {

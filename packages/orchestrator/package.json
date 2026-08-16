@@ -23,7 +23,15 @@
     "knowledge:projections": "tsx scripts/reconcile-knowledge-projections.ts",
     "knowledge:projections:rebuild": "tsx scripts/reconcile-knowledge-projections.ts rebuild",
     "typecheck": "tsc --noEmit",
-    "eval": "tsx scripts/run-eval.ts"
+    "eval": "tsx scripts/run-eval.ts",
+    "test:cc:source": "node --require ./scripts/tsx-bootstrap.cjs --import tsx scripts/smoke-experience.ts",
+    "test:cc:lineage": "node --require ./scripts/tsx-bootstrap.cjs --import tsx scripts/integration-knowledge-lineage.ts",
+    "test:cc:activation": "node --require ./scripts/tsx-bootstrap.cjs --import tsx scripts/smoke-capability-activation.ts",
+    "test:cc:operational": "node --require ./scripts/tsx-bootstrap.cjs --import tsx scripts/smoke-continuous-cognition.ts",
+    "test:cc:representation": "node --require ./scripts/tsx-bootstrap.cjs --import tsx scripts/smoke-representation-acquisition.ts",
+    "test:cc:background": "node --require ./scripts/tsx-bootstrap.cjs --import tsx scripts/smoke-background-cognition.ts",
+    "test:cc:observability": "node --require ./scripts/tsx-bootstrap.cjs --import tsx scripts/smoke-continuous-cognition-observability.ts",
+    "test:cc": "node --require ./scripts/tsx-bootstrap.cjs --import tsx scripts/run-cc-eval.ts"
   },
   "engines": {
     "node": ">=20"

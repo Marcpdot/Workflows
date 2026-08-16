@@ -224,6 +224,7 @@ export interface OrchestratorResult {
   /** Durable source identities created while processing this interaction. */
   experiences?: {
     input?: string;
+    inputKind?: string;
     modelOutputs: string[];
     deterministicOutputs: string[];
     toolCalls: string[];
@@ -238,6 +239,28 @@ export interface OrchestratorResult {
     method?: string;
     question?: string;
     sourceEventId?: string;
+  };
+  /** Non-authoritative references to semantic writes caused by this operation. */
+  semantic?: {
+    events: Array<{
+      id: string;
+      sourceExperienceIds: string[];
+      transformationMethod?: string;
+    }>;
+    proposals: Array<{
+      id: string;
+      kind: string;
+      eventId: string;
+      epistemicStatus?: string;
+      canonicalIds?: string[];
+      oldClaimId?: string;
+      revisedClaimId?: string;
+    }>;
+  };
+  /** Persistent background work exposed by this foreground operation. */
+  background?: {
+    workIds: string[];
+    sourceExperienceIds: string[];
   };
   /** Privacy-preserving WHAT / HOW / HOW MUCH capability activation trace. */
   activation?: ActivationTrace;

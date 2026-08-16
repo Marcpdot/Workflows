@@ -41,6 +41,8 @@ import {
   runVoiceTurn,
 } from "@workflows/voice";
 import type { ModelChoice } from "./types.js";
+import { createObserverFromEnv, emitSafely } from "@workflows/observability";
+import { knowledgeDiagnosticEvent } from "./cognitiveObservability.js";
 
 function loadDotEnv(filePath = resolve(process.cwd(), ".env")): void {
   if (!existsSync(filePath)) return;
@@ -608,10 +610,14 @@ function openKnowledgeFromEnv(options?: {
   workspaceRoot?: string;
 }): KnowledgeStore {
   const env = process.env;
+  const observer = createObserverFromEnv(env);
   return createKnowledgeStore({
     defaultWorkspaceId: resolveDefaultKnowledgeWorkspaceId(env, {
       workspaceRoot: options?.workspaceRoot,
     }),
+    diagnosticSink: (record) => {
+      emitSafely(observer, knowledgeDiagnosticEvent(record));
+    },
   });
 }
 

@@ -21,3 +21,8 @@ npx tsx scripts/smoke-eval-cost.ts
 ```
 
 Runner still wires the Orchestrator package (same handle path as CLI).
+
+Continuous Cognition adds a small JSON-compatible scenario/result shape for
+provider/model/tool comparisons without subjective grading or adaptation. From
+`packages/orchestrator`, `npm run test:cc` runs the existing WP1-WP7 acceptance
+scripts as one suite and writes `data/eval-results/cc/<timestamp>.json`.

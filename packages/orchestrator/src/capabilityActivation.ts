@@ -99,6 +99,12 @@ export interface CapabilityOutput {
   value?: unknown;
 }
 
+export interface CapabilityOutcomeTrace {
+  capabilityId: CapabilityId;
+  status: CapabilityOutput["status"];
+  representationKinds: string[];
+}
+
 export type ActivationExpansionTrigger =
   | "missing_information"
   | "contradiction"
@@ -128,6 +134,7 @@ export interface ActivationTrace {
   limits: CognitiveResourceLimits;
   decisions: CapabilityDecision[];
   representations: ActivatedRepresentation[];
+  outcomes: CapabilityOutcomeTrace[];
   expansions: ActivationExpansion[];
   degradations: CapabilityDegradation[];
 }
@@ -473,6 +480,7 @@ export function createCognitiveOperationContext(input: {
       limits,
       decisions: [],
       representations: [],
+      outcomes: [],
       expansions: [],
       degradations: [],
     },
@@ -596,6 +604,14 @@ export function contributeCapabilityOutput(
       representations: [
         ...context.trace.representations,
         ...output.representations,
+      ],
+      outcomes: [
+        ...context.trace.outcomes,
+        {
+          capabilityId: output.capabilityId,
+          status: output.status,
+          representationKinds: output.representations.map((item) => item.kind),
+        },
       ],
     },
   };

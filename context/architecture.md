@@ -74,3 +74,32 @@ convergent.
 
 **Rejected alternatives:** a universal cognition scheduler, process-local pending
 queues, polling all experiences or the whole graph, and an always-on model loop.
+
+## Continuous Cognition diagnostics and evaluation
+
+**Status:** active
+**Evidence:** confirmed
+**Source:** PR #33 WP7
+**Revisit when:** a repeated adaptive decision has measurable outcomes that
+justify a separately reviewed learning mechanism
+
+Each completed foreground operation can emit one compact CC diagnostic record
+that joins durable experience IDs, activation decisions and limits,
+model/tool participation, canonical/provenance references, semantic writes,
+degradation, and factual outcomes. Canonical proposal acceptance/rejection and
+finite background passes expose equivalent reference-only records. These events
+are non-authoritative and non-fatal; truth remains in durable experience and
+PostgreSQL. Private full content and hidden reasoning are excluded by default.
+
+The CC evaluation suite reuses WP1-WP7 acceptance scenarios and emits a small
+JSON-compatible result shape with scenario, provider/model/tool IDs, latency,
+tokens/cost when available, activation/provenance/degradation counts, semantic
+changes, and background metrics.
+
+**Reason:** Stable diagnostic evidence makes cognition reconstructable and model
+or provider swaps comparable before learned routing or self-training is safe to
+consider.
+
+**Rejected alternatives:** observability as a truth store, telemetry on the
+correctness path, raw-content logging by default, a separate analytics brain,
+and adaptation before outcomes exist.

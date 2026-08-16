@@ -53,18 +53,23 @@ jobs:
       - name: Run smoke tests
         run: |
           for test in scripts/smoke-*.ts; do
+            case "$test" in
+              scripts/smoke-experience.ts|scripts/smoke-capability-activation.ts|scripts/smoke-continuous-cognition.ts|scripts/smoke-representation-acquisition.ts|scripts/smoke-background-cognition.ts|scripts/smoke-continuous-cognition-observability.ts)
+                continue
+                ;;
+            esac
             echo "Running $test"
             npx tsx "$test"
           done
+
+      - name: Run Continuous Cognition evaluation suite
+        run: npm run test:cc
 
       - name: Run PostgreSQL integration test
         run: npm run knowledge:test:postgres
 
       - name: Run canonical integration test
         run: npm run knowledge:test:canonical
-
-      - name: Run epistemic lineage integration test
-        run: npm run knowledge:test:lineage
 
       - name: Run vector integration test
         run: npm run knowledge:test:vector
