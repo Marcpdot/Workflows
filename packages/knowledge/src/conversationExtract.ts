@@ -148,6 +148,9 @@ export function conversationHeuristicExtract(
           ? `limitKind=${limitKind}; ${sent.slice(0, 160)}`
           : sent.slice(0, 160),
         confidence: 0.7,
+        epistemicStatus: /\b(suspect|maybe|might|perhaps|mistenker|kanskje|muligens)\b/i.test(sent)
+          ? "hypothesized"
+          : "inferred",
       });
       // Attach limitKind as description meta on limit nodes
       if (relation === "limits" && limitKind) {
@@ -172,6 +175,7 @@ export function conversationHeuristicExtract(
         label: `if ${x} solved then ${y} constrains`,
         description: sent.slice(0, 160),
         confidence: 0.65,
+        epistemicStatus: "hypothesized",
       });
       matched = true;
     }
@@ -190,6 +194,9 @@ export function conversationHeuristicExtract(
           ? "open question"
           : "assumption or uncertainty",
         confidence: 0.5,
+        epistemicStatus: /\b(assum(?:e|es|ing|ption)|antar|forutsatt)\b/i.test(sent)
+          ? "assumed"
+          : "hypothesized",
       });
     }
   }
@@ -199,7 +206,13 @@ export function conversationHeuristicExtract(
     // Fallback thin: 1–2 long noun phrases as claims only
     for (const sent of sentences.slice(0, 3)) {
       if (sent.split(" ").length >= 5) {
-        claims.push({ label: sent.slice(0, 100), confidence: 0.4 });
+        claims.push({
+          label: sent.slice(0, 100),
+          confidence: 0.4,
+          epistemicStatus: /\b(suspect|maybe|might|perhaps|mistenker|kanskje|muligens)\b/i.test(sent)
+            ? "hypothesized"
+            : "inferred",
+        });
       }
     }
   }
@@ -216,6 +229,7 @@ export function scoreProposalItem(item: {
   kind: string;
   payload: Record<string, unknown>;
 }): number {
+  if (item.kind === "supersede") return 120;
   if (item.kind === "edge") {
     const rel = String(item.payload.relation ?? "about");
     const structural = [

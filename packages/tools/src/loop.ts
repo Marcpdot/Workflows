@@ -53,6 +53,10 @@ export async function runToolLoop(
         ? response.toolCalls
         : undefined;
     const calls = structured ?? parseToolCalls(lastText);
+    const modelOutputExperienceId = await options.onModelOutput?.({
+      ...response,
+      toolCalls: calls.length > 0 ? calls : undefined,
+    });
 
     if (calls.length === 0) {
       return {
@@ -73,12 +77,20 @@ export async function runToolLoop(
     });
 
     for (const call of calls) {
+      const toolCallExperienceId = await options.onToolCall?.(
+        call,
+        modelOutputExperienceId || undefined
+      );
       const started = performance.now();
       const result = await options.registry.execute(call.name, call.args, ctx);
       const durationMs = Math.round(performance.now() - started);
 
       const loopStep: ToolLoopStep = { call, result, durationMs };
       steps.push(loopStep);
+      await options.onToolResult?.(
+        loopStep,
+        toolCallExperienceId || undefined
+      );
 
       messages.push({
         role: "user",

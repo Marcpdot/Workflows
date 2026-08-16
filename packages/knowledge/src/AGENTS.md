@@ -8,6 +8,9 @@ contracts. PostgreSQL/PostGIS is the sole canonical knowledge runtime.
 - Models and extraction produce proposals; permanent truth requires acceptance.
 - Preserve provenance, evidence, workspace/context, temporal state,
   contradiction and supersession history.
+- Durable experience records are authoritative for raw experienced content.
+  Knowledge events reference their stable IDs and must not copy that payload;
+  `source_content` is only a fallback when no durable experience IDs exist.
 - Every independently referable object can receive one stable canonical UUID.
 - Labels, workspace, source, observation frequency and semantic similarity are
   resolution signals, never identity keys.
@@ -17,6 +20,10 @@ contracts. PostgreSQL/PostGIS is the sole canonical knowledge runtime.
   supports/contradicts/test evidence. Both may target every canonical type.
 - Reuse requires an explicit canonical ID, explicit alias, or an unambiguous
   resolution decision. Preserve ambiguity instead of silently collapsing IDs.
+- Representation gaps reuse knowledge events/proposals: the proposal ID is the
+  stable gap ID, its event retains experience lineage, and resolution appends a
+  contextual canonical reference without merging identities. Semantic
+  candidates alone can never resolve a gap.
 - Explicit merge is transactional, retains the retired identity as history and
   may only clean conflicts created by that merge. Never perform global graph
   cleanup as a side effect.
@@ -25,6 +32,16 @@ contracts. PostgreSQL/PostGIS is the sole canonical knowledge runtime.
 - The current node types are an initial ontology, not a closed identity universe.
 - Accepted canonical writes append projection-outbox work in the same
   transaction. Graph/vector backends remain reconstructable and non-canonical.
+- Background cognition is knowledge-owned, persisted-state-driven, idempotent,
+  and finite-pass. Its narrow work ledger stores references/status only; raw
+  content remains in durable experiences and projection work remains in the
+  projection outbox. Idle passes must not scan all experience or canonical state.
+- Background reconsideration may resolve from strong evidence or persist one
+  bounded escalation. It must not auto-promote semantic truth, repeatedly prompt
+  a human, or launch recursive/model-driven cognition.
+- Knowledge diagnostics are optional, reference-only, and emitted only after a
+  canonical change commits. Sink failure must never affect PostgreSQL truth,
+  projection work, or proposal lifecycle.
 - Semantic search runs in PostgreSQL/pgvector against a declared model/version;
   returned candidates never establish or merge canonical identity.
 - Embedding generation stays behind an explicit provider. Never invent vectors

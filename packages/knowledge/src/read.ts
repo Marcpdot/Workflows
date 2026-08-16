@@ -6,6 +6,7 @@
 import type {
   ContradictionPair,
   KnowledgeEdge,
+  KnowledgeEpistemicStatus,
   KnowledgeNode,
   KnowledgeNodeType,
   KnowledgeProposal,
@@ -21,6 +22,10 @@ export interface KnowledgeNodeDto {
   label: string;
   description?: string;
   status: KnowledgeStatus;
+  epistemicStatus: KnowledgeEpistemicStatus;
+  confidence?: number;
+  validFrom?: number;
+  validTo?: number;
   workspaceId?: string | null;
   createdAt: number;
   updatedAt: number;
@@ -113,6 +118,10 @@ export function toNodeDto(n: KnowledgeNode): KnowledgeNodeDto {
     label: n.label,
     description: n.description,
     status: n.status,
+    epistemicStatus: n.epistemicStatus,
+    confidence: n.confidence,
+    validFrom: n.validFrom,
+    validTo: n.validTo,
     workspaceId: n.workspaceId,
     createdAt: n.createdAt,
     updatedAt: n.updatedAt,
@@ -140,6 +149,14 @@ export function createKnowledgeReader(store: KnowledgeStore) {
     async getNode(id: string): Promise<KnowledgeNodeDto | null> {
       const n = await store.getNode(id);
       return n ? toNodeDto(n) : null;
+    },
+
+    async getClaimLineage(claimId: string, options?: { maxDepth?: number }) {
+      return store.getClaimLineage(claimId, options);
+    },
+
+    async findDependentClaims(input: { sourceNodeId?: string; sourceEventId?: string; maxDepth?: number }) {
+      return store.findDependentClaims(input);
     },
 
     async search(query: {

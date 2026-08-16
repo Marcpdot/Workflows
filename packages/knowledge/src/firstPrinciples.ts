@@ -393,10 +393,20 @@ export async function runFirstPrinciplesAnalysis(
   const event = await input.store.createEvent({
     sourceType: "manual",
     sourceRef,
+    sourceContent: JSON.stringify({ topic, analysis }),
     model:
       input.model ??
       (mode === "model" ? "fp-model" : mode === "fixture" ? "fp-fixture" : "fp-heuristic"),
     inputHash: hashInput(`${topic}\n${analysis.goal}`),
+    transformation: {
+      method: mode === "model" ? "first_principles_model_analysis" : mode === "fixture" ? "first_principles_fixture" : "first_principles_heuristic_analysis",
+      model: input.model ?? (mode === "model" ? "fp-model" : mode === "fixture" ? "fp-fixture" : "fp-heuristic"),
+      representationScope: "first-principles analysis graph fragment",
+      informationLoss: {
+        occurred: true,
+        description: "The canonical graph stores selected analysis claims and relations rather than the full reasoning trace.",
+      },
+    },
   });
   const proposals = await input.store.addProposals(event.id, items);
 

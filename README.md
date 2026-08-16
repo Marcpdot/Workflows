@@ -8,18 +8,28 @@ tools, memory, structured knowledge, and bounded agents.
 ## Current architecture
 
 ```text
-User / Agents
-     |
-     v
-Orchestrator
-     |
-     +-- Models
-     +-- Tools
-     +-- Memory
-     +-- Knowledge
-     +-- Retrieval
-     `-- Observability
+CLI / HTTP / Voice / Agents
+            |
+            v
+  thin handle() compatibility boundary
+            |
+            v
+ durable input experience
+   -> operation-local selective activation
+   -> capability-owned retrieval / tools / models / deterministic work
+   -> durable outputs
+   -> pending semantic proposals with lineage
+            |
+            v
+ persistent experience + canonical knowledge continuity
 ```
+
+Capabilities contribute only when the operation needs them; no project/task is
+required. PostgreSQL-backed knowledge and durable experience survive model
+replacement. Unresolved referents use contextual representation acquisition,
+and knowledge-owned finite background passes consolidate/reconcile pending state
+without a scheduler-brain. Structured observability records IDs, decisions,
+budgets, outcomes, and lineage—not private full content by default.
 
 The knowledge layer keeps structured and spatial truth canonical while treating
 topology and semantic indexes as derived projections:
@@ -69,6 +79,13 @@ From `packages/orchestrator`, run the bounded Knowledge Agent with
 projection work with `npm run knowledge:projections -- incremental`. See
 [packages/knowledge/README.md](packages/knowledge/README.md) for setup,
 configuration, rebuilds, and verification commands.
+
+Run the complete operational Continuous Cognition regression/evaluation suite:
+
+```bash
+cd packages/orchestrator
+npm run test:cc
+```
 
 ## Folder map
 

@@ -6,6 +6,8 @@ import type {
   ModelToolSchema,
 } from "@workflows/tools";
 import type {
+  ExperienceSource,
+  ExperienceStore,
   InteractionMode,
   LongTermMemory,
   LongTermSettings,
@@ -18,7 +20,9 @@ import type { WorkspaceContext } from "@workflows/workspace";
 import type {
   KnowledgeProposalSummary,
   KnowledgeStore,
+  RepresentationSourceMetadata,
 } from "@workflows/knowledge";
+import type { ActivationTrace } from "./capabilityActivation.js";
 
 export type ModelChoice = "local" | "mid" | "frontier";
 
@@ -110,6 +114,8 @@ export interface OrchestratorConfig {
   workspaceRoot: string;
   /** Milestone 9 resolved workspace (session namespace + project context) */
   workspace?: WorkspaceContext;
+  /** Durable raw experience sink. Caller owns its lifecycle. */
+  experienceStore?: ExperienceStore;
   /**
    * Optional tool registry (Milestone 2).
    * Phase B auto-loop only when toolsEnabled is true.
@@ -177,7 +183,7 @@ export interface OrchestratorResult {
   reply: string;
   routing: RoutingDecision;
   model: string;
-  provider: ModelChoice;
+  provider: ModelChoice | "deterministic";
   usage?: ModelResponse["usage"];
   /** Milestone 7 policy decision (reason + budget) */
   policy?: PolicyDecision;
@@ -212,5 +218,79 @@ export interface OrchestratorResult {
     ran: boolean;
     reason?: string;
     mode?: string;
+    eventId?: string;
+    sourceExperienceIds?: string[];
+  };
+  /** Durable source identities created while processing this interaction. */
+  experiences?: {
+    input?: string;
+    inputKind?: string;
+    modelOutputs: string[];
+    deterministicOutputs: string[];
+    toolCalls: string[];
+    toolResults: string[];
+    output?: string;
+  };
+  /** Contextual identity acquisition outcome; no raw content is logged here. */
+  representation?: {
+    status: "not_applicable" | "resolved" | "needs_clarification";
+    gapId?: string;
+    canonicalId?: string;
+    method?: string;
+    question?: string;
+    sourceEventId?: string;
+  };
+  /** Non-authoritative references to semantic writes caused by this operation. */
+  semantic?: {
+    events: Array<{
+      id: string;
+      sourceExperienceIds: string[];
+      transformationMethod?: string;
+    }>;
+    proposals: Array<{
+      id: string;
+      kind: string;
+      eventId: string;
+      epistemicStatus?: string;
+      canonicalIds?: string[];
+      oldClaimId?: string;
+      revisedClaimId?: string;
+    }>;
+  };
+  /** Persistent background work exposed by this foreground operation. */
+  background?: {
+    workIds: string[];
+    sourceExperienceIds: string[];
+  };
+  /** Privacy-preserving WHAT / HOW / HOW MUCH capability activation trace. */
+  activation?: ActivationTrace;
+}
+
+export interface OrchestratorHandleOptions {
+  forceModel?: ModelChoice;
+  history?: ChatMessage[];
+  sessionId?: string;
+  /** Session interaction mode (default active). */
+  interactionMode?: InteractionMode;
+  proposalsEnabled?: boolean;
+  /** Force knowledge capture this turn (/capture). */
+  forceCapture?: boolean;
+  maxProposalsPerTurn?: number;
+  minUserMessageLength?: number;
+  lastExtractAt?: number;
+  minCaptureIntervalMs?: number;
+  /** Exact user input when the model prompt is a derived command prompt. */
+  sourcePrompt?: string;
+  /** Modality/caller metadata for the raw input experience. */
+  experienceSource?: ExperienceSource;
+  /** Structured referent/source facts supplied by an input adapter. */
+  representation?: RepresentationSourceMetadata & {
+    /** Explicit pending gap when a UI/caller already has its stable ID. */
+    clarificationGapId?: string;
+    /** One bounded existing tool call used only to inspect missing metadata. */
+    inspection?: {
+      toolName: string;
+      args?: Record<string, unknown>;
+    };
   };
 }

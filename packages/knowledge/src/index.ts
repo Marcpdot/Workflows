@@ -1,10 +1,20 @@
 export type {
+  ClaimLineage,
   ContradictionPair,
+  DependentClaim,
   ExtractionResult,
   KnowledgeAlias,
+  KnowledgeBackgroundWork,
+  KnowledgeBackgroundWorkKind,
+  KnowledgeBackgroundWorkStatus,
+  KnowledgeDerivation,
+  KnowledgeDiagnosticRecord,
+  KnowledgeDiagnosticSink,
   KnowledgeEdge,
+  KnowledgeEpistemicStatus,
   KnowledgeEvent,
   KnowledgeEvidence,
+  KnowledgeInformationLoss,
   KnowledgeNode,
   KnowledgeNodeType,
   KnowledgeObservation,
@@ -13,10 +23,18 @@ export type {
   KnowledgeRelation,
   KnowledgeStatus,
   KnowledgeStore,
+  KnowledgeTransformation,
   MergeNodesResult,
   ProjectLinkRelation,
   ProjectStatus,
 } from "./types.js";
+export {
+  runKnowledgeBackgroundPass,
+  type BackgroundExperienceSource,
+  type BackgroundWorkPersistence,
+  type KnowledgeBackgroundLimits,
+  type KnowledgeBackgroundPassResult,
+} from "./backgroundCognition.js";
 export {
   validateCanonicalGraph,
   type CanonicalGraphValidation,
@@ -65,6 +83,10 @@ export {
   type PostgresCanonicalRepositoryConfig,
 } from "./postgres/repository.js";
 export {
+  createPostgresBackgroundWorkRepository,
+  PostgresBackgroundWorkRepository,
+} from "./postgres/backgroundRepository.js";
+export {
   createPostgresVectorRepository,
   KNOWLEDGE_VECTOR_DIMENSION,
   PostgresVectorRepository,
@@ -84,7 +106,13 @@ export {
   simpleQueryTokens,
 } from "./formatNeighborhood.js";
 export { createKnowledgeTools } from "./tools.js";
-export { buildKnowledgeInjectBlock } from "./inject.js";
+export {
+  buildKnowledgeInjectBlock,
+  hydrateKnowledgeLineageContext,
+  selectKnowledgeContext,
+  type KnowledgeContextSelection,
+  type KnowledgeLineageContext,
+} from "./inject.js";
 export {
   ingestText,
   ingestFile,
@@ -96,6 +124,23 @@ export {
   type IngestResult,
 } from "./ingest.js";
 export { normalizeLabel, labelsMatch } from "./identity.js";
+export {
+  acquireRepresentation,
+  clarificationQuestion,
+  detectPotentialReferentLabel,
+  findPendingRepresentationGap,
+  hasRepresentationAcquisitionSignal,
+  proposalToRepresentationGap,
+  resolveRepresentationClarification,
+  type RepresentationAcquisitionResult,
+  type RepresentationCandidate,
+  type RepresentationGap,
+  type RepresentationGapKind,
+  type RepresentationInspectionResult,
+  type RepresentationResolution,
+  type RepresentationResolutionMethod,
+  type RepresentationSourceMetadata,
+} from "./representationAcquisition.js";
 export {
   FIRST_PRINCIPLES_STEPS,
   FIRST_PRINCIPLES_SCHEMA,
@@ -133,6 +178,7 @@ export {
   captureConversationSegment,
   proposalToSummary,
   listPendingForSession,
+  conversationExperienceIds,
   conversationSourceRef,
   type CaptureConversationInput,
   type CaptureConversationResult,

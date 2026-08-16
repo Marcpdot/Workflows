@@ -240,8 +240,18 @@ export async function ingestText(
   const event = await store.createEvent({
     sourceType,
     sourceRef,
+    sourceContent: text,
     model: input.model ?? (mode === "model" ? "ingest-model" : "heuristic-m14"),
     inputHash: hashInput(text),
+    transformation: {
+      method: mode === "model" ? "document_structured_extraction" : "document_heuristic_extraction",
+      model: input.model ?? (mode === "model" ? "ingest-model" : "heuristic-m14"),
+      representationScope: "semantic graph fragment",
+      informationLoss: {
+        occurred: true,
+        description: "Only selected graph items are retained as derived representations; the event keeps the original source content.",
+      },
+    },
   });
   const proposals = await store.addProposals(event.id, items);
 

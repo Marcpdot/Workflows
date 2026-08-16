@@ -66,3 +66,47 @@ export interface EvalRunnerOptions {
   /** Also print full report JSON to stdout */
   printJson?: boolean;
 }
+
+/** Machine-readable outcome for one bounded Continuous Cognition scenario. */
+export interface CcEvaluationResult {
+  scenarioId: string;
+  pass: boolean;
+  durationMs: number;
+  model?: string;
+  provider?: string;
+  toolIds?: string[];
+  activationCounts?: {
+    selected: number;
+    skipped: number;
+    degraded: number;
+    expansions: number;
+  };
+  provenanceChecks?: Record<string, boolean>;
+  degradationCount?: number;
+  semanticChanges?: {
+    eventIds: string[];
+    proposalIds: string[];
+    canonicalIds: string[];
+  };
+  backgroundMetrics?: Record<string, number>;
+  usage?: {
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
+    estimatedCostUsd?: number;
+  };
+  failureReason?: string;
+}
+
+export interface CcEvaluationReport {
+  schemaVersion: 1;
+  startedAt: string;
+  finishedAt: string;
+  results: CcEvaluationResult[];
+  summary: {
+    total: number;
+    passed: number;
+    failed: number;
+    durationMs: number;
+  };
+}

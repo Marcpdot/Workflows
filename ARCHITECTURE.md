@@ -1,5 +1,33 @@
 # Arkitektur
 
+## Operational Continuous Cognition core
+
+CLI, HTTP, voice, and bounded agents share the same `handle()` compatibility
+boundary. That boundary is thin runtime wiring around this operation:
+
+```text
+durable input experience
+-> optional identity/context resolution
+-> selective capability activation (WHAT / HOW / HOW MUCH)
+-> package-owned retrieval, calculation, tools, and models as required
+-> durable outputs
+-> epistemically bounded semantic proposals with exact lineage
+-> later automatic retrieval and revision
+```
+
+No project/task is required. Models are replaceable resources; durable
+experience and PostgreSQL canonical knowledge provide continuity.
+Representation gaps reuse knowledge events/proposals and may be closed by
+metadata, canonical context, bounded tools/inference, or one precise human
+clarification. Background cognition is knowledge-owned, persisted-state-driven,
+idempotent, and finite-pass—there is no global scheduler-brain.
+
+Observability is a non-authoritative diagnostic projection of experience IDs,
+activation decisions/budgets, canonical/provenance references, semantic writes,
+degradation, outcomes, and background metrics. Full private content and hidden
+reasoning are not logged by default, and telemetry failure cannot invalidate
+experience or canonical truth.
+
 ## Orchestration
 Ansvar:
 - Motta brukerforespørsel

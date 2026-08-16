@@ -1,17 +1,17 @@
 import neo4j, { type Driver, type ManagedTransaction, type Node, type Path, type Relationship } from "neo4j-driver";
 import type { GraphPath, GraphRepository, GraphTraversalOptions, RepositoryHealth } from "../storage/contracts.js";
-import type { KnowledgeEdge, KnowledgeNode, KnowledgeStatus } from "../types.js";
+import type { KnowledgeEdge, KnowledgeEpistemicStatus, KnowledgeNode, KnowledgeStatus } from "../types.js";
 import type { Neo4jGraphConfig } from "./config.js";
 
 type Props = Record<string, unknown>;
 
 function compact(properties: Props): Props { return Object.fromEntries(Object.entries(properties).filter(([, value]) => value !== undefined && value !== null)); }
-function nodeProps(item: KnowledgeNode): Props { return compact({ canonicalId: item.id, type: item.type, label: item.label, description: item.description, status: item.status, workspaceId: item.workspaceId, createdAt: item.createdAt, updatedAt: item.updatedAt }); }
+function nodeProps(item: KnowledgeNode): Props { return compact({ canonicalId: item.id, type: item.type, label: item.label, description: item.description, status: item.status, epistemicStatus: item.epistemicStatus, confidence: item.confidence, validFrom: item.validFrom, validTo: item.validTo, workspaceId: item.workspaceId, createdAt: item.createdAt, updatedAt: item.updatedAt }); }
 function edgeProps(item: KnowledgeEdge): Props { return compact({ canonicalId: item.id, fromCanonicalId: item.fromNodeId, toCanonicalId: item.toNodeId, relation: item.relation, confidence: item.confidence, sourceEventId: item.sourceEventId, status: item.status, createdAt: item.createdAt }); }
 
 function mappedNode(value: Node): KnowledgeNode {
   const p = value.properties as Props;
-  return { id: String(p.canonicalId), type: String(p.type), label: String(p.label), description: p.description == null ? undefined : String(p.description), status: String(p.status) as KnowledgeStatus, workspaceId: p.workspaceId == null ? null : String(p.workspaceId), createdAt: Number(p.createdAt), updatedAt: Number(p.updatedAt) };
+  return { id: String(p.canonicalId), type: String(p.type), label: String(p.label), description: p.description == null ? undefined : String(p.description), status: String(p.status) as KnowledgeStatus, epistemicStatus: String(p.epistemicStatus ?? "unknown") as KnowledgeEpistemicStatus, confidence: p.confidence == null ? undefined : Number(p.confidence), validFrom: p.validFrom == null ? undefined : Number(p.validFrom), validTo: p.validTo == null ? undefined : Number(p.validTo), workspaceId: p.workspaceId == null ? null : String(p.workspaceId), createdAt: Number(p.createdAt), updatedAt: Number(p.updatedAt) };
 }
 function mappedEdge(value: Relationship): KnowledgeEdge {
   const p = value.properties as Props;

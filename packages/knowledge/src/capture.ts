@@ -46,6 +46,8 @@ export interface CaptureConversationInput {
   projectLabel?: string;
   /** Optional turn id for provenance */
   turnId?: string;
+  /** Exact durable source experiences represented by this conversation segment. */
+  experienceIds?: string[];
   /**
    * Rate-limit: skip auto-capture if last extract was this many ms ago (unless force).
    * Default 0 = no time backoff (substance heuristic still applies).
@@ -57,6 +59,8 @@ export interface CaptureConversationInput {
     role: "system" | "user" | "assistant";
     content: string;
   }>) => Promise<string>;
+  /** Persist the exact extraction-model output before proposals use it. */
+  onModelOutput?: (output: string) => Promise<string | void>;
   /** Model identifier recorded on the provenance event. */
   model?: string;
 }
@@ -70,14 +74,39 @@ export interface CaptureConversationResult {
   mode: "heuristic" | "model" | "skipped";
   reason?: string;
   sourceRef: string;
+  sourceExperienceIds: string[];
 }
 
 export function conversationSourceRef(
   sessionId: string,
-  turnId?: string
+  turnId?: string,
+  experienceIds: string[] = []
 ): string {
   const base = `conversation:${sessionId}`;
-  return turnId ? `${base}#turn=${turnId}` : base;
+  const parts: string[] = [];
+  if (turnId) parts.push(`turn=${encodeURIComponent(turnId)}`);
+  for (const id of [...new Set(experienceIds.map((value) => value.trim()))]) {
+    if (id) parts.push(`experience=${encodeURIComponent(id)}`);
+  }
+  return parts.length > 0 ? `${base}#${parts.join("&")}` : base;
+}
+
+/** Exact durable experience ids embedded in a conversation source reference. */
+export function conversationExperienceIds(sourceRef: string): string[] {
+  const fragment = sourceRef.split("#", 2)[1];
+  if (!fragment) return [];
+  const ids: string[] = [];
+  for (const part of fragment.split("&")) {
+    const [key, value = ""] = part.split("=", 2);
+    if (key === "experience" && value) {
+      try {
+        ids.push(decodeURIComponent(value));
+      } catch {
+        // Ignore malformed legacy/external fragments rather than hiding the event.
+      }
+    }
+  }
+  return [...new Set(ids)];
 }
 
 export function proposalToSummary(
@@ -101,6 +130,9 @@ export function proposalToSummary(
     label = `${from} -[${relation}]-> ${to}`;
   } else if (p.kind === "evidence") {
     label = String(payload.targetLabel ?? payload.claimLabel ?? payload.claim ?? "evidence");
+  } else if (p.kind === "supersede") {
+    label = `${String(payload.newClaimLabel ?? payload.newClaimId ?? "new claim")} supersedes ${String(payload.oldClaimLabel ?? payload.oldClaimId ?? "old claim")}`;
+    relation = "supersedes";
   } else {
     label = String(payload.targetLabel ?? payload.targetId ?? "observation");
   }
@@ -250,6 +282,16 @@ async function filterResolvableEdges(
   const output: typeof items = [];
   let dropped = 0;
   for (const item of items) {
+    if (item.kind === "supersede") {
+      const oldLabel = String(item.payload.oldClaimLabel ?? "");
+      const newLabel = String(item.payload.newClaimLabel ?? "");
+      if (!(await endpointExists(oldLabel)) || !(await endpointExists(newLabel))) {
+        dropped++;
+        continue;
+      }
+      output.push(item);
+      continue;
+    }
     if (item.kind !== "edge") {
       output.push(item);
       continue;
@@ -281,7 +323,14 @@ export async function captureConversationSegment(
       ? Math.floor(input.minUserMessageLength)
       : 40;
 
-  const sourceRef = conversationSourceRef(input.sessionId, input.turnId);
+  const sourceExperienceIds = [
+    ...new Set((input.experienceIds ?? []).map((value) => value.trim())),
+  ].filter(Boolean);
+  let sourceRef = conversationSourceRef(
+    input.sessionId,
+    input.turnId,
+    sourceExperienceIds
+  );
 
   if (
     !input.force &&
@@ -299,6 +348,7 @@ export async function captureConversationSegment(
       mode: "skipped",
       reason: `rate-limit: last extract ${Date.now() - input.lastExtractAt}ms ago`,
       sourceRef,
+      sourceExperienceIds,
     };
   }
 
@@ -319,6 +369,7 @@ export async function captureConversationSegment(
       mode: "skipped",
       reason: `low-substance user message (len=${userText.length})`,
       sourceRef,
+      sourceExperienceIds,
     };
   }
 
@@ -336,6 +387,7 @@ export async function captureConversationSegment(
       mode: "skipped",
       reason: "empty segment",
       sourceRef,
+      sourceExperienceIds,
     };
   }
 
@@ -349,6 +401,15 @@ export async function captureConversationSegment(
         segment,
         complete: input.complete,
       });
+      const outputExperienceId = await input.onModelOutput?.(structured.raw);
+      if (outputExperienceId && !sourceExperienceIds.includes(outputExperienceId)) {
+        sourceExperienceIds.push(outputExperienceId);
+        sourceRef = conversationSourceRef(
+          input.sessionId,
+          input.turnId,
+          sourceExperienceIds
+        );
+      }
       if (structured.ok && structured.extraction) {
         extraction = structured.extraction;
         droppedQualityItems += structured.dropped;
@@ -402,14 +463,26 @@ export async function captureConversationSegment(
             ? `model fallback produced no structural extract: ${modelError}`
             : "no structural extract",
       sourceRef,
+      sourceExperienceIds,
     };
   }
 
   const event = await input.store.createEvent({
     sourceType: "conversation",
     sourceRef,
+    sourceContent: sourceExperienceIds.length === 0 ? segment : undefined,
+    sourceExperienceIds,
     model: mode === "model" ? input.model ?? "structured-capture" : "conversation-heuristic",
     inputHash: hashInput(segment),
+    transformation: {
+      method: mode === "model" ? "conversation_structured_extraction" : "conversation_heuristic_extraction",
+      model: mode === "model" ? input.model ?? "structured-capture" : "conversation-heuristic",
+      representationScope: "durable concepts, claims, relations, assumptions, and evidence",
+      informationLoss: {
+        occurred: true,
+        description: "Process talk, questions, repetition, and source phrasing outside selected graph items are omitted.",
+      },
+    },
   });
   const proposals = await input.store.addProposals(event.id, items);
 
@@ -422,5 +495,6 @@ export async function captureConversationSegment(
     mode,
     reason: modelError ? `model fallback: ${modelError}` : undefined,
     sourceRef,
+    sourceExperienceIds,
   };
 }

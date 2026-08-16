@@ -57,10 +57,12 @@ work and “what is the status of actuator-v2?” need that structure. Those are
 | **Event** | Extraction or analysis event (source type + ref) |
 | **Source** | Conversation id + excerpt, file path, measurement |
 | **Evidence** | Canonical identity ↔ source with qualified stance (`supports`, `contradicts`, `test_evidence`) |
-| **Observation** | Encounter with an identity through an event/source (`mentions`, `observes`, `independently_formulated`, `references`) |
+| **Observation** | Encounter or derivation involving an identity and event/source (`mentions`, `observes`, `independently_formulated`, `references`, `derived_from`) |
 | **Project / artifact** | Optional anchors for work product |
 
-Status on claims/nodes: `proposed | accepted | disputed | rejected`.
+Lifecycle status on claims/nodes is `proposed | accepted | disputed | rejected`.
+Epistemic status is independent: `observed | supported | inferred |
+hypothesized | assumed | established | unknown`.
 
 Invariants that must survive any implementation:
 
@@ -302,6 +304,96 @@ not a restriction on generic evidence.
 **Reason:** Encounters must remain distinguishable by event, source and time
 without duplicating their referent or treating every mention as support. Merge
 retargets evidence and observation history to the surviving canonical UUID.
+
+### Contextual representation gaps
+
+**Status:** active
+**Evidence:** confirmed
+**Source:** Continuous Cognition WP5 implementation contract; migration `0011_representation_gaps.sql`
+**Revisit when:** contextual resolution must survive conflicting defaults across callers that cannot provide a stable source/context key
+
+**Decision:** Material identity/referent ambiguity is retained as a narrow
+`representation_gap` proposal under an ordinary knowledge event. The proposal
+UUID is the stable gap identity; pending/accepted/rejected maps to unresolved,
+resolved, or obsolete. Its event points to the exact input/tool/clarification
+experiences, while the payload retains the unresolved term, bounded canonical
+candidates, ambiguity and eventual contextual resolution. No parallel gap
+table, identity store, or manager is introduced.
+
+Resolution uses strong source metadata and canonical IDs/aliases first, then
+accepted world-model relations, one explicitly bounded inspection tool,
+constrained inference, and finally one discriminating human question. A human
+answer is a new durable experience and event. Resolving the gap records a direct
+`references` observation on the chosen existing canonical identity; it does not
+merge nodes, create a global alias from an ambiguous label, or upgrade an
+interpretation into established truth. Later reuse requires the same exact
+normalized referent and contextual key, and only proceeds when prior resolved
+gaps agree on one canonical target. Conflicting learned resolutions restore
+ambiguity rather than selecting the newest or most similar candidate.
+
+**Reason:** Gaps need persistence and provenance so a clarification improves
+later cognition, but they are operation/context knowledge—not a second ontology.
+Reusing the proposal/event lifecycle preserves history and keeps PostgreSQL
+canonical. Contextual bindings avoid turning one clarification into an unsafe
+global alias, while exact agreement makes repeated questions unnecessary.
+
+**Rejected alternatives:** a representation/gap manager or new database;
+embedding similarity as an identity key; global alias creation from an
+ambiguous human phrase; ephemeral clarification state in model/session context;
+automatic merge or canonical truth promotion during acquisition.
+
+### Epistemic status and transformation lineage
+
+**Status:** active
+**Evidence:** confirmed
+**Source:** Continuous Cognition WP2 implementation contract; migration `0009_epistemic_lineage.sql`
+**Revisit when:** lineage must represent transformations whose inputs are not canonical nodes/events, or automated belief revision is deliberately introduced
+
+**Decision:** Proposal acceptance and epistemic certainty are orthogonal.
+Accepting a machine-derived claim makes it part of canonical state but does not
+promote it from `hypothesized`, `assumed`, or `inferred` to `established`.
+Canonical nodes expose the existing confidence and temporal-validity fields
+alongside an explicit epistemic status.
+
+Transformation lineage reuses `knowledge_observations`: `derived_from` connects
+a derived canonical target to its source event and, when relevant, canonical
+source claims/assumptions. Its metadata records method/model, assumptions,
+uncertainty, representation scope, confidence/validity, and explicit
+information loss. For experienced input, `knowledge_events` retain stable
+experience UUIDs, source references, and event-level transformation metadata;
+the durable experience records remain the authoritative raw source. Event
+`source_content` is only a subordinate fallback snapshot when no durable
+experience backing exists, such as direct/legacy file or manual ingestion. The
+repository and database reject simultaneous fallback content and non-empty
+experience IDs, preventing normally written events from diverging. Events may
+be explicitly invalidated without deleting their history. Bounded domain read
+helpers traverse lineage in both directions so a claim can explain its origin
+and a disputed/superseded assumption or invalidated event can expose dependent
+claims for reconsideration.
+
+**Reason:** Lifecycle approval answers whether a representation may enter the
+canonical model; it does not prove the represented proposition. Reusing generic
+provenance preserves one canonical truth model, lets merge/supersession retain
+history, and keeps every derived claim traceable to durable experiences even
+after repeated summarization. Storing representation scope and information loss
+makes lossy transformations explicit instead of letting shorter restatements
+silently acquire stronger meaning.
+
+**Rejected alternatives:** equating `accepted` with confirmed truth; encoding
+assumptions in description strings; a parallel lineage/representation database;
+using vector similarity or graph proximity as epistemic evidence; automatic
+truth arbitration or cascading mutation when a source becomes disputed;
+copying durable experience payloads into knowledge events for convenience; or
+forcing unrelated file/manual ingestion through memory solely to remove the
+fallback column.
+
+Explicit natural-language corrections may extract a `supersedes` proposal that
+refers to the old and revised claim labels. It remains pending until the normal
+approval boundary accepts the revised claim and supersession. Acceptance keeps
+the old claim as disputed history, records the supersession edge against the
+correction event, and lets accepted-only retrieval prefer the revision. The
+exact extraction-model output is itself a durable experience and joins the
+knowledge event's source experience IDs before proposals are created.
 
 ## Knowledge milestone roadmap (M11–M18)
 

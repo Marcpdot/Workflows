@@ -78,6 +78,9 @@ export const STRUCTURED_CAPTURE_SCHEMA: JsonSchema = {
           label: { type: "string" },
           description: { type: "string" },
           confidence: { type: "number" },
+          epistemicStatus: { type: "string" },
+          assumptions: { type: "array", items: { type: "string" } },
+          uncertainty: { type: "string" },
         },
       },
     },
@@ -109,6 +112,16 @@ export const STRUCTURED_CAPTURE_SCHEMA: JsonSchema = {
 export interface NormalizedCapture {
   extraction: ExtractionResult;
   dropped: number;
+}
+
+function normalizedEpistemicStatus(item: ExtractionResult["claims"][number]): ExtractionResult["claims"][number]["epistemicStatus"] {
+  const text = `${item.label} ${item.description ?? ""}`;
+  if (/\b(assum(?:e|es|ed|ing|ption)|foruts(?:att|etter)|antar)\b/i.test(text)) return "assumed";
+  if (/\b(suspect(?:s|ed|ing)?|hypothes(?:is|ize[sd]?|izing)?|maybe|might|may|perhaps|possibly|possible|mistenker|kanskje|muligens|kan hende)\b/i.test(text)) return "hypothesized";
+  const supplied = item.epistemicStatus;
+  if (supplied === "established") return "supported";
+  if (["observed", "supported", "inferred", "hypothesized", "assumed", "unknown"].includes(String(supplied))) return supplied;
+  return "inferred";
 }
 
 function cleanText(value: string, maxLength: number): string {
@@ -214,6 +227,9 @@ export function normalizeStructuredCapture(
         ? cleanText(item.description, 600)
         : undefined,
       confidence: item.confidence,
+      epistemicStatus: normalizedEpistemicStatus(item),
+      assumptions: item.assumptions?.map((value) => cleanText(value, 240)).filter(Boolean),
+      uncertainty: item.uncertainty ? cleanText(item.uncertainty, 500) : undefined,
     });
   }
 
@@ -225,7 +241,13 @@ export function normalizeStructuredCapture(
       continue;
     }
     labels.add(key);
-    claims.push({ label, description: "assumption=true", confidence: 0.6 });
+    claims.push({
+      label,
+      description: "Explicit assumption from source.",
+      confidence: 0.6,
+      epistemicStatus: "assumed",
+      derivationMethod: "assumption_extraction",
+    });
   }
 
   for (const item of raw.relations ?? []) {
@@ -274,12 +296,16 @@ export async function extractStructuredConversation(options: {
           "clean concept or claim labels. Allowed relations: " +
           `${RELATIONS.join(", ")}. ` +
           'Shape: {"concepts":[{"label":"...","description":"..."}],"claims":' +
-          '[{"label":"...","description":"...","confidence":0.0}],"relations":' +
+          '[{"label":"...","description":"...","confidence":0.0,"epistemicStatus":"inferred","assumptions":["..."],"uncertainty":"..."}],"relations":' +
           '[{"from":"...","relation":"causes","to":"...","confidence":0.0}],' +
           '"assumptions":["..."],"openQuestions":["..."]}. ' +
           "Use limitKind=fundamental|technological|industrial|economic|regulatory in a description " +
           "only when the conversation explicitly supports it. Put explicit assumptions in assumptions " +
-          "and questions in openQuestions; questions are not graph proposals.",
+          "and questions in openQuestions; questions are not graph proposals. Epistemic status is " +
+          "independent of acceptance. Use hypothesized for suspicions/possibilities, assumed for assumptions, " +
+          "and inferred for model synthesis; extraction alone must never emit established. " +
+          "When the source explicitly corrects an earlier claim, emit the corrected claim and a supersedes " +
+          "relation from the corrected claim label to the exact earlier claim label; do not erase either claim.",
       },
       {
         role: "user",

@@ -2,9 +2,18 @@ import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient, QueryResultRow } from "pg";
 import { normalizeLabel } from "../identity.js";
 import type {
+  ClaimLineage,
   ContradictionPair,
+  DependentClaim,
   KnowledgeAlias,
+  KnowledgeBackgroundWork,
+  KnowledgeBackgroundWorkKind,
+  KnowledgeBackgroundWorkStatus,
+  KnowledgeDerivation,
+  KnowledgeDiagnosticRecord,
+  KnowledgeDiagnosticSink,
   KnowledgeEdge,
+  KnowledgeEpistemicStatus,
   KnowledgeEvent,
   KnowledgeEvidence,
   KnowledgeNode,
@@ -13,6 +22,7 @@ import type {
   KnowledgeObservationKind,
   KnowledgeProposal,
   KnowledgeStatus,
+  KnowledgeTransformation,
   MergeNodesResult,
   ProjectLinkRelation,
   ProjectStatus,
@@ -40,9 +50,51 @@ function node(row: Record<string, unknown>): KnowledgeNode {
     label: String(row.label),
     description: row.description == null ? undefined : String(row.description),
     status: row.status as KnowledgeStatus,
+    epistemicStatus: (row.epistemic_status ?? "unknown") as KnowledgeEpistemicStatus,
+    confidence: row.confidence == null ? undefined : Number(row.confidence),
+    validFrom: row.valid_from == null ? undefined : millis(row.valid_from as Date),
+    validTo: row.valid_to == null ? undefined : millis(row.valid_to as Date),
     workspaceId: row.workspace_id == null ? null : String(row.workspace_id),
     createdAt: millis(row.created_at as Date),
     updatedAt: millis(row.updated_at as Date),
+  };
+}
+
+function object(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? [...new Set(value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean))]
+    : [];
+}
+
+function informationLoss(value: unknown): KnowledgeTransformation["informationLoss"] {
+  const item = object(value);
+  if (typeof item.occurred !== "boolean") return undefined;
+  return {
+    occurred: item.occurred,
+    description: typeof item.description === "string" ? item.description : undefined,
+  };
+}
+
+function transformation(value: unknown): KnowledgeTransformation | undefined {
+  const item = object(value);
+  const method = typeof item.method === "string" ? item.method.trim() : "";
+  if (!method) return undefined;
+  return {
+    method,
+    model: typeof item.model === "string" ? item.model : undefined,
+    assumptions: stringArray(item.assumptions),
+    confidence: item.confidence == null ? undefined : Number(item.confidence),
+    uncertainty: typeof item.uncertainty === "string" ? item.uncertainty : undefined,
+    representationScope: typeof item.representationScope === "string" ? item.representationScope : undefined,
+    informationLoss: informationLoss(item.informationLoss),
+    validFrom: item.validFrom == null ? undefined : Number(item.validFrom),
+    validTo: item.validTo == null ? undefined : Number(item.validTo),
   };
 }
 
@@ -60,12 +112,18 @@ function edge(row: Record<string, unknown>): KnowledgeEdge {
 }
 
 function event(row: Record<string, unknown>): KnowledgeEvent {
+  const metadata = object(row.action_metadata);
   return {
     id: String(row.id),
     sourceType: row.source_type as KnowledgeEvent["sourceType"],
     sourceRef: String(row.source_ref),
+    sourceContent: row.source_content == null ? undefined : String(row.source_content),
+    sourceExperienceIds: stringArray(metadata.sourceExperienceIds),
     model: row.model == null ? undefined : String(row.model),
     inputHash: row.input_hash == null ? undefined : String(row.input_hash),
+    transformation: transformation(metadata.transformation),
+    invalidatedAt: row.invalidated_at == null ? undefined : millis(row.invalidated_at as Date),
+    invalidationReason: row.invalidation_reason == null ? undefined : String(row.invalidation_reason),
     createdAt: millis(row.created_at as Date),
   };
 }
@@ -102,6 +160,7 @@ function observation(row: Record<string, unknown>): KnowledgeObservation {
 export interface PostgresCanonicalRepositoryConfig extends PostgresKnowledgeConfig {
   defaultWorkspaceId?: string | null;
   pool?: Pool;
+  diagnosticSink?: KnowledgeDiagnosticSink;
 }
 
 export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeRepository {
@@ -109,11 +168,22 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
   private readonly pool: Pool;
   private readonly ownsPool: boolean;
   private readonly defaultWorkspaceId: string | null | undefined;
+  private readonly diagnosticSink?: KnowledgeDiagnosticSink;
 
   constructor(config: PostgresCanonicalRepositoryConfig) {
     this.pool = config.pool ?? createKnowledgePostgresPool(config);
     this.ownsPool = !config.pool;
     this.defaultWorkspaceId = config.defaultWorkspaceId;
+    this.diagnosticSink = config.diagnosticSink;
+  }
+
+  private emitDiagnostic(record: KnowledgeDiagnosticRecord): void {
+    if (!this.diagnosticSink) return;
+    try {
+      this.diagnosticSink(record);
+    } catch {
+      // Canonical truth never depends on diagnostic delivery.
+    }
   }
 
   async healthCheck(): Promise<RepositoryHealth> {
@@ -182,19 +252,116 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     return result.rows[0] ? edge(result.rows[0]) : null;
   }
 
-  async createEvent(input: { sourceType: KnowledgeEvent["sourceType"]; sourceRef: string; model?: string; inputHash?: string }): Promise<KnowledgeEvent> {
+  async createEvent(input: { sourceType: KnowledgeEvent["sourceType"]; sourceRef: string; sourceContent?: string; sourceExperienceIds?: string[]; model?: string; inputHash?: string; transformation?: KnowledgeTransformation }): Promise<KnowledgeEvent> {
     if (!input.sourceRef?.trim()) throw new Error("createEvent: sourceRef is required");
+    const sourceExperienceIds = stringArray(input.sourceExperienceIds);
+    const metadata = {
+      sourceExperienceIds,
+      transformation: input.transformation,
+    };
+    // Durable experiences are the source-of-record. Keeping a second raw copy
+    // here would allow the two stores to diverge.
+    const fallbackSourceContent = sourceExperienceIds.length === 0
+      ? input.sourceContent
+      : undefined;
     const result = await this.pool.query(
-      `INSERT INTO knowledge_events (id, source_type, source_ref, model, input_hash)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [randomUUID(), input.sourceType, input.sourceRef.trim(), input.model ?? null, input.inputHash ?? null]
+      `INSERT INTO knowledge_events (id, source_type, source_ref, source_content, model, input_hash, action_metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb) RETURNING *`,
+      [randomUUID(), input.sourceType, input.sourceRef.trim(), fallbackSourceContent ?? null, input.model ?? null, input.inputHash ?? null, JSON.stringify(metadata)]
     );
-    return event(result.rows[0]);
+    const created = event(result.rows[0]);
+    this.emitDiagnostic({
+      action: "event_created",
+      eventId: created.id,
+      sourceExperienceIds: created.sourceExperienceIds,
+      transformationMethod: created.transformation?.method,
+    });
+    return created;
   }
 
   async getEvent(id: string): Promise<KnowledgeEvent | null> {
     const result = await this.pool.query("SELECT * FROM knowledge_events WHERE id = $1", [id]);
     return result.rows[0] ? event(result.rows[0]) : null;
+  }
+
+  async invalidateEvent(id: string, reason: string): Promise<KnowledgeEvent> {
+    if (!reason.trim()) throw new Error("invalidateEvent: reason is required");
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query(
+        `UPDATE knowledge_events
+         SET invalidated_at = COALESCE(invalidated_at, now()),
+             invalidation_reason = $2
+         WHERE id = $1
+         RETURNING *`,
+        [id, reason.trim()]
+      );
+      if (!result.rows[0]) throw new Error(`invalidateEvent: unknown id ${id}`);
+      await this.enqueueBackgroundWorkWith(client, {
+        kind: "claim_reconsideration",
+        workKey: `invalidated-event:${id}`,
+        sourceEventId: id,
+        payload: { trigger: "source_invalidation", reason: reason.trim() },
+      });
+      await client.query("COMMIT");
+      const invalidated = event(result.rows[0]);
+      this.emitDiagnostic({
+        action: "event_invalidated",
+        eventId: invalidated.id,
+        sourceExperienceIds: invalidated.sourceExperienceIds,
+        transformationMethod: invalidated.transformation?.method,
+      });
+      return invalidated;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async enqueueBackgroundWork(input: {
+    kind: KnowledgeBackgroundWorkKind;
+    workKey: string;
+    sourceExperienceId?: string;
+    sourceEventId?: string;
+    targetProposalId?: string;
+    targetNodeId?: string;
+    payload?: Record<string, unknown>;
+    status?: Extract<KnowledgeBackgroundWorkStatus, "pending" | "waiting">;
+  }): Promise<{ work: KnowledgeBackgroundWork; created: boolean }> {
+    return this.enqueueBackgroundWorkWith(this.pool, input);
+  }
+
+  async listBackgroundWork(filter?: {
+    kind?: KnowledgeBackgroundWorkKind;
+    status?: KnowledgeBackgroundWorkStatus;
+    limit?: number;
+    newestFirst?: boolean;
+  }): Promise<KnowledgeBackgroundWork[]> {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    if (filter?.kind) { params.push(filter.kind); clauses.push(`kind = $${params.length}`); }
+    if (filter?.status) { params.push(filter.status); clauses.push(`status = $${params.length}`); }
+    params.push(Math.min(Math.max(Math.floor(filter?.limit ?? 100), 1), 1_000));
+    const direction = filter?.newestFirst ? "DESC" : "ASC";
+    const result = await this.pool.query(
+      `SELECT * FROM knowledge_background_work
+       ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
+       ORDER BY created_at ${direction}, id ${direction}
+       LIMIT $${params.length}`,
+      params
+    );
+    return result.rows.map(backgroundWork);
+  }
+
+  async getBackgroundWork(id: string): Promise<KnowledgeBackgroundWork | null> {
+    const result = await this.pool.query(
+      "SELECT * FROM knowledge_background_work WHERE id = $1",
+      [id]
+    );
+    return result.rows[0] ? backgroundWork(result.rows[0]) : null;
   }
 
   async addProposals(eventId: string, items: Array<{ kind: KnowledgeProposal["kind"]; payload: Record<string, unknown> }>): Promise<KnowledgeProposal[]> {
@@ -209,9 +376,25 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
            VALUES ($1, $2, $3, $4::jsonb) RETURNING *`,
           [randomUUID(), eventId, item.kind, JSON.stringify(item.payload)]
         );
-        output.push(proposal(result.rows[0]));
+        const created = proposal(result.rows[0]);
+        output.push(created);
+        if (created.kind === "representation_gap") {
+          await this.enqueueBackgroundWorkWith(client, {
+            kind: "representation_gap_retry",
+            workKey: `representation-gap:${created.id}`,
+            sourceEventId: eventId,
+            targetProposalId: created.id,
+            payload: { trigger: "new_gap" },
+            status: "waiting",
+          });
+        }
       }
       await client.query("COMMIT");
+      this.emitDiagnostic({
+        action: "proposals_created",
+        eventId,
+        proposalIds: output.map((item) => item.id),
+      });
       return output;
     } catch (error) {
       await client.query("ROLLBACK");
@@ -219,19 +402,42 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     } finally { client.release(); }
   }
 
-  async listProposals(filter?: { status?: KnowledgeProposal["status"]; eventId?: string }): Promise<KnowledgeProposal[]> {
+  async listProposals(filter?: {
+    status?: KnowledgeProposal["status"];
+    eventId?: string;
+    kind?: KnowledgeProposal["kind"];
+    limit?: number;
+    newestFirst?: boolean;
+  }): Promise<KnowledgeProposal[]> {
     const clauses: string[] = [];
     const params: unknown[] = [];
     if (filter?.status) { params.push(filter.status); clauses.push(`status = $${params.length}`); }
     if (filter?.eventId) { params.push(filter.eventId); clauses.push(`event_id = $${params.length}`); }
+    if (filter?.kind) { params.push(filter.kind); clauses.push(`kind = $${params.length}`); }
+    let limitClause = "";
+    if (filter?.limit != null) {
+      const limit = Math.min(Math.max(Math.floor(filter.limit), 1), 1_000);
+      params.push(limit);
+      limitClause = `LIMIT $${params.length}`;
+    }
     const result = await this.pool.query(
-      `SELECT * FROM knowledge_proposals ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""} ORDER BY created_at ASC`, params
+      `SELECT * FROM knowledge_proposals
+       ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
+       ORDER BY created_at ${filter?.newestFirst ? "DESC" : "ASC"}, id ${filter?.newestFirst ? "DESC" : "ASC"}
+       ${limitClause}`,
+      params
     );
     return result.rows.map(proposal);
   }
 
+  async getProposal(id: string): Promise<KnowledgeProposal | null> {
+    const result = await this.pool.query("SELECT * FROM knowledge_proposals WHERE id = $1", [id]);
+    return result.rows[0] ? proposal(result.rows[0]) : null;
+  }
+
   async acceptProposal(id: string, edits?: Record<string, unknown>): Promise<void> {
     const client = await this.pool.connect();
+    let diagnostic: KnowledgeDiagnosticRecord | undefined;
     try {
       await client.query("BEGIN");
       const result = await client.query("SELECT * FROM knowledge_proposals WHERE id = $1 FOR UPDATE", [id]);
@@ -239,15 +445,94 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
       const current = proposal(result.rows[0]);
       if (current.status !== "pending") throw new Error(`acceptProposal: proposal ${id} is already ${current.status}`);
       const payload = { ...current.payload, ...edits };
-      if (current.kind === "node") await this.materializeNode(client, payload, current.eventId, true);
-      else if (current.kind === "edge") await this.materializeEdge(client, payload, current.eventId);
+      const canonicalIds: string[] = [];
+      let oldClaimId: string | undefined;
+      let revisedClaimId: string | undefined;
+      let contradictionId: string | undefined;
+      if (current.kind === "node") {
+        const created = await this.materializeNode(client, payload, current.eventId, true);
+        canonicalIds.push(created.id);
+      }
+      else if (current.kind === "edge") {
+        const created = await this.materializeEdge(client, payload, current.eventId);
+        canonicalIds.push(created.fromNodeId, created.toNodeId);
+        if (created.relation === "contradicts") contradictionId = created.id;
+      }
       else if (current.kind === "evidence") await this.materializeEvidence(client, payload, current.eventId);
       else if (current.kind === "observation") await this.materializeObservation(client, payload, current.eventId);
-      else if (current.kind === "merge") await this.mergeNodesWith(client, { fromId: requiredString(payload.fromId, "merge fromId"), intoId: requiredString(payload.intoId, "merge intoId") });
-      else if (current.kind === "supersede") await this.supersedeClaimWith(client, { oldClaimId: requiredString(payload.oldClaimId, "supersede oldClaimId"), newClaimId: requiredString(payload.newClaimId, "supersede newClaimId"), markOldDisputed: payload.markOldDisputed !== false });
+      else if (current.kind === "merge") {
+        const merged = await this.mergeNodesWith(client, { fromId: requiredString(payload.fromId, "merge fromId"), intoId: requiredString(payload.intoId, "merge intoId") });
+        canonicalIds.push(merged.from.id, merged.into.id);
+      }
+      else if (current.kind === "supersede") {
+        oldClaimId = await this.resolveClaimReference(client, payload, "oldClaim");
+        revisedClaimId = await this.resolveClaimReference(client, payload, "newClaim");
+        await this.supersedeClaimWith(client, {
+          oldClaimId,
+          newClaimId: revisedClaimId,
+          markOldDisputed: payload.markOldDisputed !== false,
+          sourceEventId: current.eventId,
+        });
+        canonicalIds.push(oldClaimId, revisedClaimId);
+      }
+      else if (current.kind === "representation_gap") {
+        await this.materializeRepresentationResolution(
+          client,
+          payload,
+          current.eventId,
+          current.id
+        );
+        const resolution = object(payload.resolution);
+        const canonicalId = String(resolution.canonicalNodeId ?? "").trim();
+        if (canonicalId) canonicalIds.push(canonicalId);
+      }
       else throw new Error(`acceptProposal: unsupported proposal kind ${String(current.kind)}`);
-      await client.query("UPDATE knowledge_proposals SET status = 'accepted', resolved_at = now() WHERE id = $1", [id]);
+      if (current.kind === "representation_gap") {
+        await client.query(
+          `UPDATE knowledge_proposals
+           SET payload = $2::jsonb, status = 'accepted', resolved_at = now()
+           WHERE id = $1`,
+          [id, JSON.stringify(payload)]
+        );
+      } else {
+        await client.query(
+          "UPDATE knowledge_proposals SET status = 'accepted', resolved_at = now() WHERE id = $1",
+          [id]
+        );
+      }
+      const resolution = object(payload.resolution);
+      const diagnosticSourceEventId =
+        typeof resolution.resolutionEventId === "string"
+          ? resolution.resolutionEventId
+          : current.eventId;
+      const eventResult = await client.query(
+        "SELECT * FROM knowledge_events WHERE id = $1",
+        [diagnosticSourceEventId]
+      );
+      const sourceEvent = eventResult.rows[0]
+        ? event(eventResult.rows[0])
+        : undefined;
+      diagnostic = {
+        action: "proposal_accepted",
+        eventId: current.eventId,
+        proposalIds: [current.id],
+        proposalKind: current.kind,
+        canonicalIds: [...new Set(canonicalIds)],
+        sourceExperienceIds: sourceEvent?.sourceExperienceIds ?? [],
+        epistemicStatus:
+          typeof payload.epistemicStatus === "string"
+            ? payload.epistemicStatus as KnowledgeEpistemicStatus
+            : undefined,
+        transformationMethod: sourceEvent?.transformation?.method,
+        gapId: current.kind === "representation_gap" ? current.id : undefined,
+        resolutionMethod:
+          typeof resolution.method === "string" ? resolution.method : undefined,
+        oldClaimId,
+        revisedClaimId,
+        contradictionId,
+      };
       await client.query("COMMIT");
+      this.emitDiagnostic(diagnostic);
     } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
   }
 
@@ -261,6 +546,7 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
       if (!current.rows[0]) throw new Error(`rejectProposal: unknown id ${id}`);
       throw new Error(`rejectProposal: proposal ${id} is already ${current.rows[0].status}`);
     }
+    this.emitDiagnostic({ action: "proposal_rejected", proposalIds: [id] });
   }
 
   async listEvidence(targetNodeId: string, limit = 50): Promise<KnowledgeEvidence[]> {
@@ -271,6 +557,130 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
   async listObservations(targetNodeId: string, limit = 100): Promise<KnowledgeObservation[]> {
     const result = await this.pool.query("SELECT * FROM knowledge_observations WHERE target_node_id = $1 ORDER BY observed_at DESC, id ASC LIMIT $2", [targetNodeId, Math.min(Math.max(Math.floor(limit), 0), 1000)]);
     return result.rows.map(observation);
+  }
+
+  async getClaimLineage(claimId: string, options?: { maxDepth?: number }): Promise<ClaimLineage> {
+    const claim = await this.getNode(claimId);
+    if (!claim || claim.type !== "claim") throw new Error(`getClaimLineage: ${claimId} is not a claim`);
+    const maxDepth = Math.min(Math.max(Math.floor(options?.maxDepth ?? 8), 1), 20);
+    const rows: Array<{ item: KnowledgeObservation; depth: number }> = [];
+    const visitedTargets = new Set<string>([claimId]);
+    let frontier = [claimId];
+    for (let depth = 1; depth <= maxDepth && frontier.length > 0; depth++) {
+      const result = await this.pool.query(
+        `SELECT * FROM knowledge_observations
+         WHERE kind = 'derived_from' AND target_node_id = ANY($1::uuid[])
+         ORDER BY observed_at ASC, id ASC`,
+        [frontier]
+      );
+      const level = result.rows.map(observation);
+      rows.push(...level.map((item) => ({ item, depth })));
+      frontier = [...new Set(level.flatMap((item) => item.sourceNodeId ? [item.sourceNodeId] : []))]
+        .filter((id) => !visitedTargets.has(id));
+      for (const id of frontier) visitedTargets.add(id);
+    }
+    let truncated = false;
+    if (frontier.length > 0) {
+      const more = await this.pool.query(
+        `SELECT 1 FROM knowledge_observations
+         WHERE kind = 'derived_from' AND target_node_id = ANY($1::uuid[])
+         LIMIT 1`,
+        [frontier]
+      );
+      truncated = more.rows.length > 0;
+    }
+    const lineageTargetIds = [...visitedTargets];
+    const evidenceRows = await this.pool.query(
+      `SELECT * FROM knowledge_evidence
+       WHERE target_node_id = ANY($1::uuid[])
+       ORDER BY created_at ASC`,
+      [lineageTargetIds]
+    );
+    const evidenceItems = evidenceRows.rows.map(evidence);
+    const sourceNodeIds = [...new Set([
+      ...rows.flatMap(({ item }) => item.sourceNodeId ? [item.sourceNodeId] : []),
+      ...evidenceItems.map((item) => item.sourceNodeId),
+    ])];
+    const sourceEventIds = [...new Set([
+      ...rows.flatMap(({ item }) => item.sourceEventId ? [item.sourceEventId] : []),
+      ...evidenceItems.flatMap((item) => item.sourceEventId ? [item.sourceEventId] : []),
+    ])];
+    const sourceNodes = sourceNodeIds.length === 0 ? [] : (await this.pool.query(
+      "SELECT * FROM knowledge_nodes WHERE id = ANY($1::uuid[]) ORDER BY created_at ASC",
+      [sourceNodeIds]
+    )).rows.map(node);
+    const sourceEvents = sourceEventIds.length === 0 ? [] : (await this.pool.query(
+      "SELECT * FROM knowledge_events WHERE id = ANY($1::uuid[]) ORDER BY created_at ASC",
+      [sourceEventIds]
+    )).rows.map(event);
+    const eventsById = new Map(sourceEvents.map((item) => [item.id, item]));
+    const derivations: KnowledgeDerivation[] = rows.map(({ item, depth }) => {
+      const details = transformation(object(item.metadata).derivation)
+        ?? (item.sourceEventId ? eventsById.get(item.sourceEventId)?.transformation : undefined)
+        ?? { method: "unspecified" };
+      return {
+        ...details,
+        id: item.id,
+        targetNodeId: item.targetNodeId,
+        sourceEventId: item.sourceEventId,
+        sourceNodeId: item.sourceNodeId,
+        createdAt: item.observedAt,
+        depth,
+      };
+    });
+    return { claim, derivations, sourceNodes, sourceEvents, evidence: evidenceItems, maxDepth, truncated };
+  }
+
+  async findDependentClaims(input: { sourceNodeId?: string; sourceEventId?: string; maxDepth?: number }): Promise<DependentClaim[]> {
+    if (!input.sourceNodeId && !input.sourceEventId) throw new Error("findDependentClaims: sourceNodeId or sourceEventId is required");
+    const maxDepth = Math.min(Math.max(Math.floor(input.maxDepth ?? 8), 1), 20);
+    const derivations = new Map<string, Array<{ id: string; depth: number }>>();
+    const visited = new Set<string>();
+    let frontier = input.sourceNodeId ? [input.sourceNodeId] : [];
+    for (let depth = 1; depth <= maxDepth; depth++) {
+      let result;
+      if (depth === 1 && input.sourceEventId) {
+        result = await this.pool.query(
+          `SELECT * FROM knowledge_observations
+           WHERE kind = 'derived_from'
+             AND (source_event_id = $1 OR source_node_id = ANY($2::uuid[]))
+           ORDER BY observed_at ASC, id ASC`,
+          [input.sourceEventId, frontier]
+        );
+      } else if (frontier.length > 0) {
+        result = await this.pool.query(
+          `SELECT * FROM knowledge_observations
+           WHERE kind = 'derived_from' AND source_node_id = ANY($1::uuid[])
+           ORDER BY observed_at ASC, id ASC`,
+          [frontier]
+        );
+      } else break;
+      const level = result.rows.map(observation).filter((item) => !visited.has(item.id));
+      for (const item of level) {
+        visited.add(item.id);
+        const current = derivations.get(item.targetNodeId) ?? [];
+        current.push({ id: item.id, depth });
+        derivations.set(item.targetNodeId, current);
+      }
+      frontier = [...new Set(level.map((item) => item.targetNodeId))];
+    }
+    const ids = [...derivations.keys()];
+    if (ids.length === 0) return [];
+    const nodes = (await this.pool.query(
+      "SELECT * FROM knowledge_nodes WHERE id = ANY($1::uuid[])",
+      [ids]
+    )).rows.map(node);
+    return nodes
+      .filter((item) => item.type === "claim")
+      .map((claim) => {
+        const links = derivations.get(claim.id)!;
+        return {
+          claim,
+          depth: Math.min(...links.map((item) => item.depth)),
+          derivationIds: links.map((item) => item.id),
+        };
+      })
+      .sort((a, b) => a.depth - b.depth || a.claim.id.localeCompare(b.claim.id));
   }
 
   async getNode(id: string): Promise<KnowledgeNode | null> { return this.getNodeWith(this.pool, id); }
@@ -439,11 +849,22 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     const normalized = normalizeLabel(input.aliasLabel); if (!normalized) throw new Error("addAlias: aliasLabel is required");
     const canonical = await this.getNode(input.canonicalNodeId); if (!canonical) throw new Error(`addAlias: unknown node ${input.canonicalNodeId}`); if (canonical.status === "rejected") throw new Error("addAlias: canonical node is rejected");
     const existing = await this.getAlias(this.pool, normalized); if (existing) { if (existing.canonicalNodeId === canonical.id) return existing; throw new Error(`addAlias: alias "${normalized}" already points to ${existing.canonicalNodeId}`); }
-    const result = await this.pool.query(
-      `INSERT INTO knowledge_aliases (id, alias_label, normalized_alias_label, canonical_node_id)
-       VALUES ($1, $2, $2, $3) RETURNING *`, [randomUUID(), normalized, canonical.id]
-    );
-    return alias(result.rows[0]);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query(
+        `INSERT INTO knowledge_aliases (id, alias_label, normalized_alias_label, canonical_node_id)
+         VALUES ($1, $2, $2, $3) RETURNING *`, [randomUUID(), normalized, canonical.id]
+      );
+      await this.wakeRepresentationGaps(client, normalized, "new_alias");
+      await client.query("COMMIT");
+      return alias(result.rows[0]);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async resolveCanonical(input: { label: string; type?: KnowledgeNodeType }): Promise<KnowledgeNode | null> {
@@ -515,7 +936,7 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
   }
 
-  async supersedeClaim(input: { oldClaimId: string; newClaimId: string; markOldDisputed?: boolean }): Promise<KnowledgeEdge> {
+  async supersedeClaim(input: { oldClaimId: string; newClaimId: string; markOldDisputed?: boolean; sourceEventId?: string }): Promise<KnowledgeEdge> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN"); const result = await this.supersedeClaimWith(client, input); await client.query("COMMIT"); return result;
@@ -523,11 +944,31 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     finally { client.release(); }
   }
 
-  private async supersedeClaimWith(client: PoolClient, input: { oldClaimId: string; newClaimId: string; markOldDisputed?: boolean }): Promise<KnowledgeEdge> {
+  private async resolveClaimReference(
+    db: Queryable,
+    payload: Record<string, unknown>,
+    prefix: "oldClaim" | "newClaim"
+  ): Promise<string> {
+    const explicitId = String(payload[`${prefix}Id`] ?? "").trim();
+    if (explicitId) {
+      if (!UUID.test(explicitId)) throw new Error(`supersede ${prefix}Id must be a UUID`);
+      const claim = await this.getNodeWith(db, explicitId);
+      if (!claim || claim.type !== "claim") throw new Error(`supersede ${prefix}Id must reference a claim`);
+      return claim.id;
+    }
+    const label = requiredString(payload[`${prefix}Label`], `supersede ${prefix}Label`);
+    const candidates = await this.findIdentityCandidates(db, label, "claim");
+    if (candidates.length !== 1) {
+      throw new Error(`supersede ${prefix}Label must resolve to exactly one accepted claim`);
+    }
+    return candidates[0]!.id;
+  }
+
+  private async supersedeClaimWith(client: PoolClient, input: { oldClaimId: string; newClaimId: string; markOldDisputed?: boolean; sourceEventId?: string }): Promise<KnowledgeEdge> {
       if (input.oldClaimId === input.newClaimId) throw new Error("supersedeClaim: old and new must differ");
       const oldNode = await this.getNodeWith(client, input.oldClaimId); const newNode = await this.getNodeWith(client, input.newClaimId);
       if (oldNode?.type !== "claim") throw new Error("supersedeClaim: oldClaimId must be a claim node"); if (newNode?.type !== "claim") throw new Error("supersedeClaim: newClaimId must be a claim node");
-      const result = await this.insertEdge(client, { id: randomUUID(), fromNodeId: newNode.id, relation: "supersedes", toNodeId: oldNode.id, status: "accepted", createdAt: Date.now() });
+      const result = await this.insertEdge(client, { id: randomUUID(), fromNodeId: newNode.id, relation: "supersedes", toNodeId: oldNode.id, sourceEventId: input.sourceEventId, status: "accepted", createdAt: Date.now() });
       if (input.markOldDisputed !== false) {
         await client.query("UPDATE knowledge_nodes SET status = 'disputed', description = concat_ws('; ', description, $2::text), updated_at = now(), revision = revision + 1 WHERE id = $1", [oldNode.id, `superseded by ${newNode.id} (${newNode.label})`]);
         await this.queueProjection(client, oldNode.id, "graph", "rebuild"); await this.queueProjection(client, oldNode.id, "vector", "delete");
@@ -570,7 +1011,23 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
       [item.id, item.fromNodeId, item.relation, item.toNodeId, item.confidence ?? null, item.sourceEventId ?? null, item.status, item.createdAt]
     );
     const created = edge(result.rows[0]);
-    if (created.status === "accepted") await this.queueProjection(db, created.id, "graph", "upsert");
+    if (created.status === "accepted") {
+      await this.queueProjection(db, created.id, "graph", "upsert");
+      if (created.relation === "contradicts" || created.relation === "supersedes") {
+        await this.enqueueBackgroundWorkWith(db, {
+          kind: "claim_reconsideration",
+          workKey: `${created.relation}:${created.id}`,
+          sourceEventId: created.sourceEventId,
+          targetNodeId: created.relation === "supersedes" ? created.toNodeId : created.fromNodeId,
+          payload: {
+            trigger: created.relation === "contradicts" ? "contradiction" : "supersession",
+            edgeId: created.id,
+            fromNodeId: created.fromNodeId,
+            toNodeId: created.toNodeId,
+          },
+        });
+      }
+    }
     return created;
   }
 
@@ -582,7 +1039,105 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     );
   }
 
+  private async enqueueBackgroundWorkWith(db: Queryable, input: {
+    kind: KnowledgeBackgroundWorkKind;
+    workKey: string;
+    sourceExperienceId?: string;
+    sourceEventId?: string;
+    targetProposalId?: string;
+    targetNodeId?: string;
+    payload?: Record<string, unknown>;
+    status?: Extract<KnowledgeBackgroundWorkStatus, "pending" | "waiting">;
+  }): Promise<{ work: KnowledgeBackgroundWork; created: boolean }> {
+    if (!input.workKey?.trim()) throw new Error("enqueueBackgroundWork: workKey is required");
+    const inserted = await db.query(
+      `INSERT INTO knowledge_background_work
+         (kind, work_key, source_experience_id, source_event_id,
+          target_proposal_id, target_node_id, payload, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+       ON CONFLICT (work_key) DO NOTHING
+       RETURNING *`,
+      [
+        input.kind,
+        input.workKey.trim(),
+        input.sourceExperienceId ?? null,
+        input.sourceEventId ?? null,
+        input.targetProposalId ?? null,
+        input.targetNodeId ?? null,
+        JSON.stringify(input.payload ?? {}),
+        input.status ?? "pending",
+      ]
+    );
+    if (inserted.rows[0]) return { work: backgroundWork(inserted.rows[0]), created: true };
+    const existing = await db.query("SELECT * FROM knowledge_background_work WHERE work_key = $1", [input.workKey.trim()]);
+    if (!existing.rows[0]) throw new Error(`enqueueBackgroundWork: could not read ${input.workKey}`);
+    return { work: backgroundWork(existing.rows[0]), created: false };
+  }
+
+  private async wakeRepresentationGaps(
+    db: Queryable,
+    normalizedUnresolved: string,
+    trigger: "new_alias" | "new_canonical_identity"
+  ): Promise<void> {
+    if (!normalizedUnresolved) return;
+    await db.query(
+      `UPDATE knowledge_background_work AS work
+       SET status = 'pending', available_at = now(), updated_at = now(),
+           payload = work.payload || jsonb_build_object('trigger', $2::text),
+           last_error = NULL
+       FROM knowledge_proposals AS proposal
+       WHERE work.target_proposal_id = proposal.id
+         AND work.kind = 'representation_gap_retry'
+         AND work.status = 'waiting'
+         AND proposal.kind = 'representation_gap'
+         AND proposal.status = 'pending'
+         AND COALESCE(
+           proposal.payload->>'normalizedUnresolved',
+           lower(trim(proposal.payload->>'unresolved'))
+         ) = $1`,
+      [normalizedUnresolved, trigger]
+    );
+  }
+
   private workspace(payload: Record<string, unknown>): string | null { return payload.workspaceId !== undefined ? payload.workspaceId as string | null : this.defaultWorkspaceId ?? null; }
+
+  private epistemicStatus(payload: Record<string, unknown>): KnowledgeEpistemicStatus {
+    const value = String(payload.epistemicStatus ?? "unknown");
+    if (!["observed", "supported", "inferred", "hypothesized", "assumed", "established", "unknown"].includes(value)) {
+      throw new Error(`invalid epistemic status ${value}`);
+    }
+    return value as KnowledgeEpistemicStatus;
+  }
+
+  private confidence(payload: Record<string, unknown>): number | null {
+    if (payload.confidence == null) return null;
+    const value = Number(payload.confidence);
+    if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error("confidence must be between 0 and 1");
+    return value;
+  }
+
+  private timestamp(payload: Record<string, unknown>, field: "validFrom" | "validTo"): Date | null {
+    if (payload[field] == null) return null;
+    const value = typeof payload[field] === "number" ? payload[field] : Date.parse(String(payload[field]));
+    if (!Number.isFinite(value)) throw new Error(`${field} must be a timestamp`);
+    return new Date(value as number);
+  }
+
+  private async insertEncounter(db: Queryable, targetNodeId: string, eventId: string, payload: Record<string, unknown>, encounteredLabel?: string): Promise<void> {
+    const kind = this.observationKind(payload);
+    const metadata = this.observationMetadata(payload, encounteredLabel);
+    const sourceNodeIds = stringArray(payload.sourceNodeIds);
+    if (sourceNodeIds.length === 0) {
+      await this.insertObservation(db, { targetNodeId, sourceEventId: eventId, kind, metadata });
+      return;
+    }
+    for (const sourceNodeId of sourceNodeIds) {
+      if (!UUID.test(sourceNodeId) || !(await this.getNodeWith(db, sourceNodeId))) {
+        throw new Error(`acceptProposal node: unknown sourceNodeId ${sourceNodeId}`);
+      }
+      await this.insertObservation(db, { targetNodeId, sourceEventId: eventId, sourceNodeId, kind, metadata });
+    }
+  }
 
   private async materializeNode(db: Queryable, payload: Record<string, unknown>, eventId: string, recordEncounter = false): Promise<KnowledgeNode> {
     const type = String(payload.type ?? "concept") as KnowledgeNodeType; const labelValue = String(payload.label ?? "").trim(); if (!labelValue) throw new Error("acceptProposal node: label is required");
@@ -591,31 +1146,43 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
       if (!UUID.test(canonicalId)) throw new Error("acceptProposal node: canonicalId must be a UUID");
       const existing = await this.getNodeWith(db, canonicalId);
       if (!existing || existing.status === "rejected") throw new Error(`acceptProposal node: canonicalId ${canonicalId} is not reusable`);
-      if (recordEncounter) await this.insertObservation(db, { targetNodeId: existing.id, sourceEventId: eventId, kind: this.observationKind(payload), metadata: this.observationMetadata(payload, labelValue) });
+      if (recordEncounter) await this.insertEncounter(db, existing.id, eventId, payload, labelValue);
       return existing;
     }
-    const knownAlias = await this.getAlias(db, normalizeLabel(labelValue)); if (knownAlias) { const target = await this.getNodeWith(db, knownAlias.canonicalNodeId); if (target && target.status !== "rejected") { if (recordEncounter) await this.insertObservation(db, { targetNodeId: target.id, sourceEventId: eventId, kind: this.observationKind(payload), metadata: this.observationMetadata(payload, labelValue) }); return target; } }
+    const knownAlias = await this.getAlias(db, normalizeLabel(labelValue)); if (knownAlias) { const target = await this.getNodeWith(db, knownAlias.canonicalNodeId); if (target && target.status !== "rejected") { if (recordEncounter) await this.insertEncounter(db, target.id, eventId, payload, labelValue); return target; } }
     const result = await db.query(
-      `INSERT INTO knowledge_nodes (id, type, label, normalized_label, description, status, workspace_id)
-       VALUES ($1, $2, $3, $4, $5, 'accepted', $6) RETURNING *`,
-      [randomUUID(), type, labelValue, normalizeLabel(labelValue), payload.description == null ? `from event ${eventId}` : String(payload.description), this.workspace(payload)]
+      `INSERT INTO knowledge_nodes
+         (id, type, label, normalized_label, description, status,
+          epistemic_status, confidence, workspace_id, valid_from, valid_to)
+       VALUES ($1, $2, $3, $4, $5, 'accepted', $6, $7, $8, $9, $10)
+       RETURNING *`,
+      [
+        randomUUID(), type, labelValue, normalizeLabel(labelValue),
+        payload.description == null ? `from event ${eventId}` : String(payload.description),
+        this.epistemicStatus(payload), this.confidence(payload), this.workspace(payload),
+        this.timestamp(payload, "validFrom"), this.timestamp(payload, "validTo"),
+      ]
     );
     const created = node(result.rows[0]);
     await this.queueProjection(db, created.id, "graph", "upsert");
     await this.queueProjection(db, created.id, "vector", "upsert");
-    if (recordEncounter) await this.insertObservation(db, { targetNodeId: created.id, sourceEventId: eventId, kind: this.observationKind(payload), metadata: this.observationMetadata(payload, labelValue) });
+    await this.wakeRepresentationGaps(db, normalizeLabel(created.label), "new_canonical_identity");
+    if (recordEncounter) await this.insertEncounter(db, created.id, eventId, payload, labelValue);
     return created;
   }
 
   private observationKind(payload: Record<string, unknown>): KnowledgeObservationKind {
     const value = String(payload.observationKind ?? "observes");
-    if (!["mentions", "observes", "independently_formulated", "references"].includes(value)) throw new Error(`invalid observation kind ${value}`);
+    if (!["mentions", "observes", "independently_formulated", "references", "derived_from"].includes(value)) throw new Error(`invalid observation kind ${value}`);
     return value as KnowledgeObservationKind;
   }
 
   private observationMetadata(payload: Record<string, unknown>, encounteredLabel?: string): Record<string, unknown> {
     const supplied = payload.observationMetadata;
     const metadata = supplied && typeof supplied === "object" && !Array.isArray(supplied) ? { ...(supplied as Record<string, unknown>) } : {};
+    if (payload.derivation && typeof payload.derivation === "object" && !Array.isArray(payload.derivation)) {
+      metadata.derivation = payload.derivation;
+    }
     if (encounteredLabel) metadata.encounteredLabel = encounteredLabel;
     return metadata;
   }
@@ -716,6 +1283,87 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     }
     await this.insertObservation(db, { targetNodeId: target.id, sourceEventId: eventId, sourceNodeId: source?.id, kind: this.observationKind(payload), metadata: this.observationMetadata(payload) });
   }
+
+  private async materializeRepresentationResolution(
+    db: Queryable,
+    payload: Record<string, unknown>,
+    sourceEventId: string,
+    gapId: string
+  ): Promise<void> {
+    const resolution = object(payload.resolution);
+    const canonicalNodeId = requiredString(
+      resolution.canonicalNodeId,
+      "representation gap resolution canonicalNodeId"
+    );
+    if (!UUID.test(canonicalNodeId)) {
+      throw new Error("representation gap resolution canonicalNodeId must be a UUID");
+    }
+    const candidateIds = Array.isArray(payload.candidates)
+      ? payload.candidates
+          .map((item) => object(item).canonicalId)
+          .filter((id): id is string => typeof id === "string")
+      : [];
+    if (candidateIds.length > 0 && !candidateIds.includes(canonicalNodeId)) {
+      throw new Error(
+        "representation gap resolution must select one of the preserved canonical candidates"
+      );
+    }
+    const target = await this.getNodeWith(db, canonicalNodeId);
+    if (!target || target.status !== "accepted") {
+      throw new Error(
+        `representation gap resolution ${canonicalNodeId} must reference an accepted canonical identity`
+      );
+    }
+    const resolutionEventId = typeof resolution.resolutionEventId === "string"
+      ? resolution.resolutionEventId.trim()
+      : sourceEventId;
+    const eventResult = await db.query(
+      "SELECT id FROM knowledge_events WHERE id = $1",
+      [resolutionEventId]
+    );
+    if (!eventResult.rows[0]) {
+      throw new Error(`representation gap resolution event ${resolutionEventId} is unknown`);
+    }
+    await this.insertObservation(db, {
+      targetNodeId: target.id,
+      sourceEventId: resolutionEventId,
+      kind: "references",
+      metadata: {
+        representationGapId: gapId,
+        unresolved: String(payload.unresolved ?? ""),
+        resolutionMethod: String(resolution.method ?? "unknown"),
+        confidence:
+          resolution.confidence == null
+            ? undefined
+            : Number(resolution.confidence),
+        clarificationExperienceId:
+          typeof resolution.clarificationExperienceId === "string"
+            ? resolution.clarificationExperienceId
+            : undefined,
+      },
+    });
+  }
+}
+
+function backgroundWork(row: Record<string, unknown>): KnowledgeBackgroundWork {
+  return {
+    id: String(row.id),
+    kind: row.kind as KnowledgeBackgroundWorkKind,
+    workKey: String(row.work_key),
+    sourceExperienceId: row.source_experience_id == null ? undefined : String(row.source_experience_id),
+    sourceEventId: row.source_event_id == null ? undefined : String(row.source_event_id),
+    targetProposalId: row.target_proposal_id == null ? undefined : String(row.target_proposal_id),
+    targetNodeId: row.target_node_id == null ? undefined : String(row.target_node_id),
+    payload: object(row.payload),
+    status: row.status as KnowledgeBackgroundWorkStatus,
+    attemptCount: Number(row.attempt_count),
+    availableAt: millis(row.available_at as Date),
+    completedAt: row.completed_at == null ? undefined : millis(row.completed_at as Date),
+    escalatedAt: row.escalated_at == null ? undefined : millis(row.escalated_at as Date),
+    lastError: row.last_error == null ? undefined : String(row.last_error),
+    createdAt: millis(row.created_at as Date),
+    updatedAt: millis(row.updated_at as Date),
+  };
 }
 
 export function createPostgresCanonicalKnowledgeRepository(config: PostgresCanonicalRepositoryConfig): CanonicalKnowledgeRepository {

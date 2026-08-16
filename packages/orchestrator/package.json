@@ -13,15 +13,25 @@
     "knowledge:migrate": "tsx scripts/migrate-knowledge-postgres.ts",
     "knowledge:test:postgres": "tsx scripts/integration-knowledge-postgres.ts",
     "knowledge:test:canonical": "tsx scripts/integration-knowledge-canonical.ts",
+    "knowledge:test:lineage": "tsx scripts/integration-knowledge-lineage.ts",
     "knowledge:test:vector": "tsx scripts/integration-knowledge-vector.ts",
     "knowledge:test:graph": "tsx scripts/integration-knowledge-graph.ts",
     "knowledge:test:hybrid": "tsx scripts/integration-knowledge-hybrid.ts",
     "knowledge:test:agent": "tsx scripts/integration-knowledge-agent.ts",
     "knowledge:agent": "tsx scripts/run-knowledge-agent.ts",
+    "knowledge:background": "tsx scripts/run-background-cognition.ts",
     "knowledge:projections": "tsx scripts/reconcile-knowledge-projections.ts",
     "knowledge:projections:rebuild": "tsx scripts/reconcile-knowledge-projections.ts rebuild",
     "typecheck": "tsc --noEmit",
-    "eval": "tsx scripts/run-eval.ts"
+    "eval": "tsx scripts/run-eval.ts",
+    "test:cc:source": "node --require ./scripts/tsx-bootstrap.cjs --import tsx scripts/smoke-experience.ts",
+    "test:cc:lineage": "node --require ./scripts/tsx-bootstrap.cjs --import tsx scripts/integration-knowledge-lineage.ts",
+    "test:cc:activation": "node --require ./scripts/tsx-bootstrap.cjs --import tsx scripts/smoke-capability-activation.ts",
+    "test:cc:operational": "node --require ./scripts/tsx-bootstrap.cjs --import tsx scripts/smoke-continuous-cognition.ts",
+    "test:cc:representation": "node --require ./scripts/tsx-bootstrap.cjs --import tsx scripts/smoke-representation-acquisition.ts",
+    "test:cc:background": "node --require ./scripts/tsx-bootstrap.cjs --import tsx scripts/smoke-background-cognition.ts",
+    "test:cc:observability": "node --require ./scripts/tsx-bootstrap.cjs --import tsx scripts/smoke-continuous-cognition-observability.ts",
+    "test:cc": "node --require ./scripts/tsx-bootstrap.cjs --import tsx scripts/run-cc-eval.ts"
   },
   "engines": {
     "node": ">=20"

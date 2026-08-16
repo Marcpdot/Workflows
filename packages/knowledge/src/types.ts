@@ -17,12 +17,43 @@ export type KnowledgeStatus =
   | "disputed"
   | "rejected";
 
+/** Independent of proposal/lifecycle status: how strongly the content is known. */
+export type KnowledgeEpistemicStatus =
+  | "observed"
+  | "supported"
+  | "inferred"
+  | "hypothesized"
+  | "assumed"
+  | "established"
+  | "unknown";
+
+export interface KnowledgeInformationLoss {
+  occurred: boolean;
+  description?: string;
+}
+
+export interface KnowledgeTransformation {
+  method: string;
+  model?: string;
+  assumptions?: string[];
+  confidence?: number;
+  uncertainty?: string;
+  representationScope?: string;
+  informationLoss?: KnowledgeInformationLoss;
+  validFrom?: number;
+  validTo?: number;
+}
+
 export interface KnowledgeNode {
   id: string;
   type: KnowledgeNodeType;
   label: string;
   description?: string;
   status: KnowledgeStatus;
+  epistemicStatus: KnowledgeEpistemicStatus;
+  confidence?: number;
+  validFrom?: number;
+  validTo?: number;
   workspaceId?: string | null;
   createdAt: number;
   updatedAt: number;
@@ -68,7 +99,7 @@ export interface KnowledgeEvidence {
   createdAt: number;
 }
 
-export type KnowledgeObservationKind = "mentions" | "observes" | "independently_formulated" | "references";
+export type KnowledgeObservationKind = "mentions" | "observes" | "independently_formulated" | "references" | "derived_from";
 
 export interface KnowledgeObservation {
   id: string;
@@ -84,20 +115,122 @@ export interface KnowledgeEvent {
   id: string;
   sourceType: "conversation" | "file" | "project" | "manual";
   sourceRef: string;
+  /**
+   * Fallback source snapshot for events without durable experience backing.
+   * When sourceExperienceIds is non-empty, those experiences are authoritative
+   * and this field is absent.
+   */
+  sourceContent?: string;
+  sourceExperienceIds: string[];
   model?: string;
   inputHash?: string;
+  transformation?: KnowledgeTransformation;
+  invalidatedAt?: number;
+  invalidationReason?: string;
   createdAt: number;
+}
+
+export interface KnowledgeDerivation extends KnowledgeTransformation {
+  id: string;
+  targetNodeId: string;
+  sourceEventId?: string;
+  sourceNodeId?: string;
+  createdAt: number;
+  depth: number;
+}
+
+export interface ClaimLineage {
+  claim: KnowledgeNode;
+  derivations: KnowledgeDerivation[];
+  sourceNodes: KnowledgeNode[];
+  sourceEvents: KnowledgeEvent[];
+  evidence: KnowledgeEvidence[];
+  maxDepth: number;
+  truncated: boolean;
+}
+
+export interface DependentClaim {
+  claim: KnowledgeNode;
+  depth: number;
+  derivationIds: string[];
 }
 
 export interface KnowledgeProposal {
   id: string;
   eventId: string;
-  kind: "node" | "edge" | "evidence" | "observation" | "merge" | "supersede";
+  kind:
+    | "node"
+    | "edge"
+    | "evidence"
+    | "observation"
+    | "merge"
+    | "supersede"
+    | "representation_gap";
   payload: Record<string, unknown>;
   status: "pending" | "accepted" | "rejected";
   createdAt: number;
   resolvedAt?: number;
 }
+
+/** Fixed knowledge-local work kinds; deliberately not a generic job model. */
+export type KnowledgeBackgroundWorkKind =
+  | "semantic_consolidation"
+  | "representation_gap_retry"
+  | "claim_reconsideration";
+
+export type KnowledgeBackgroundWorkStatus =
+  | "pending"
+  | "waiting"
+  | "completed"
+  | "escalated";
+
+export interface KnowledgeBackgroundWork {
+  id: string;
+  kind: KnowledgeBackgroundWorkKind;
+  workKey: string;
+  sourceExperienceId?: string;
+  sourceEventId?: string;
+  targetProposalId?: string;
+  targetNodeId?: string;
+  payload: Record<string, unknown>;
+  status: KnowledgeBackgroundWorkStatus;
+  attemptCount: number;
+  availableAt: number;
+  completedAt?: number;
+  escalatedAt?: number;
+  lastError?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
+ * Non-authoritative, privacy-safe facts about committed knowledge changes.
+ * The sink is optional and failures must never affect canonical transactions.
+ */
+export interface KnowledgeDiagnosticRecord {
+  action:
+    | "event_created"
+    | "proposals_created"
+    | "proposal_accepted"
+    | "proposal_rejected"
+    | "event_invalidated";
+  eventId?: string;
+  proposalIds?: string[];
+  proposalKind?: KnowledgeProposal["kind"];
+  canonicalIds?: string[];
+  sourceExperienceIds?: string[];
+  epistemicStatus?: KnowledgeEpistemicStatus;
+  transformationMethod?: string;
+  gapId?: string;
+  resolutionMethod?: string;
+  oldClaimId?: string;
+  revisedClaimId?: string;
+  contradictionId?: string;
+}
+
+export type KnowledgeDiagnosticSink = (
+  record: KnowledgeDiagnosticRecord
+) => void;
 
 /** Project status summary for tools/CLI (M13) */
 export interface ProjectStatus {
@@ -148,11 +281,39 @@ export interface KnowledgeStore {
   createEvent(input: {
     sourceType: KnowledgeEvent["sourceType"];
     sourceRef: string;
+    /** Non-authoritative fallback used only when sourceExperienceIds is empty. */
+    sourceContent?: string;
+    sourceExperienceIds?: string[];
     model?: string;
     inputHash?: string;
+    transformation?: KnowledgeTransformation;
   }): Promise<KnowledgeEvent>;
 
   getEvent(id: string): Promise<KnowledgeEvent | null>;
+
+  invalidateEvent(id: string, reason: string): Promise<KnowledgeEvent>;
+
+  /** Persist one fixed, idempotent unit for a finite knowledge background pass. */
+  enqueueBackgroundWork(input: {
+    kind: KnowledgeBackgroundWorkKind;
+    workKey: string;
+    sourceExperienceId?: string;
+    sourceEventId?: string;
+    targetProposalId?: string;
+    targetNodeId?: string;
+    payload?: Record<string, unknown>;
+    status?: Extract<KnowledgeBackgroundWorkStatus, "pending" | "waiting">;
+  }): Promise<{ work: KnowledgeBackgroundWork; created: boolean }>;
+
+  /** Bounded audit/read surface for background progress and escalation. */
+  listBackgroundWork(filter?: {
+    kind?: KnowledgeBackgroundWorkKind;
+    status?: KnowledgeBackgroundWorkStatus;
+    limit?: number;
+    newestFirst?: boolean;
+  }): Promise<KnowledgeBackgroundWork[]>;
+
+  getBackgroundWork(id: string): Promise<KnowledgeBackgroundWork | null>;
 
   addProposals(
     eventId: string,
@@ -165,7 +326,12 @@ export interface KnowledgeStore {
   listProposals(filter?: {
     status?: KnowledgeProposal["status"];
     eventId?: string;
+    kind?: KnowledgeProposal["kind"];
+    limit?: number;
+    newestFirst?: boolean;
   }): Promise<KnowledgeProposal[]>;
+
+  getProposal(id: string): Promise<KnowledgeProposal | null>;
 
   acceptProposal(
     id: string,
@@ -177,6 +343,17 @@ export interface KnowledgeStore {
   listEvidence(targetNodeId: string, limit?: number): Promise<KnowledgeEvidence[]>;
 
   listObservations(targetNodeId: string, limit?: number): Promise<KnowledgeObservation[]>;
+
+  getClaimLineage(
+    claimId: string,
+    options?: { maxDepth?: number }
+  ): Promise<ClaimLineage>;
+
+  findDependentClaims(input: {
+    sourceNodeId?: string;
+    sourceEventId?: string;
+    maxDepth?: number;
+  }): Promise<DependentClaim[]>;
 
   getNode(id: string): Promise<KnowledgeNode | null>;
 
@@ -278,6 +455,7 @@ export interface KnowledgeStore {
     oldClaimId: string;
     newClaimId: string;
     markOldDisputed?: boolean;
+    sourceEventId?: string;
   }): Promise<KnowledgeEdge>;
 
   listAliases(canonicalNodeId?: string): Promise<KnowledgeAlias[]>;
@@ -294,6 +472,12 @@ export interface ExtractionResult {
     label: string;
     description?: string;
     confidence?: number;
+    epistemicStatus?: KnowledgeEpistemicStatus;
+    assumptions?: string[];
+    uncertainty?: string;
+    derivationMethod?: string;
+    representationScope?: string;
+    informationLoss?: KnowledgeInformationLoss;
   }>;
   relations: Array<{
     from: string;

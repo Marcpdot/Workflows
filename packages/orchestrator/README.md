@@ -20,6 +20,9 @@ npm run ui      # localhost web shell
 | Path | Role |
 |------|------|
 | `src/router.ts` | Task type / complexity rules |
+| `src/capabilityActivation.ts` | Operation-local WHAT/HOW/HOW MUCH decisions and trace |
+| `src/capabilityContributors.ts` | Small adapters for package-owned capability results |
+| `src/cognitiveObservability.ts` | Privacy-safe diagnostic projections; never truth state |
 | `src/orchestrator.ts` | Wire layers: policy → route → retrieve → compress → model/tools |
 | `src/index.ts` | CLI entry |
 | `src/types.ts` | Shared orchestrator result/config types |
@@ -92,6 +95,19 @@ npx tsx scripts/smoke-interaction-capture.ts
 ```
 
 See `packages/knowledge`, `packages/voice`, and `context/knowledge.md`.
+
+## Continuous Cognition evaluation
+
+```bash
+npm run test:cc                 # WP1-WP7 operational regression report
+npm run test:cc:activation      # selective activation only
+npm run test:cc:operational     # continuity/correction scenario
+npm run test:cc:representation  # ambiguity/clarification/reuse
+npm run test:cc:background      # finite background pass
+npm run test:cc:observability   # privacy/reconstruction/model swap hooks
+```
+
+`test:cc` writes a JSON-compatible report under `data/eval-results/cc/`.
 
 ## Env
 

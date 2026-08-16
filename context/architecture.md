@@ -4,13 +4,13 @@
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** root `ARCHITECTURE.md`; conversation 2026-08-01; knowledge roadmap 2026-08-02  
+**Source:** root `ARCHITECTURE.md`; conversation 2026-08-01; knowledge roadmap 2026-08-02; PR #33 WP1–WP5
 **Revisit when:** layer list or handle pipeline shape changes
 
 Intended layers remain:
 
-1. **Orchestration** — receive, route/policy, call model, return  
-2. **Memory** — short-term + long-term (+ optional embeddings); session namespace per workspace (M9)  
+1. **Orchestration** — receive, route/policy, wire selected capabilities for one operation, return
+2. **Memory** — durable raw experiences, compatible short-term history, and long-term memory (+ optional embeddings); session namespace per workspace (M9)
 3. **Knowledge** — explicit concepts, claims, relations, events, provenance; extraction-with-approval; storage-independent canonical/graph/vector/spatial contracts; PostgreSQL/PostGIS canonical target; optional voice I/O adapters only
 4. **Tools** — external capabilities via one interface  
 5. **Evaluation** — fixed cases, tokens/cost  
@@ -43,10 +43,63 @@ See [packaging.md](packaging.md) and [milestones.md](milestones.md).
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** `packages/orchestrator/src/orchestrator.ts`  
+**Source:** `packages/orchestrator/src/orchestrator.ts`; PR #33 WP6
 
-Typical `handle()` flow: resolve workspace/session (callers) → load session interaction mode → optional policy → route → retrieve/compress → optional knowledge inject → system prompt shaped by **active/neutral** → complete or tool loop (optional `knowledge_*` tools) → optional suggestions → **continuous conversation capture** (pending proposals only, rate-limited) → observability emit. Optional steps are env-gated so the core chat path stays simple. Pipeline planner can use **structured** plan JSON (M10) without changing raw chat.
+Typical `handle()` flow: resolve available workspace/session metadata (callers) → persist the raw user experience → derive a bounded per-operation capability context → activate only justified information, transformations, tools, and models → let package-owned contributor functions append first-class operation values → select an already-produced deterministic result or invoke the required model/tool capability → persist every output that can affect later cognition → **continuous conversation capture** with exact source experience IDs (pending proposals only, rate-limited) → observability emit. Full operation values remain private to the operation; the activation trace records only IDs, counts, budgets, decisions, and degradation metadata. Session history, compression, context/knowledge retrieval, lineage hydration, long-term memory, tools, capture, model tiers, and contextual representation acquisition remain independently owned capabilities rather than mandatory stages. A material unresolved referent can activate canonical/metadata inspection, one bounded tool, or a deterministic clarification response; its durable knowledge proposal/event state closes and becomes reusable without making the orchestrator or activation primitives own identity reasoning. The active set may expand only for a concrete missing dependency or contradiction and within explicit depth/count bounds. Pipeline planner can use **structured** plan JSON (M10) without changing raw chat.
 
 Knowledge path (M12+): tools in the loop; optional neighborhood/project-status inject; ingest/FP/continuous capture produce **proposals** only; accept remains explicit. Continuous capture uses conversation-optimised extract (post-M18 iteration `7d474bb`), not only generic batch ingest. Voice (M18) is STT→string→same `handle()`; TTS optional and default off. Same brain; no second orchestrator in UI or HTTP.
 
-**Reason:** One pipeline owns the vertical; features plug in without forking a second brain in UI or HTTP layers.
+**Reason:** Capability contracts plus operation-local values make coordination inspectable without introducing an attention manager or another central intelligence. `Orchestrator.handle()` is the compatibility boundary and failure/observability shell; package-owned contributors perform the selected work. A complete deterministic result can finish an operation without a response-model call, while tools and models remain replaceable resources. Activation decisions expose WHAT participated, HOW it was processed, and HOW MUCH budget was allowed without logging private input, full capability values, or hidden model reasoning.
+
+**Rejected alternatives:** an `AttentionService`/manager, a larger cognitive controller in the orchestrator, an always-on fixed pipeline, unbounded recursive expansion, or learned routing before deterministic activation has produced outcome evidence.
+
+## Background cognition
+
+**Status:** active
+**Evidence:** confirmed
+**Source:** PR #33 WP6
+**Revisit when:** a concrete cross-package background capability cannot be expressed through subsystem-owned persistent state and finite passes
+
+Background cognition is invoked as a finite, bounded pass and then exits. Pending
+semantic consolidation, representation retry, and claim reconsideration are
+persisted as fixed knowledge-owned work references; durable experience remains
+the raw source. Graph/vector repair continues to use the existing projection
+outbox. A pass may persist one bounded escalation for later foreground or curator
+attention, but it does not launch recursive reasoning.
+
+**Reason:** Persistent local state makes retry, restart, and coordination emerge
+without keeping cognition active or introducing a scheduler-brain. Indexed
+pending state keeps an idle pass cheap, while stable work keys make retries
+convergent.
+
+**Rejected alternatives:** a universal cognition scheduler, process-local pending
+queues, polling all experiences or the whole graph, and an always-on model loop.
+
+## Continuous Cognition diagnostics and evaluation
+
+**Status:** active
+**Evidence:** confirmed
+**Source:** PR #33 WP7
+**Revisit when:** a repeated adaptive decision has measurable outcomes that
+justify a separately reviewed learning mechanism
+
+Each completed foreground operation can emit one compact CC diagnostic record
+that joins durable experience IDs, activation decisions and limits,
+model/tool participation, canonical/provenance references, semantic writes,
+degradation, and factual outcomes. Canonical proposal acceptance/rejection and
+finite background passes expose equivalent reference-only records. These events
+are non-authoritative and non-fatal; truth remains in durable experience and
+PostgreSQL. Private full content and hidden reasoning are excluded by default.
+
+The CC evaluation suite reuses WP1-WP7 acceptance scenarios and emits a small
+JSON-compatible result shape with scenario, provider/model/tool IDs, latency,
+tokens/cost when available, activation/provenance/degradation counts, semantic
+changes, and background metrics.
+
+**Reason:** Stable diagnostic evidence makes cognition reconstructable and model
+or provider swaps comparable before learned routing or self-training is safe to
+consider.
+
+**Rejected alternatives:** observability as a truth store, telemetry on the
+correctness path, raw-content logging by default, a separate analytics brain,
+and adaptation before outcomes exist.

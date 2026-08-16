@@ -56,3 +56,25 @@ export class NoopObserver implements Observer {
     /* no-op */
   }
 }
+
+/** Test/eval sink. It retains structured events only; callers decide lifecycle. */
+export class InMemoryObserver implements Observer {
+  readonly events: OrchestratorEvent[] = [];
+
+  emit(event: OrchestratorEvent): void {
+    this.events.push(event);
+  }
+}
+
+/** Telemetry is diagnostic and must never become part of the truth path. */
+export function emitSafely(observer: Observer, event: OrchestratorEvent): boolean {
+  try {
+    observer.emit(event);
+    return true;
+  } catch (error) {
+    console.error(
+      `[obs] observer failed: ${error instanceof Error ? error.message : String(error)}`
+    );
+    return false;
+  }
+}

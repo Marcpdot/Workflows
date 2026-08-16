@@ -41,6 +41,8 @@ import {
   runVoiceTurn,
 } from "@workflows/voice";
 import type { ModelChoice } from "./types.js";
+import { createObserverFromEnv, emitSafely } from "@workflows/observability";
+import { knowledgeDiagnosticEvent } from "./cognitiveObservability.js";
 
 function loadDotEnv(filePath = resolve(process.cwd(), ".env")): void {
   if (!existsSync(filePath)) return;
@@ -608,10 +610,14 @@ function openKnowledgeFromEnv(options?: {
   workspaceRoot?: string;
 }): KnowledgeStore {
   const env = process.env;
+  const observer = createObserverFromEnv(env);
   return createKnowledgeStore({
     defaultWorkspaceId: resolveDefaultKnowledgeWorkspaceId(env, {
       workspaceRoot: options?.workspaceRoot,
     }),
+    diagnosticSink: (record) => {
+      emitSafely(observer, knowledgeDiagnosticEvent(record));
+    },
   });
 }
 
@@ -1391,6 +1397,22 @@ async function runOnce(
     knowledge: orch.knowledge,
   });
   if (cmd.kind === "handled") {
+    if (memory && args.useMemory) {
+      const inputExperience = await memory.addMessage(
+        effectiveSessionId,
+        { role: "user", content: args.prompt },
+        { workspaceId: ws.id, source: { type: "cli" } }
+      );
+      await memory.addMessage(
+        effectiveSessionId,
+        { role: "assistant", content: cmd.message },
+        {
+          workspaceId: ws.id,
+          source: { type: "command" },
+          parentExperienceIds: [inputExperience.id],
+        }
+      );
+    }
     if (args.json) {
       console.log(
         JSON.stringify(
@@ -1436,19 +1458,14 @@ async function runOnce(
     maxProposalsPerTurn: sessionState?.maxProposalsPerTurn,
     minUserMessageLength: sessionState?.minUserMessageLength,
     lastExtractAt: Number.isFinite(lastExtractAt) ? lastExtractAt : undefined,
+    sourcePrompt: forceCapture
+      ? `/capture ${cmd.kind === "force_capture" ? cmd.restPrompt : ""}`.trim()
+      : args.prompt,
+    experienceSource: { type: "cli" },
   });
   const latencyMs = Math.round(performance.now() - started);
 
   if (memory && args.useMemory) {
-    // Do not auto-store system prompts — only the user turn + assistant reply.
-    await memory.add(effectiveSessionId, {
-      role: "user",
-      content: forceCapture ? `/capture ${cmd.kind === "force_capture" ? cmd.restPrompt : ""}`.trim() : args.prompt,
-    });
-    await memory.add(effectiveSessionId, {
-      role: "assistant",
-      content: result.reply,
-    });
     if (result.capture?.ran) {
       await memory.updateSessionState(effectiveSessionId, {
         lastExtractTurnId: String(Date.now()),
@@ -1528,6 +1545,8 @@ async function runVoiceOnce(
           forceModel: args.forceModel,
           history,
           sessionId: effectiveSessionId,
+          sourcePrompt: text,
+          experienceSource: { type: "voice" },
         });
         return { reply: result.reply };
       },
@@ -1544,17 +1563,6 @@ async function runVoiceOnce(
     }
   );
   const latencyMs = Math.round(performance.now() - started);
-
-  if (memory && args.useMemory) {
-    await memory.add(effectiveSessionId, {
-      role: "user",
-      content: turn.transcript,
-    });
-    await memory.add(effectiveSessionId, {
-      role: "assistant",
-      content: turn.reply,
-    });
-  }
 
   if (args.json) {
     console.log(
@@ -1918,6 +1926,7 @@ async function main(): Promise<void> {
     if (config.tools) {
       config.tools = await createRegistryFromConfig();
     }
+    config.experienceStore = memory ?? undefined;
     const orch = new Orchestrator(config);
 
     try {

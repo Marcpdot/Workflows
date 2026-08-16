@@ -7,6 +7,20 @@
 import { formatNeighborhood, simpleQueryTokens } from "./formatNeighborhood.js";
 import type { KnowledgeStore } from "./types.js";
 
+export interface KnowledgeContextSelection {
+  text: string;
+  canonicalIds: string[];
+  claimIds: string[];
+  contradictionIds: string[];
+}
+
+export interface KnowledgeLineageContext {
+  text: string | null;
+  claimIds: string[];
+  eventIds: string[];
+  experienceIds: string[];
+}
+
 /**
  * Exact-ish project label match: whole label as substring with non-alnum
  * boundaries, or single-token equality against query tokens.
@@ -29,7 +43,7 @@ function promptMatchesProjectLabel(
  * Build a compact context block from accepted graph hits for a user prompt.
  * Returns null when nothing useful is found.
  */
-export async function buildKnowledgeInjectBlock(
+export async function selectKnowledgeContext(
   store: KnowledgeStore,
   userPrompt: string,
   options?: {
@@ -37,7 +51,7 @@ export async function buildKnowledgeInjectBlock(
     hops?: 1 | 2;
     maxSeeds?: number;
   }
-): Promise<string | null> {
+): Promise<KnowledgeContextSelection | null> {
   const maxChars = options?.maxChars ?? 2000;
   const hops = options?.hops === 2 ? 2 : 1;
   const maxSeeds = options?.maxSeeds ?? 3;
@@ -66,7 +80,14 @@ export async function buildKnowledgeInjectBlock(
           text.slice(0, Math.max(0, maxChars - 20)) +
           `\n…[truncated ${text.length} chars]`;
       }
-      return text;
+      return {
+        text,
+        canonicalIds: [status.project.id, ...status.linkedNodes.map((node) => node.id)],
+        claimIds: status.claims.map((claim) => claim.id),
+        contradictionIds: status.edges
+          .filter((edge) => edge.relation === "contradicts")
+          .map((edge) => edge.id),
+      };
     }
   } catch {
     // fall through to neighborhood inject
@@ -112,10 +133,82 @@ export async function buildKnowledgeInjectBlock(
   );
   if (nodes.length === 0) return null;
 
-  return formatNeighborhood({
-    nodes,
-    edges: [...edgeMap.values()],
-    maxChars,
-    title: "Retrieved knowledge (accepted claims/concepts only):",
-  });
+  const edges = [...edgeMap.values()];
+  return {
+    text: formatNeighborhood({
+      nodes,
+      edges,
+      maxChars,
+      title: "Retrieved knowledge (accepted claims/concepts only):",
+    }),
+    canonicalIds: nodes.map((node) => node.id),
+    claimIds: nodes.filter((node) => node.type === "claim").map((node) => node.id),
+    contradictionIds: edges
+      .filter((edge) => edge.relation === "contradicts")
+      .map((edge) => edge.id),
+  };
+}
+
+/** Compatibility wrapper for callers that only need prompt text. */
+export async function buildKnowledgeInjectBlock(
+  store: KnowledgeStore,
+  userPrompt: string,
+  options?: {
+    maxChars?: number;
+    hops?: 1 | 2;
+    maxSeeds?: number;
+  }
+): Promise<string | null> {
+  const selected = await selectKnowledgeContext(store, userPrompt, options);
+  return selected?.text ?? null;
+}
+
+/** Bounded, ID-oriented lineage context. It never copies durable experience payloads. */
+export async function hydrateKnowledgeLineageContext(
+  store: KnowledgeStore,
+  claimIds: string[],
+  maxChars = 2_000
+): Promise<KnowledgeLineageContext> {
+  const lineages = [];
+  for (const claimId of [...new Set(claimIds)].slice(0, 3)) {
+    lineages.push(await store.getClaimLineage(claimId, { maxDepth: 4 }));
+  }
+  if (lineages.length === 0) {
+    return { text: null, claimIds: [], eventIds: [], experienceIds: [] };
+  }
+
+  const eventIds = [
+    ...new Set(lineages.flatMap((lineage) => lineage.sourceEvents.map((event) => event.id))),
+  ];
+  const experienceIds = [
+    ...new Set(
+      lineages.flatMap((lineage) =>
+        lineage.sourceEvents.flatMap((event) => event.sourceExperienceIds)
+      )
+    ),
+  ];
+  const lines = ["Knowledge provenance (canonical lineage; IDs are auditable):"];
+  for (const lineage of lineages) {
+    const methods = [
+      ...new Set(lineage.derivations.map((derivation) => derivation.method)),
+    ];
+    const lineageEventIds = lineage.sourceEvents.map((event) => event.id);
+    const lineageExperienceIds = lineage.sourceEvents.flatMap(
+      (event) => event.sourceExperienceIds
+    );
+    lines.push(
+      `- ${lineage.claim.label} (claim=${lineage.claim.id}, epistemic=${lineage.claim.epistemicStatus})`,
+      `  events=${lineageEventIds.join(",") || "none"}; experiences=${lineageExperienceIds.join(",") || "none"}; methods=${methods.join(",") || "none"}`
+    );
+  }
+  let text = lines.join("\n");
+  if (text.length > maxChars) {
+    text = text.slice(0, Math.max(0, maxChars - 14)) + "\n…[truncated]";
+  }
+  return {
+    text,
+    claimIds: lineages.map((lineage) => lineage.claim.id),
+    eventIds,
+    experienceIds,
+  };
 }
