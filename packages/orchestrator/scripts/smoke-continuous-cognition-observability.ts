@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import {
   buildCostBreakdown,
   createCcEvaluationReport,
+  emitCcEvaluationResult,
   type CcEvaluationResult,
 } from "@workflows/eval";
 import type {
@@ -30,6 +31,7 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`ASSERT: ${message}`);
 }
 
+const evaluationStarted = performance.now();
 const now = Date.now();
 const claim: KnowledgeNode = {
   id: "canonical-alpha-claim",
@@ -305,8 +307,9 @@ try {
     sessionId: "wp7-degraded",
     interactionMode: "neutral",
   });
+  const degradedObservation = cognition(degradedObserver);
   assert(
-    cognition(degradedObserver).activation.degraded.some(
+    degradedObservation.activation.degraded.some(
       (item) => item.capabilityId === "tools"
     ),
     "unavailable capability degradation is observable"
@@ -337,6 +340,15 @@ try {
     "telemetry failure cannot invalidate the durable output"
   );
   console.log("WP7 Continuous Cognition observability/eval smoke passed.");
+  const scenarioEvaluation = evaluation("wp7-observability", firstObservation);
+  scenarioEvaluation.durationMs = Math.round(
+    performance.now() - evaluationStarted
+  );
+  scenarioEvaluation.activationCounts!.degraded +=
+    degradedObservation.activation.degraded.length;
+  scenarioEvaluation.degradationCount =
+    scenarioEvaluation.activationCounts!.degraded;
+  emitCcEvaluationResult(scenarioEvaluation);
 } finally {
   memory.close();
   for (const suffix of ["", "-shm", "-wal"]) {

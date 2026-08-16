@@ -2,7 +2,9 @@ import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
+  CC_EVALUATION_RESULT_PROTOCOL,
   createCcEvaluationReport,
+  readCcEvaluationResult,
   type CcEvaluationResult,
 } from "@workflows/eval";
 
@@ -30,10 +32,21 @@ async function runScenario(
       "tsx",
       resolve(process.cwd(), "scripts", script),
     ],
-    { cwd: process.cwd(), env: process.env, stdio: ["ignore", "pipe", "pipe"] }
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        WORKFLOWS_CC_EVALUATION_PROTOCOL: CC_EVALUATION_RESULT_PROTOCOL,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    }
   );
+  let stdout = "";
   let stderr = "";
-  child.stdout.on("data", (chunk) => process.stdout.write(chunk));
+  child.stdout.on("data", (chunk) => {
+    stdout += String(chunk);
+    process.stdout.write(chunk);
+  });
   child.stderr.on("data", (chunk) => {
     const text = String(chunk);
     stderr += text;
@@ -43,14 +56,34 @@ async function runScenario(
     child.on("error", reject);
     child.on("close", (code) => resolveExit(code ?? 1));
   });
+  const durationMs = Math.round(performance.now() - started);
+  if (exitCode === 0) {
+    try {
+      const scenarioResult = readCcEvaluationResult(stdout, scenarioId);
+      if (!scenarioResult) {
+        return {
+          scenarioId,
+          pass: false,
+          durationMs,
+          failureReason: "scenario did not emit a CcEvaluationResult",
+        };
+      }
+      return scenarioResult;
+    } catch (error) {
+      return {
+        scenarioId,
+        pass: false,
+        durationMs,
+        failureReason: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
   return {
     scenarioId,
-    pass: exitCode === 0,
-    durationMs: Math.round(performance.now() - started),
+    pass: false,
+    durationMs,
     failureReason:
-      exitCode === 0
-        ? undefined
-        : stderr.trim().split(/\r?\n/).slice(-3).join(" | ") || `exit ${exitCode}`,
+      stderr.trim().split(/\r?\n/).slice(-3).join(" | ") || `exit ${exitCode}`,
   };
 }
 

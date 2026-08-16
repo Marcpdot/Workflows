@@ -2,6 +2,7 @@
 
 import { existsSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
+import { emitCcEvaluationResult } from "@workflows/eval";
 import {
   createKnowledgePostgresPool,
   createKnowledgeStore,
@@ -27,6 +28,7 @@ function assert(condition: unknown, message: string): asserts condition {
 
 const OLD_CLAIM = "Motor A vibration began above 4200 rpm during the test";
 const NEW_CLAIM = "Motor A vibration began at 4700 rpm during the corrected run";
+const evaluationStarted = performance.now();
 
 class FixtureModel implements ModelClient {
   readonly provider = "local" as const;
@@ -387,6 +389,31 @@ try {
   const outbox = await pool.query("SELECT count(*)::int AS count FROM knowledge_projection_outbox");
   assert(Number(outbox.rows[0]?.count) > 0, "canonical PostgreSQL writes enqueue reconstructable graph/vector projections");
   console.log("WP4 operational Continuous Cognition 3+1 acceptance checks passed.");
+  emitCcEvaluationResult({
+    scenarioId: "wp4-operational-continuity",
+    pass: true,
+    durationMs: Math.round(performance.now() - evaluationStarted),
+    model: "model-b",
+    provider: "local",
+    toolIds: ["diagnostic_reading"],
+    activationCounts: {
+      selected: retrieval.activation?.decisions.filter((item) => item.state === "selected").length ?? 0,
+      skipped: calculation.activation?.decisions.filter((item) => item.state === "skipped").length ?? 0,
+      degraded: 0,
+      expansions: retrieval.activation?.expansions.length ?? 0,
+    },
+    provenanceChecks: {
+      durableInputAndOutput: true,
+      correctionLineageAuditable: true,
+      toolResultLineageAuditable: true,
+      noDuplicateExperiencePayload: true,
+    },
+    semanticChanges: {
+      eventIds: [observation.capture.eventId!, correction.capture!.eventId!],
+      proposalIds: correctionProposals.map((item) => item.id),
+      canonicalIds: [oldClaim.id, newClaim.id],
+    },
+  });
 } finally {
   memory.close();
   await pool.end();

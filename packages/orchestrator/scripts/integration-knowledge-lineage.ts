@@ -10,6 +10,7 @@ import {
   resolvePostgresKnowledgeConfig,
   runKnowledgeMigrations,
 } from "@workflows/knowledge";
+import { emitCcEvaluationResult } from "@workflows/eval";
 import { randomUUID } from "node:crypto";
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -23,6 +24,7 @@ function databaseUrl(source: string, database: string): string {
 }
 
 async function main(): Promise<void> {
+  const evaluationStarted = performance.now();
   const base = resolvePostgresKnowledgeConfig();
   const database = `workflows_lineage_${randomUUID().replaceAll("-", "")}`;
   assert(/^workflows_lineage_[a-f0-9]+$/.test(database), "safe database name");
@@ -214,6 +216,29 @@ async function main(): Promise<void> {
     assert(assumptionDependents.some((item) => item.claim.id === claim.id), "superseded assumption exposes dependent claims needing reconsideration");
 
     console.log("Epistemic status and transformation-lineage integration checks passed.");
+    emitCcEvaluationResult({
+      scenarioId: "wp2-lineage",
+      pass: true,
+      durationMs: Math.round(performance.now() - evaluationStarted),
+      model: "fixture-summarizer-v2",
+      provider: "local",
+      provenanceChecks: {
+        durableExperienceAuthoritative: true,
+        exactSourceExperienceIds: true,
+        unbackedSourceContentRetained: true,
+        transformationLineageAuditable: true,
+      },
+      semanticChanges: {
+        eventIds: [sourceEvent.id, extracted.eventId, unbackedIngest.eventId],
+        proposalIds: [
+          assumptionProposal.id,
+          claimProposal.id,
+          evidenceProposal.id,
+          replacementProposal.id,
+        ],
+        canonicalIds: [assumption.id, claim.id, replacement.id],
+      },
+    });
   } finally {
     if (pool) await pool.end();
     await admin.query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()", [database]);

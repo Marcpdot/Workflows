@@ -1,7 +1,13 @@
 export { runAssertions } from "./assertions.js";
 export type { AssertableResult } from "./assertions.js";
 export { runEvalSuite, resolveEvalPaths } from "./runner.js";
-export { createCcEvaluationReport } from "./continuousCognition.js";
+export {
+  CC_EVALUATION_RESULT_PREFIX,
+  CC_EVALUATION_RESULT_PROTOCOL,
+  createCcEvaluationReport,
+  emitCcEvaluationResult,
+  readCcEvaluationResult,
+} from "./continuousCognition.js";
 export {
   buildCostBreakdown,
   estimateCostUsd,

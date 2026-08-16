@@ -2,6 +2,7 @@
 
 import { existsSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
+import { emitCcEvaluationResult } from "@workflows/eval";
 import {
   createKnowledgePostgresPool,
   createKnowledgeStore,
@@ -24,6 +25,8 @@ import { startKnowledgePostgresTest } from "./knowledge-postgres-test-runtime.js
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`ASSERT: ${message}`);
 }
+
+const evaluationStarted = performance.now();
 
 class FixtureModel implements ModelClient {
   readonly provider = "local" as const;
@@ -448,6 +451,35 @@ try {
   const outbox = await pool.query("SELECT count(*)::int AS count FROM knowledge_projection_outbox");
   assert(Number(outbox.rows[0]?.count) > 0, "PostgreSQL remains canonical and projections remain outbox-derived");
   console.log("WP5 representation acquisition acceptance checks passed.");
+  emitCcEvaluationResult({
+    scenarioId: "wp5-representation-acquisition",
+    pass: true,
+    durationMs: Math.round(performance.now() - evaluationStarted),
+    model: "wp5-fixture",
+    provider: "local",
+    toolIds: ["inspect_device_identity"],
+    activationCounts: {
+      selected: toolResolved.activation?.decisions.filter((item) => item.state === "selected").length ?? 0,
+      skipped: ambiguous.activation?.decisions.filter((item) => item.state === "skipped").length ?? 0,
+      degraded: 0,
+      expansions: metadataResolved.activation?.expansions.length ?? 0,
+    },
+    provenanceChecks: {
+      metadataResolutionLineage: true,
+      clarificationExperienceLineage: true,
+      toolResolutionLineage: true,
+      semanticSimilarityDoesNotMerge: true,
+    },
+    semanticChanges: {
+      eventIds: [
+        metadataResolved.representation.sourceEventId!,
+        clarificationEvent!.id,
+        toolEvent!.id,
+      ],
+      proposalIds: [resolvedGap!.id],
+      canonicalIds: [motorRun.id, pumpSensor.id],
+    },
+  });
 } finally {
   memory.close();
   await pool.end();

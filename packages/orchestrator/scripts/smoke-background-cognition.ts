@@ -2,6 +2,7 @@
 
 import { existsSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
+import { emitCcEvaluationResult } from "@workflows/eval";
 import {
   acquireRepresentation,
   createKnowledgePostgresPool,
@@ -135,6 +136,7 @@ async function acceptedNode(
 }
 
 async function main(): Promise<void> {
+  const evaluationStarted = performance.now();
   const observer = new InMemoryObserver();
   const runtime = await startKnowledgePostgresTest();
   const memoryPath = resolve(process.cwd(), `data/wp6-memory-${Date.now()}.db`);
@@ -329,6 +331,51 @@ async function main(): Promise<void> {
     assert(finalIdle.itemsInspected === 0 && finalIdle.escalationsCreated === 0, "escalation does not become recursive background reasoning");
 
     console.log("WP6 background cognition smoke passed.");
+    emitCcEvaluationResult({
+      scenarioId: "wp6-background-cognition",
+      pass: true,
+      durationMs: Math.round(performance.now() - evaluationStarted),
+      model: "wp6-fixture",
+      provider: "local",
+      provenanceChecks: {
+        deferredSourceLineage: true,
+        restartSafe: true,
+        idempotent: true,
+        projectionCanonicalTruthPreserved: true,
+      },
+      semanticChanges: {
+        eventIds: [semanticEvent!.id, gapResolutionEvent!.id, sourceEvent.id],
+        proposalIds: pendingProposals.map((item) => item.id),
+        canonicalIds: [candidateA.id, dependentClaim.id, alternativeClaim.id],
+      },
+      backgroundMetrics: {
+        itemsInspected:
+          first.itemsInspected +
+          restarted.itemsInspected +
+          projectionPass.itemsInspected +
+          gapPass.itemsInspected +
+          invalidationPass.itemsInspected +
+          contradictionPass.itemsInspected,
+        proposalsCreated: first.proposalsCreated + restarted.proposalsCreated,
+        gapsResolved: gapPass.gapsResolved,
+        contradictionsSurfaced:
+          invalidationPass.contradictionsSurfaced +
+          contradictionPass.contradictionsSurfaced,
+        projectionsReconciled:
+          projectionPass.projectionsReconciled.graph +
+          projectionPass.projectionsReconciled.vector,
+        escalationsCreated:
+          invalidationPass.escalationsCreated +
+          contradictionPass.escalationsCreated,
+        modelCallsUsed:
+          first.modelCallsUsed +
+          restarted.modelCallsUsed +
+          projectionPass.modelCallsUsed +
+          gapPass.modelCallsUsed +
+          invalidationPass.modelCallsUsed +
+          contradictionPass.modelCallsUsed,
+      },
+    });
   } finally {
     memory.close();
     await pool.end();

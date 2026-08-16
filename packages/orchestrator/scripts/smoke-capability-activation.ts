@@ -1,6 +1,7 @@
 /** Offline WP3 acceptance smoke: selective, bounded, observable activation. */
 
 import { resolve } from "node:path";
+import { emitCcEvaluationResult } from "@workflows/eval";
 import type {
   ClaimLineage,
   KnowledgeEdge,
@@ -21,6 +22,14 @@ function assert(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
+const evaluationStarted = performance.now();
+const evaluationActivationCounts = {
+  selected: 0,
+  skipped: 0,
+  degraded: 0,
+  expansions: 0,
+};
+
 function decision(
   result: Awaited<ReturnType<Orchestrator["handle"]>>,
   capabilityId: string,
@@ -30,6 +39,18 @@ function decision(
     (value) =>
       value.capabilityId === capabilityId && (state == null || value.state === state)
   );
+}
+
+function includeActivation(
+  result: Awaited<ReturnType<Orchestrator["handle"]>>
+): void {
+  for (const item of result.activation?.decisions ?? []) {
+    if (item.state === "selected") evaluationActivationCounts.selected++;
+    if (item.state === "skipped") evaluationActivationCounts.skipped++;
+    if (item.state === "degraded") evaluationActivationCounts.degraded++;
+  }
+  evaluationActivationCounts.expansions +=
+    result.activation?.expansions.length ?? 0;
 }
 
 const baseConfig = (): OrchestratorConfig => ({
@@ -102,6 +123,11 @@ assert(
   !JSON.stringify(simpleContext.trace).includes("blue-orchid-739"),
   "trace does not log private input content"
 );
+for (const item of simpleContext.trace.decisions) {
+  if (item.state === "selected") evaluationActivationCounts.selected++;
+  if (item.state === "skipped") evaluationActivationCounts.skipped++;
+  if (item.state === "degraded") evaluationActivationCounts.degraded++;
+}
 
 const now = Date.now();
 const alpha: KnowledgeNode = {
@@ -210,6 +236,7 @@ try {
     "What do we know about Alpha and which sources support it?",
     { interactionMode: "neutral" }
   );
+  includeActivation(sourced);
   assert(decision(sourced, "knowledge_retrieval", "selected"), "knowledge activated");
   assert(decision(sourced, "provenance_lineage", "selected"), "lineage activated");
   assert(
@@ -231,6 +258,7 @@ try {
     "What do we know about Alpha?",
     { interactionMode: "neutral" }
   );
+  includeActivation(expanded);
   assert(
     expanded.activation?.decisions.some(
       (value) =>
@@ -265,6 +293,7 @@ try {
     "Read file package.json and report its name.",
     { interactionMode: "neutral" }
   );
+  includeActivation(degraded);
   assert(decision(degraded, "tools", "degraded"), "unavailable tool is degraded");
   assert(
     degraded.activation?.degradations.some(
@@ -279,3 +308,13 @@ try {
 }
 
 console.log("All selective capability-activation WP3 smoke checks passed.");
+emitCcEvaluationResult({
+  scenarioId: "wp3-activation",
+  pass: true,
+  durationMs: Math.round(performance.now() - evaluationStarted),
+  model: "fixture-local",
+  provider: "local",
+  activationCounts: evaluationActivationCounts,
+  provenanceChecks: { sourceLineageAuditable: true },
+  degradationCount: evaluationActivationCounts.degraded,
+});

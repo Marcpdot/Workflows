@@ -3,6 +3,7 @@
 import { existsSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import Database from "better-sqlite3";
+import { emitCcEvaluationResult } from "@workflows/eval";
 import { createMemory } from "@workflows/memory";
 import {
   captureConversationSegment,
@@ -22,6 +23,8 @@ import type {
 function assert(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
+
+const evaluationStarted = performance.now();
 
 const dbPath = resolve(process.cwd(), "data/_smoke_experience.db");
 for (const suffix of ["", "-shm", "-wal"]) {
@@ -318,3 +321,17 @@ try {
 }
 
 console.log("All durable-experience WP1 smoke checks passed.");
+emitCcEvaluationResult({
+  scenarioId: "wp1-experience",
+  pass: true,
+  durationMs: Math.round(performance.now() - evaluationStarted),
+  model: "fixture-model",
+  provider: "local",
+  toolIds: ["list_dir"],
+  provenanceChecks: {
+    durableExperienceAuthoritative: true,
+    exactToolLineage: true,
+    noDuplicateKnowledgeSourceContent: true,
+    restartSafe: true,
+  },
+});
