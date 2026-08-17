@@ -519,8 +519,10 @@ export class Orchestrator {
       kind: isExplicitCorrection(sourcePrompt) ? "human_correction" : "user_message",
       sessionId,
       content: sourcePrompt,
+      payloadRef: options?.experiencePayloadRef,
       source: options?.experienceSource ?? { type: "chat" },
       metadata: {
+        ...options?.experienceMetadata,
         ...(options?.sourcePrompt != null && options.sourcePrompt !== prompt
           ? { modelInput: prompt }
           : {}),

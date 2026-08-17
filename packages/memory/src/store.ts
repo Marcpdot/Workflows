@@ -204,6 +204,7 @@ export class MessageStore {
     context?: {
       experienceKind?: ExperienceKind;
       workspaceId?: string;
+      payloadRef?: string;
       source?: { type: string; ref?: string };
       parentExperienceIds?: string[];
       metadata?: Record<string, unknown>;
@@ -229,6 +230,7 @@ export class MessageStore {
           sessionId,
           workspaceId: context?.workspaceId,
           content: message.content,
+          payloadRef: context?.payloadRef,
           source: context?.source ?? { type: "chat" },
           parentExperienceIds: context?.parentExperienceIds,
           metadata: {

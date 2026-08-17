@@ -21,6 +21,8 @@ export interface BufferedStreamingSttOptions {
   /** Optional legacy file/transcript input retained when frames are buffered. */
   input?: Omit<SttInput, "audio" | "language">;
   createUtteranceId?: () => string;
+  /** Explicit retained-audio reference; buffered audio is not retained implicitly. */
+  audioRef?: string;
 }
 
 /**
@@ -69,6 +71,7 @@ export class BufferedStreamingSttAdapter implements StreamingSttAdapter {
       source: first.source,
       provider: this.name,
       remote: result.remote,
+      ...(this.options.audioRef ? { audioRef: this.options.audioRef } : {}),
       timestampMs,
     };
     yield {

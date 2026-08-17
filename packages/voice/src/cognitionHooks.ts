@@ -4,7 +4,10 @@ import type {
   AudioSource,
   TranscriptStability,
   TranscriptUpdate,
+  VoiceExperienceLineage,
+  VoiceHandleContext,
   VoiceHandleFn,
+  VoiceHandleResult,
 } from "./types.js";
 
 export interface SpeculativeVoiceInputMetadata {
@@ -30,7 +33,7 @@ export interface VoiceCognitionHooks {
   onCommittedInput(
     text: string,
     meta: CommittedVoiceInputMetadata
-  ): Promise<{ reply: string }>;
+  ): Promise<VoiceHandleResult>;
 }
 
 /**
@@ -62,7 +65,7 @@ export async function commitVoiceInput(
   hooks: VoiceCognitionHooks,
   transcript: TranscriptUpdate,
   signal?: AbortSignal
-): Promise<{ reply: string }> {
+): Promise<VoiceHandleResult> {
   throwIfAborted(signal);
   if (transcript.stability === "partial") {
     throw new Error("commitVoiceInput: partial transcripts cannot be committed");
@@ -83,7 +86,37 @@ export function createFinalOnlyVoiceCognitionHooks(
   handle: VoiceHandleFn
 ): VoiceCognitionHooks {
   return {
-    onCommittedInput: (text) => handle(text),
+    onCommittedInput: (text, meta) =>
+      handle(
+        text,
+        createVoiceHandleContext({
+          utteranceId: meta.utteranceId,
+          audioSource: meta.source,
+          audioRef: meta.transcript.audioRef,
+          remote: meta.transcript.remote,
+          provider: meta.transcript.provider,
+        })
+      ),
+  };
+}
+
+/** Map retained speech lineage into the existing durable handle contract. */
+export function createVoiceHandleContext(
+  lineage: VoiceExperienceLineage
+): VoiceHandleContext {
+  const { audioRef, ...voice } = lineage;
+  return {
+    experienceSource: {
+      type: "voice",
+      ref: lineage.utteranceId,
+    },
+    ...(audioRef ? { experiencePayloadRef: audioRef } : {}),
+    experienceMetadata: {
+      voice: {
+        ...voice,
+        audioSource: { ...lineage.audioSource },
+      },
+    },
   };
 }
 

@@ -35,6 +35,7 @@ class SqliteMemory implements Memory {
     message: ChatMessage,
     context?: {
       workspaceId?: string;
+      payloadRef?: string;
       source?: { type: string; ref?: string };
       parentExperienceIds?: string[];
       metadata?: Record<string, unknown>;
@@ -69,6 +70,7 @@ class SqliteMemory implements Memory {
         {
           experienceKind: input.kind,
           workspaceId: input.workspaceId,
+          payloadRef: input.payloadRef,
           source: input.source,
           parentExperienceIds: input.parentExperienceIds,
           metadata: input.metadata,

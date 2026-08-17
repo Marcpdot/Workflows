@@ -20,6 +20,8 @@ export interface MockTranscriptStep {
 export interface MockStreamingSttOptions {
   name?: string;
   utteranceId?: string;
+  /** Explicit retained-audio reference; omitted for normal ephemeral fixtures. */
+  audioRef?: string;
   updates?: readonly MockTranscriptStep[];
 }
 
@@ -93,6 +95,9 @@ export class MockStreamingSttAdapter implements StreamingSttAdapter {
           source,
           provider: this.name,
           remote: false,
+          ...(this.options.audioRef
+            ? { audioRef: this.options.audioRef }
+            : {}),
           timestampMs,
         };
         yield {

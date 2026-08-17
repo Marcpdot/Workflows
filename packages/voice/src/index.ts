@@ -21,7 +21,10 @@ export type {
   TranscriptStability,
   TranscriptUpdate,
   VoiceConfig,
+  VoiceExperienceLineage,
+  VoiceHandleContext,
   VoiceHandleFn,
+  VoiceHandleResult,
   VoiceTurnInput,
   VoiceTurnResult,
 } from "./types.js";
@@ -53,6 +56,7 @@ export {
 export {
   commitVoiceInput,
   createFinalOnlyVoiceCognitionHooks,
+  createVoiceHandleContext,
   signalSpeculativeInput,
   type CommittedVoiceInputMetadata,
   type SpeculativeVoiceInputMetadata,

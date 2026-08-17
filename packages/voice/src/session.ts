@@ -3,6 +3,8 @@
  * Same brain as text chat — no separate voice knowledge path.
  */
 
+import { randomUUID } from "node:crypto";
+import { createVoiceHandleContext } from "./cognitionHooks.js";
 import type {
   SttAdapter,
   TtsAdapter,
@@ -37,7 +39,18 @@ export async function runVoiceTurn(
     throw new Error("runVoiceTurn: empty transcript from STT");
   }
 
-  const handled = await session.handle(transcript);
+  const utteranceId = input.utteranceId?.trim() || randomUUID();
+  const source = input.source ?? { surfaceId: "voice-turn" };
+  const handled = await session.handle(
+    transcript,
+    createVoiceHandleContext({
+      utteranceId,
+      audioSource: source,
+      audioRef: input.audioRef,
+      remote: stt.remote,
+      provider: stt.provider,
+    })
+  );
   const reply = handled.reply ?? "";
 
   let tts: VoiceTurnResult["tts"] = null;
@@ -59,6 +72,10 @@ export async function runVoiceTurn(
     reply,
     stt,
     tts,
+    utteranceId,
+    source,
+    inputExperienceId: handled.experiences?.input,
+    outputExperienceId: handled.experiences?.output,
     viaVoice: true,
   };
 }

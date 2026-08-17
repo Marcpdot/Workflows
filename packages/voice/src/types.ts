@@ -37,6 +37,8 @@ export interface TranscriptUpdate {
   source: AudioSource;
   provider: string;
   remote: boolean;
+  /** Optional durable reference to retained source audio; audio is not retained by default. */
+  audioRef?: string;
   timestampMs: number;
 }
 
@@ -181,8 +183,43 @@ export interface VoiceTurnInput {
   /** Direct text (bypasses STT if set and stt is mock, or as override) */
   transcript?: string;
   language?: string;
+  /** Stable utterance identity supplied by the capture surface when available. */
+  utteranceId?: string;
+  /** Physical/virtual capture origin; defaults to the compatibility voice turn. */
+  source?: AudioSource;
+  /** Explicit retained-audio reference. Raw/continuous audio is not retained implicitly. */
+  audioRef?: string;
   /** Skip TTS even if provider is not off */
   silent?: boolean;
+}
+
+export interface VoiceExperienceLineage {
+  utteranceId: string;
+  audioSource: AudioSource;
+  audioRef?: string;
+  remote: boolean;
+  provider: string;
+}
+
+/** Structurally compatible subset of the existing Orchestrator handle options. */
+export interface VoiceHandleContext {
+  experienceSource: {
+    type: "voice";
+    ref: string;
+  };
+  /** Existing ExperienceRecord payload pointer; absent for ephemeral audio. */
+  experiencePayloadRef?: string;
+  experienceMetadata: {
+    voice: Omit<VoiceExperienceLineage, "audioRef">;
+  };
+}
+
+export interface VoiceHandleResult {
+  reply: string;
+  experiences?: {
+    input?: string;
+    output?: string;
+  };
 }
 
 export interface VoiceTurnResult {
@@ -190,9 +227,16 @@ export interface VoiceTurnResult {
   reply: string;
   stt: SttResult;
   tts: TtsResult | null;
+  utteranceId: string;
+  source: AudioSource;
+  inputExperienceId?: string;
+  outputExperienceId?: string;
   /** Same shape consumers should treat as text-chat outcome */
   viaVoice: true;
 }
 
 /** Handle function — must be Orchestrator.handle (or identical contract). */
-export type VoiceHandleFn = (text: string) => Promise<{ reply: string }>;
+export type VoiceHandleFn = (
+  text: string,
+  context?: VoiceHandleContext
+) => Promise<VoiceHandleResult>;

@@ -1540,15 +1540,15 @@ async function runVoiceOnce(
       stt,
       tts,
       language: voiceCfg.language,
-      handle: async (text) => {
+      handle: async (text, voiceContext) => {
         const result = await orch.handle(text, {
+          ...voiceContext,
           forceModel: args.forceModel,
           history,
           sessionId: effectiveSessionId,
           sourcePrompt: text,
-          experienceSource: { type: "voice" },
         });
-        return { reply: result.reply };
+        return result;
       },
     },
     {

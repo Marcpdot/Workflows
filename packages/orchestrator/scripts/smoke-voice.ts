@@ -36,7 +36,12 @@ import {
   type TtsAdapter,
   type TranscriptUpdate,
   type VoiceCognitionHooks,
+  type VoiceHandleContext,
+  type VoiceHandleFn,
 } from "@workflows/voice";
+import { createMemory } from "@workflows/memory";
+import { Orchestrator } from "../src/orchestrator.js";
+import type { ModelClient, OrchestratorConfig } from "../src/types.js";
 
 function assert(cond: boolean, msg: string): asserts cond {
   if (!cond) throw new Error(msg);
@@ -551,7 +556,134 @@ async function main(): Promise<void> {
   );
   console.log("OK: full-duplex output, self-audio correlation, and barge-in");
 
-  // 7. Config defaults off / safe
+  // 7. Authorized final speech enters the same durable path as text.
+  const voiceMemory = createMemory({ dbPath: ":memory:" });
+  const durableModel: ModelClient = {
+    provider: "local",
+    async complete() {
+      return {
+        content: "The spoken observation entered shared cognition.",
+        model: "fixture-voice-model",
+        provider: "local",
+      };
+    },
+  };
+  const durableConfig: OrchestratorConfig = {
+    ollamaBin: "ollama",
+    ollamaModel: "fixture-voice-model",
+    xaiApiKey: "",
+    xaiBaseUrl: "https://example.invalid",
+    grokModel: "fixture-frontier",
+    systemPrompt: "Test assistant.",
+    compression: {
+      threshold: 20,
+      keepRecent: 8,
+      maxSummaryChars: 1_500,
+      disabled: true,
+    },
+    retrieval: {
+      limit: 4,
+      maxChars: 2_000,
+      maxChunkChars: 600,
+      contextDir: process.cwd(),
+      disabled: true,
+    },
+    workspaceRoot: process.cwd(),
+    experienceStore: voiceMemory,
+    toolsEnabled: false,
+    toolsMaxSteps: 1,
+  };
+  const durableOrchestrator = new Orchestrator(durableConfig, {
+    local: durableModel,
+    frontier: durableModel,
+  });
+  const durableHooks = createFinalOnlyVoiceCognitionHooks(
+    (text, context) =>
+      durableOrchestrator.handle(text, {
+        ...context,
+        sessionId: "voice-experience-session",
+        interactionMode: "neutral",
+      })
+  );
+  const retainedTranscript: TranscriptUpdate = {
+    ...progressiveFinal!,
+    utteranceId: "durable-voice-utterance",
+    audioRef: "audio://retained/durable-voice-utterance",
+  };
+  const durableResult = await commitVoiceInput(
+    durableHooks,
+    retainedTranscript
+  );
+  assert(
+    durableResult.experiences?.input && durableResult.experiences.output,
+    "shared handle returns durable voice input and output identities"
+  );
+  const durableInput = await voiceMemory.getExperience(
+    durableResult.experiences.input
+  );
+  const durableOutput = await voiceMemory.getExperience(
+    durableResult.experiences.output
+  );
+  const voiceLineage = durableInput?.metadata.voice as
+    | {
+        utteranceId?: string;
+        audioSource?: AudioSource;
+        remote?: boolean;
+        provider?: string;
+        audioRef?: string;
+      }
+    | undefined;
+  assert(
+    durableInput?.kind === "user_message" &&
+      durableInput.content === retainedTranscript.text &&
+      durableInput.source?.type === "voice" &&
+      durableInput.source.ref === retainedTranscript.utteranceId,
+    "final speech uses the authoritative user-message experience path"
+  );
+  assert(
+    durableInput.payloadRef === retainedTranscript.audioRef &&
+      voiceLineage?.utteranceId === retainedTranscript.utteranceId &&
+      voiceLineage.audioSource?.surfaceId === source.surfaceId &&
+      voiceLineage.provider === retainedTranscript.provider &&
+      voiceLineage.remote === retainedTranscript.remote &&
+      voiceLineage.audioRef === undefined,
+    "voice lineage uses existing source metadata and one optional payload reference"
+  );
+  assert(
+    durableOutput?.kind === "assistant_output" &&
+      durableOutput.parentExperienceIds.includes(durableInput.id),
+    "assistant output retains the same input experience lineage as text"
+  );
+  const durableHistory = await voiceMemory.getHistory(
+    "voice-experience-session"
+  );
+  assert(
+    durableHistory.length === 2 &&
+      durableHistory[0]?.content === retainedTranscript.text &&
+      durableHistory[1]?.content === durableResult.reply,
+    "voice and text share the existing session history contract"
+  );
+  const beforeRejectedPartial = (
+    await voiceMemory.listExperiences({ sessionId: "voice-experience-session" })
+  ).length;
+  let durablePartialRejected = false;
+  try {
+    await commitVoiceInput(durableHooks, progressivePartial!);
+  } catch {
+    durablePartialRejected = true;
+  }
+  const afterRejectedPartial = (
+    await voiceMemory.listExperiences({ sessionId: "voice-experience-session" })
+  ).length;
+  assert(
+    durablePartialRejected && beforeRejectedPartial === afterRejectedPartial,
+    "partial speech never reaches durable experience storage"
+  );
+  durableOrchestrator.close();
+  voiceMemory.close();
+  console.log("OK: final voice input uses shared durable experience lineage");
+
+  // 8. Config defaults off / safe
   const cfg = loadVoiceConfig({
     VOICE_ENABLED: "false",
     VOICE_STT_PROVIDER: "mock",
@@ -562,11 +694,18 @@ async function main(): Promise<void> {
   assert(cfg.ttsProvider === "off", "tts off");
   console.log("OK: voice config defaults off");
 
-  // 7. Mock STT + same handle as text
+  // 9. Mock STT + same handle as text
   const heard: string[] = [];
-  const handle = async (text: string) => {
+  const handleContexts: Array<VoiceHandleContext | undefined> = [];
+  const handle: VoiceHandleFn = async (text, context) => {
     heard.push(text);
-    return { reply: `echo:${text}` };
+    handleContexts.push(context);
+    return {
+      reply: `echo:${text}`,
+      ...(context
+        ? { experiences: { input: "fixture-input", output: "fixture-output" } }
+        : {}),
+    };
   };
 
   const direct = await handle("status of heat");
@@ -576,18 +715,37 @@ async function main(): Promise<void> {
   const tts = new MockTtsAdapter();
   const voice = await runVoiceTurn(
     { stt, tts, handle },
-    { transcript: "status of heat" }
+    {
+      transcript: "status of heat",
+      utteranceId: "buffered-voice-utterance",
+      source,
+      audioRef: "audio://retained/buffered-voice-utterance",
+    }
   );
   assert(voice.viaVoice === true, "viaVoice");
   assert(voice.transcript === "status of heat", "transcript");
   assert(voice.reply === "echo:status of heat", "reply matches text path");
   assert(voice.reply === direct.reply, "identical to non-voice handle");
   assert(heard.length === 2, "handle called twice");
+  assert(
+    handleContexts[0] === undefined &&
+      handleContexts[1]?.experienceSource.ref ===
+        "buffered-voice-utterance" &&
+      handleContexts[1].experiencePayloadRef ===
+        "audio://retained/buffered-voice-utterance" &&
+      handleContexts[1].experienceMetadata.voice.audioSource.surfaceId ===
+        source.surfaceId &&
+      voice.utteranceId === "buffered-voice-utterance" &&
+      voice.source === source &&
+      voice.inputExperienceId === "fixture-input" &&
+      voice.outputExperienceId === "fixture-output",
+    "buffered compatibility forwards explicit voice lineage only for voice input"
+  );
   assert(tts.utterances.length === 1, "tts mock spoke once");
   assert(tts.utterances[0] === "echo:status of heat", "tts utterance");
   console.log("OK: mock STT→handle→TTS same reply as text");
 
-  // 8. silent turn skips TTS speak content
+  // 10. silent turn skips TTS speak content
   const tts2 = new MockTtsAdapter();
   const silent = await runVoiceTurn(
     { stt, tts: tts2, handle },
@@ -595,9 +753,13 @@ async function main(): Promise<void> {
   );
   assert(silent.reply === "echo:quiet", "silent reply");
   assert(tts2.utterances.length === 0, "silent no tts");
+  assert(
+    handleContexts[2]?.experiencePayloadRef === undefined,
+    "buffered voice never invents a durable audio reference"
+  );
   console.log("OK: silent skips TTS");
 
-  // 9. factory adapters from config
+  // 11. factory adapters from config
   const sttF = createSttAdapter({
     enabled: false,
     sttProvider: "mock",
@@ -623,7 +785,7 @@ async function main(): Promise<void> {
   assert(turn.reply === "ok:factory transcript", "session turn");
   console.log("OK: createVoiceSession + factories");
 
-  // 10. cloud STT blocked without remote flag
+  // 12. cloud STT blocked without remote flag
   const cloud = createSttAdapter({
     enabled: true,
     sttProvider: "cloud",
