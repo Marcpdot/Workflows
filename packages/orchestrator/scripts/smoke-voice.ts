@@ -11,6 +11,13 @@ import {
   MockSttAdapter,
   MockTtsAdapter,
   runVoiceTurn,
+  type AudioFrame,
+  type AudioSource,
+  type EngagementState,
+  type ProviderCapabilities,
+  type SpeechEvent,
+  type SpeechUtterance,
+  type TranscriptUpdate,
 } from "@workflows/voice";
 
 function assert(cond: boolean, msg: string): void {
@@ -18,7 +25,68 @@ function assert(cond: boolean, msg: string): void {
 }
 
 async function main(): Promise<void> {
-  // 1. Config defaults off / safe
+  // 1. Streaming-native primitives compose without requiring runtime hardware.
+  const source: AudioSource = {
+    surfaceId: "command-center",
+    deviceId: "mock-microphone",
+    channel: "mono",
+  };
+  const frame: AudioFrame = {
+    data: new Uint8Array([0, 1]),
+    format: { sampleRate: 16_000, channels: 1, encoding: "pcm_s16le" },
+    timestampMs: 10,
+    source,
+  };
+  const partial: TranscriptUpdate = {
+    text: "status of",
+    stability: "partial",
+    confidence: 0.7,
+    utteranceId: "utterance-1",
+    source,
+    provider: "mock-streaming",
+    remote: false,
+    timestampMs: 12,
+  };
+  const event: SpeechEvent = {
+    kind: "partial_transcript",
+    utteranceId: partial.utteranceId,
+    transcript: partial,
+    timestampMs: partial.timestampMs,
+    source,
+  };
+  const utterance: SpeechUtterance = {
+    id: partial.utteranceId,
+    source,
+    startedAtMs: 10,
+    events: [event],
+  };
+  const engagement: EngagementState = {
+    mode: "active_conversation",
+    addressed: true,
+    listening: true,
+  };
+  const capabilities: ProviderCapabilities = {
+    streamingInput: true,
+    streamingOutput: false,
+    partialTranscripts: true,
+    wordTimestamps: false,
+    cancellation: true,
+    diarization: false,
+    localOnly: true,
+  };
+  assert(frame.source === source, "audio frame retains source identity");
+  assert(
+    utterance.events[0]?.transcript === partial,
+    "utterance retains progressive event"
+  );
+  assert(engagement.listening, "engagement state is explicit");
+  assert(
+    capabilities.partialTranscripts,
+    "provider capabilities are composable"
+  );
+  console.log("OK: streaming voice primitives are exported and composable");
+
+  // 2. Config defaults off / safe
   const cfg = loadVoiceConfig({
     VOICE_ENABLED: "false",
     VOICE_STT_PROVIDER: "mock",
@@ -29,7 +97,7 @@ async function main(): Promise<void> {
   assert(cfg.ttsProvider === "off", "tts off");
   console.log("OK: voice config defaults off");
 
-  // 2. Mock STT + same handle as text
+  // 3. Mock STT + same handle as text
   const heard: string[] = [];
   const handle = async (text: string) => {
     heard.push(text);
@@ -54,7 +122,7 @@ async function main(): Promise<void> {
   assert(tts.utterances[0] === "echo:status of heat", "tts utterance");
   console.log("OK: mock STT→handle→TTS same reply as text");
 
-  // 3. silent turn skips TTS speak content
+  // 4. silent turn skips TTS speak content
   const tts2 = new MockTtsAdapter();
   const silent = await runVoiceTurn(
     { stt, tts: tts2, handle },
@@ -64,7 +132,7 @@ async function main(): Promise<void> {
   assert(tts2.utterances.length === 0, "silent no tts");
   console.log("OK: silent skips TTS");
 
-  // 4. factory adapters from config
+  // 5. factory adapters from config
   const sttF = createSttAdapter({
     enabled: false,
     sttProvider: "mock",
@@ -90,7 +158,7 @@ async function main(): Promise<void> {
   assert(turn.reply === "ok:factory transcript", "session turn");
   console.log("OK: createVoiceSession + factories");
 
-  // 5. cloud STT blocked without remote flag
+  // 6. cloud STT blocked without remote flag
   const cloud = createSttAdapter({
     enabled: true,
     sttProvider: "cloud",

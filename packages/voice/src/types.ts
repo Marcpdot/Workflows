@@ -2,6 +2,93 @@
  * Milestone 18 — voice I/O types (interface only; no parallel brain).
  */
 
+/** Physical or virtual origin of an audio stream. */
+export interface AudioSource {
+  surfaceId: string;
+  deviceId?: string;
+  channel?: string;
+}
+
+export interface AudioFormat {
+  sampleRate: number;
+  channels: number;
+  encoding: "pcm_s16le" | "pcm_f32le" | "opus" | "unknown";
+}
+
+/** One timestamped piece of audio; persistence is a separate policy decision. */
+export interface AudioFrame {
+  data: Uint8Array;
+  format: AudioFormat;
+  timestampMs: number;
+  source: AudioSource;
+}
+
+export type TranscriptStability = "partial" | "stable" | "final";
+
+/** Progressive speech recognition output, not semantic truth. */
+export interface TranscriptUpdate {
+  text: string;
+  stability: TranscriptStability;
+  confidence?: number;
+  isEndpoint?: boolean;
+  utteranceId: string;
+  source: AudioSource;
+  provider: string;
+  remote: boolean;
+  timestampMs: number;
+}
+
+export type SpeechEventKind =
+  | "speech_started"
+  | "partial_transcript"
+  | "final_transcript"
+  | "speech_ended"
+  | "endpoint"
+  | "barge_in"
+  | "cancelled";
+
+export interface SpeechEvent {
+  kind: SpeechEventKind;
+  utteranceId: string;
+  transcript?: TranscriptUpdate;
+  reason?: string;
+  timestampMs: number;
+  source: AudioSource;
+}
+
+/** Bounded event history for one detected utterance. */
+export interface SpeechUtterance {
+  id: string;
+  source: AudioSource;
+  startedAtMs: number;
+  endedAtMs?: number;
+  finalText?: string;
+  events: SpeechEvent[];
+}
+
+export type EngagementMode =
+  | "push_to_talk"
+  | "active_conversation"
+  | "addressed"
+  | "passive";
+
+export interface EngagementState {
+  mode: EngagementMode;
+  addressed: boolean;
+  listening: boolean;
+}
+
+/** Runtime-relevant provider traits; provider labels are compatibility metadata. */
+export interface ProviderCapabilities {
+  streamingInput: boolean;
+  streamingOutput: boolean;
+  partialTranscripts: boolean;
+  wordTimestamps: boolean;
+  cancellation: boolean;
+  diarization: boolean;
+  localOnly: boolean;
+}
+
 export type SttProviderName = "mock" | "local" | "cloud";
 export type TtsProviderName = "off" | "mock" | "local" | "cloud";
 

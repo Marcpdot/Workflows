@@ -1,8 +1,30 @@
-# @workflows/voice (Milestone 18)
+# @workflows/voice
 
 Optional **I/O adapters** only: speech-to-text → string → `Orchestrator.handle` → optional TTS.
 
+The existing turn-based path is a compatibility surface. The core direction is
+streaming, full-duplex verbal interaction without moving cognition into voice.
+
 No separate knowledge/voice brain. Propose/accept policy unchanged.
+
+## Architecture invariants
+
+- Own audio/verbal mechanics and representations only. Final authorized speech
+  enters the same durable experience, cognition, tools, memory, and knowledge
+  path as text.
+- Do not introduce a `VoiceAgent`, `VoiceBrain`, conversation orchestrator,
+  voice-only memory/world model, general scheduler, or second interaction path.
+- Keep buffered/file adapters and `runVoiceTurn()` working as compatibility APIs.
+- Speech endpointing and cognitive commitment are separate decisions.
+- Partial transcripts are provisional representations. Voice code must not
+  persist them as durable semantic truth or trigger irreversible actions.
+- Preserve lineage across audio source, utterance, transcript, durable
+  experience, response/action, and speech output when those stages are retained.
+- Continuous room audio is not permanently retained by default. Audio retention
+  and semantic durability are separate policies.
+- Runtime behavior should use declared provider capabilities. Existing
+  `mock | local | cloud` names remain compatibility/configuration metadata.
+- Voice failures degrade locally and must not make cognition unavailable.
 
 ## Env
 
