@@ -43,6 +43,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Typecheck voice package
+        run: npm --prefix ../voice run typecheck
+
       - name: Build
         run: npm run build
 
