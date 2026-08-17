@@ -9,6 +9,11 @@ import type {
   VoiceHandleFn,
   VoiceHandleResult,
 } from "./types.js";
+import {
+  observeVoiceDegradation,
+  observeVoiceTransition,
+  type VoiceObservationContext,
+} from "./observability.js";
 
 export interface SpeculativeVoiceInputMetadata {
   utteranceId: string;
@@ -43,17 +48,52 @@ export interface VoiceCognitionHooks {
 export function signalSpeculativeInput(
   hooks: VoiceCognitionHooks,
   transcript: TranscriptUpdate,
-  signal: AbortSignal
+  signal: AbortSignal,
+  observation?: VoiceObservationContext
 ): boolean {
   if (!hooks.onSpeculativeInput || signal.aborted) return false;
   if (!transcript.text.trim()) {
     throw new Error("signalSpeculativeInput: transcript text cannot be empty");
   }
-  hooks.onSpeculativeInput(transcript.text, {
+  observeVoiceTransition(observation, {
+    stage: "speculative_start",
     utteranceId: transcript.utteranceId,
+    source: transcript.source,
+    provider: transcript.provider,
+    remote: transcript.remote,
+    eventTimestampMs: transcript.timestampMs,
     stability: transcript.stability,
-    signal,
+    textCharacters: transcript.text.length,
   });
+  signal.addEventListener(
+    "abort",
+    () => {
+      observeVoiceTransition(observation, {
+        stage: "speculative_discarded",
+        utteranceId: transcript.utteranceId,
+        source: transcript.source,
+        provider: transcript.provider,
+        remote: transcript.remote,
+        reasonCode: "signal_aborted",
+      });
+    },
+    { once: true }
+  );
+  try {
+    hooks.onSpeculativeInput(transcript.text, {
+      utteranceId: transcript.utteranceId,
+      stability: transcript.stability,
+      signal,
+    });
+  } catch (error) {
+    observeVoiceDegradation(observation, {
+      capability: "speculative_cognition",
+      reasonCode: "speculative_start_failed",
+      utteranceId: transcript.utteranceId,
+      provider: transcript.provider,
+    });
+    throw error;
+  }
   return true;
 }
 
@@ -64,7 +104,8 @@ export function signalSpeculativeInput(
 export async function commitVoiceInput(
   hooks: VoiceCognitionHooks,
   transcript: TranscriptUpdate,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  observation?: VoiceObservationContext
 ): Promise<VoiceHandleResult> {
   throwIfAborted(signal);
   if (transcript.stability === "partial") {
@@ -73,12 +114,44 @@ export async function commitVoiceInput(
   if (!transcript.text.trim()) {
     throw new Error("commitVoiceInput: transcript text cannot be empty");
   }
-  return hooks.onCommittedInput(transcript.text, {
+  observeVoiceTransition(observation, {
+    stage: "cognition_start",
     utteranceId: transcript.utteranceId,
     source: transcript.source,
-    transcript,
-    signal,
+    provider: transcript.provider,
+    remote: transcript.remote,
+    eventTimestampMs: transcript.timestampMs,
+    stability: transcript.stability,
+    textCharacters: transcript.text.length,
   });
+  try {
+    const result = await hooks.onCommittedInput(transcript.text, {
+      utteranceId: transcript.utteranceId,
+      source: transcript.source,
+      transcript,
+      signal,
+    });
+    observeVoiceTransition(observation, {
+      stage: "commitment",
+      utteranceId: transcript.utteranceId,
+      source: transcript.source,
+      provider: transcript.provider,
+      remote: transcript.remote,
+      inputExperienceId: result.experiences?.input,
+      outputExperienceId: result.experiences?.output,
+    });
+    return result;
+  } catch (error) {
+    observeVoiceDegradation(observation, {
+      capability: "cognition",
+      reasonCode: signal?.aborted
+        ? "committed_input_aborted"
+        : "committed_input_failed",
+      utteranceId: transcript.utteranceId,
+      provider: transcript.provider,
+    });
+    throw error;
+  }
 }
 
 /** Existing turn behavior: no speculation, one explicit stable/final handle call. */

@@ -22,6 +22,7 @@ import {
   MockSttAdapter,
   MockTtsAdapter,
   runVoiceTurn,
+  observeVoiceDegradation,
   resolveEngagement,
   signalSpeculativeInput,
   startSpeechOutput,
@@ -40,6 +41,7 @@ import {
   type VoiceHandleFn,
 } from "@workflows/voice";
 import { createMemory } from "@workflows/memory";
+import { InMemoryObserver } from "@workflows/observability";
 import { Orchestrator } from "../src/orchestrator.js";
 import type { ModelClient, OrchestratorConfig } from "../src/types.js";
 
@@ -192,8 +194,15 @@ async function main(): Promise<void> {
   console.log("OK: buffered STT/TTS compatibility bridges");
 
   // 3. Native mock STT exposes progressive speech without committing it.
+  const voiceObserver = new InMemoryObserver();
+  const voiceObservation = {
+    observer: voiceObserver,
+    sessionId: "voice-observation-session",
+    operationId: "voice-operation-1",
+  };
   const progressiveStt = new MockStreamingSttAdapter({
     utteranceId: "progressive-utterance",
+    observation: voiceObservation,
     updates: [
       {
         text: "status of",
@@ -400,7 +409,8 @@ async function main(): Promise<void> {
     signalSpeculativeInput(
       hooks,
       progressivePartial!,
-      speculativeController.signal
+      speculativeController.signal,
+      voiceObservation
     ),
     "partial input can start optional cheap preparation"
   );
@@ -427,7 +437,12 @@ async function main(): Promise<void> {
   const externallyAuthorized =
     addressed.participates && providerEndpoint.isEndpoint;
   assert(externallyAuthorized, "engagement and endpoint decisions stay external");
-  const committed = await commitVoiceInput(hooks, progressiveFinal!);
+  const committed = await commitVoiceInput(
+    hooks,
+    progressiveFinal!,
+    undefined,
+    voiceObservation
+  );
   assert(
     committed.reply === "committed:status of heat" &&
       committedTexts.join(",") === "status of heat",
@@ -475,6 +490,8 @@ async function main(): Promise<void> {
   }
   const speechOutput = startSpeechOutput(nativeTts, progressiveReply(), {
     outputId: "speech-output-1",
+    utteranceId: "progressive-utterance",
+    observation: voiceObservation,
   });
   const outputFrames = speechOutput.frames[Symbol.asyncIterator]();
   const firstOutput = await outputFrames.next();
@@ -482,6 +499,7 @@ async function main(): Promise<void> {
     !firstOutput.done && speechOutput.active,
     "streaming output is active after its first frame"
   );
+  speechOutput.markPlayback(firstOutput.value);
   assert(
     nativeTts.capabilities.streamingOutput &&
       nativeTts.capabilities.cancellation,
@@ -550,6 +568,62 @@ async function main(): Promise<void> {
     outputCancelled && nativeTts.receivedText === "status received",
     "barge-in stops future synthesis without waiting for the full reply"
   );
+  observeVoiceDegradation(voiceObservation, {
+    capability: "fixture-provider",
+    reasonCode: "fixture_unavailable",
+    utteranceId: "progressive-utterance",
+  });
+  const observedVoiceStages = voiceObserver.events.flatMap((item) =>
+    item.voice ? [item.voice.stage] : []
+  );
+  assert(
+    observedVoiceStages.join(",") ===
+      [
+        "capture",
+        "speech_started",
+        "first_partial",
+        "final",
+        "endpoint",
+        "speculative_start",
+        "speculative_discarded",
+        "cognition_start",
+        "commitment",
+        "tts_first_audio",
+        "playback",
+        "barge_in",
+        "cancel",
+        "degradation",
+      ].join(","),
+    "voice transitions are reconstructable in causal order"
+  );
+  const firstPartialObservation = voiceObserver.events.find(
+    (item) => item.voice?.stage === "first_partial"
+  )?.voice;
+  const bargeInObservation = voiceObserver.events.find(
+    (item) => item.voice?.stage === "barge_in"
+  )?.voice;
+  assert(
+    firstPartialObservation?.utteranceId === "progressive-utterance" &&
+      firstPartialObservation.confidence === 0.72 &&
+      firstPartialObservation.textCharacters === "status of".length &&
+      bargeInObservation?.outputId === "speech-output-1" &&
+      bargeInObservation.reasonCode === "external_speech_started" &&
+      voiceObserver.events.every(
+        (item) =>
+          item.kind === "voice" &&
+          item.operationId === "voice-operation-1" &&
+          item.voice?.privacy.fullAudioIncluded === false &&
+          item.voice.privacy.fullTranscriptIncluded === false
+      ),
+    "voice observations retain IDs, timings, reasons, and privacy flags"
+  );
+  const serializedVoiceEvents = JSON.stringify(voiceObserver.events);
+  assert(
+    !serializedVoiceEvents.includes("status of heat") &&
+      !serializedVoiceEvents.includes('"transcript"') &&
+      !serializedVoiceEvents.includes('"data"'),
+    "voice observations omit private transcript and audio content"
+  );
   assert(
     committedTexts.join(",") === "status of heat",
     "output interruption does not create a cognitive commitment"
@@ -610,9 +684,17 @@ async function main(): Promise<void> {
     utteranceId: "durable-voice-utterance",
     audioRef: "audio://retained/durable-voice-utterance",
   };
+  const durableVoiceObserver = new InMemoryObserver();
+  const durableVoiceObservation = {
+    observer: durableVoiceObserver,
+    sessionId: "voice-experience-session",
+    operationId: "durable-voice-operation",
+  };
   const durableResult = await commitVoiceInput(
     durableHooks,
-    retainedTranscript
+    retainedTranscript,
+    undefined,
+    durableVoiceObservation
   );
   assert(
     durableResult.experiences?.input && durableResult.experiences.output,
@@ -653,6 +735,15 @@ async function main(): Promise<void> {
     durableOutput?.kind === "assistant_output" &&
       durableOutput.parentExperienceIds.includes(durableInput.id),
     "assistant output retains the same input experience lineage as text"
+  );
+  const durableCommitment = durableVoiceObserver.events.find(
+    (item) => item.voice?.stage === "commitment"
+  );
+  assert(
+    durableCommitment?.voice?.inputExperienceId === durableInput.id &&
+      durableCommitment.voice.outputExperienceId === durableOutput.id &&
+      durableCommitment.operationId === "durable-voice-operation",
+    "commitment observation joins utterance and durable experience identities"
   );
   const durableHistory = await voiceMemory.getHistory(
     "voice-experience-session"
@@ -713,8 +804,17 @@ async function main(): Promise<void> {
 
   const stt = new MockSttAdapter("status of heat");
   const tts = new MockTtsAdapter();
+  const bufferedVoiceObserver = new InMemoryObserver();
   const voice = await runVoiceTurn(
-    { stt, tts, handle },
+    {
+      stt,
+      tts,
+      handle,
+      observation: {
+        observer: bufferedVoiceObserver,
+        sessionId: "buffered-voice-session",
+      },
+    },
     {
       transcript: "status of heat",
       utteranceId: "buffered-voice-utterance",
@@ -743,6 +843,15 @@ async function main(): Promise<void> {
   );
   assert(tts.utterances.length === 1, "tts mock spoke once");
   assert(tts.utterances[0] === "echo:status of heat", "tts utterance");
+  assert(
+    bufferedVoiceObserver.events
+      .flatMap((item) => (item.voice ? [item.voice.stage] : []))
+      .join(",") === "capture,final,endpoint,cognition_start,commitment,playback" &&
+      bufferedVoiceObserver.events.every(
+        (item) => item.operationId === "buffered-voice-utterance"
+      ),
+    "buffered compatibility emits the available voice lifecycle"
+  );
   console.log("OK: mock STT→handle→TTS same reply as text");
 
   // 10. silent turn skips TTS speak content

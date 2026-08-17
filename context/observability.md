@@ -24,6 +24,12 @@ The compact CC schema also provides stable evidence for later evaluation and
 adaptation without introducing learned routing or making observability control
 cognition.
 
+Voice-runtime transitions use the same observer as `kind: "voice"` records.
+Capture, progressive speech, reversible cognition, commitment, output,
+interruption, and degradation are joined by utterance/output/experience IDs,
+bounded timings, counts, and reason codes. Full transcript and audio content are
+excluded; telemetry remains non-authoritative and non-fatal.
+
 **Rejected alternatives:**
 
 - **External SaaS / full OpenTelemetry distribution as M8 requirement** — heavy ops and accounts for a personal local stack; file sink first.

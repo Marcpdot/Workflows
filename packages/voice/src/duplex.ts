@@ -1,6 +1,11 @@
 /** Operation-local full-duplex speech output and interruption primitives. */
 
 import { createHash, randomUUID } from "node:crypto";
+import {
+  observeVoiceDegradation,
+  observeVoiceTransition,
+  type VoiceObservationContext,
+} from "./observability.js";
 import type {
   AudioFormat,
   AudioFrame,
@@ -79,13 +84,19 @@ export interface CancellableSpeechOutput {
   readonly signal: AbortSignal;
   readonly frames: AsyncIterable<AudioFrame>;
   readonly active: boolean;
+  readonly utteranceId?: string;
+  readonly observation?: VoiceObservationContext;
   cancel(reason?: unknown): void;
+  /** Call only after an audio sink has accepted a frame for playback. */
+  markPlayback(frame: AudioFrame): void;
 }
 
 export interface StartSpeechOutputOptions {
   language?: string;
   signal?: AbortSignal;
   outputId?: string;
+  utteranceId?: string;
+  observation?: VoiceObservationContext;
 }
 
 /** Starts one independently cancellable speech output without owning perception. */
@@ -95,8 +106,21 @@ export function startSpeechOutput(
   options: StartSpeechOutputOptions = {}
 ): CancellableSpeechOutput {
   const controller = new AbortController();
+  const outputId = options.outputId ?? randomUUID();
   let finished = false;
-  const abortFromCaller = (): void => controller.abort(options.signal?.reason);
+  let firstAudioObserved = false;
+  const abortOutput = (reasonCode: string, reason?: unknown): void => {
+    if (finished || controller.signal.aborted) return;
+    observeVoiceTransition(options.observation, {
+      stage: "cancel",
+      utteranceId: options.utteranceId,
+      outputId,
+      reasonCode,
+    });
+    controller.abort(reason);
+  };
+  const abortFromCaller = (): void =>
+    abortOutput("upstream_aborted", options.signal?.reason);
 
   if (options.signal?.aborted) abortFromCaller();
   else options.signal?.addEventListener("abort", abortFromCaller, { once: true });
@@ -114,8 +138,31 @@ export function startSpeechOutput(
     try {
       for await (const frame of source) {
         throwIfAborted(controller.signal);
+        if (!firstAudioObserved) {
+          firstAudioObserved = true;
+          observeVoiceTransition(options.observation, {
+            stage: "tts_first_audio",
+            utteranceId: options.utteranceId,
+            outputId,
+            source: frame.source,
+            provider: adapter.name,
+            eventTimestampMs: frame.timestampMs,
+            audioBytes: frame.data.length,
+          });
+        }
         yield frame;
       }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        observeVoiceDegradation(options.observation, {
+          capability: "tts",
+          reasonCode: "streaming_synthesis_failed",
+          utteranceId: options.utteranceId,
+          outputId,
+          provider: adapter.name,
+        });
+      }
+      throw error;
     } finally {
       finished = true;
       options.signal?.removeEventListener("abort", abortFromCaller);
@@ -123,14 +170,27 @@ export function startSpeechOutput(
   }
 
   return {
-    id: options.outputId ?? randomUUID(),
+    id: outputId,
     signal: controller.signal,
     frames,
+    utteranceId: options.utteranceId,
+    observation: options.observation,
     get active() {
       return !finished && !controller.signal.aborted;
     },
     cancel(reason?: unknown) {
-      if (!finished && !controller.signal.aborted) controller.abort(reason);
+      abortOutput("output_cancelled", reason);
+    },
+    markPlayback(frame: AudioFrame) {
+      observeVoiceTransition(options.observation, {
+        stage: "playback",
+        utteranceId: options.utteranceId,
+        outputId,
+        source: frame.source,
+        provider: adapter.name,
+        eventTimestampMs: frame.timestampMs,
+        audioBytes: frame.data.length,
+      });
     },
   };
 }
@@ -232,6 +292,14 @@ export function applyBargeIn(
   const decision = decideBargeIn(event, output, selfAudio);
   if (!decision.interrupt) return { decision };
 
+  observeVoiceTransition(output.observation, {
+    stage: "barge_in",
+    utteranceId: event.utteranceId,
+    outputId: output.id,
+    source: event.source,
+    eventTimestampMs: event.timestampMs,
+    reasonCode: decision.reason,
+  });
   output.cancel(new Error(`speech output ${output.id} interrupted`));
   return {
     decision,

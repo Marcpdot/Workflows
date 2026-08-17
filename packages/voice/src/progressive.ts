@@ -1,6 +1,10 @@
 /** Deterministic progressive speech fixtures and representation helpers. */
 
 import { randomUUID } from "node:crypto";
+import {
+  observeVoiceTransition,
+  type VoiceObservationContext,
+} from "./observability.js";
 import type {
   AudioFrame,
   ProviderCapabilities,
@@ -22,6 +26,7 @@ export interface MockStreamingSttOptions {
   utteranceId?: string;
   /** Explicit retained-audio reference; omitted for normal ephemeral fixtures. */
   audioRef?: string;
+  observation?: VoiceObservationContext;
   updates?: readonly MockTranscriptStep[];
 }
 
@@ -76,8 +81,29 @@ export class MockStreamingSttAdapter implements StreamingSttAdapter {
     const source = first.value.source;
     const utteranceId = this.options.utteranceId ?? randomUUID();
     let timestampMs = first.value.timestampMs;
+    let firstPartialObserved = false;
+
+    observeVoiceTransition(this.options.observation, {
+      stage: "capture",
+      utteranceId,
+      source,
+      provider: this.name,
+      remote: false,
+      eventTimestampMs: timestampMs,
+      elapsedMs: 0,
+      audioBytes: first.value.data.length,
+    });
 
     try {
+      observeVoiceTransition(this.options.observation, {
+        stage: "speech_started",
+        utteranceId,
+        source,
+        provider: this.name,
+        remote: false,
+        eventTimestampMs: timestampMs,
+        elapsedMs: 0,
+      });
       yield {
         kind: "speech_started",
         utteranceId,
@@ -100,6 +126,30 @@ export class MockStreamingSttAdapter implements StreamingSttAdapter {
             : {}),
           timestampMs,
         };
+        const observationStage =
+          update.stability === "final"
+            ? "final"
+            : firstPartialObserved
+              ? undefined
+              : "first_partial";
+        if (observationStage) {
+          observeVoiceTransition(this.options.observation, {
+            stage: observationStage,
+            utteranceId,
+            source,
+            provider: this.name,
+            remote: false,
+            eventTimestampMs: timestampMs,
+            elapsedMs: timestampMs - first.value.timestampMs,
+            stability: update.stability,
+            confidence: update.confidence,
+            completeness: update.completeness,
+            textCharacters: update.text.length,
+          });
+          if (observationStage === "first_partial") {
+            firstPartialObserved = true;
+          }
+        }
         yield {
           kind:
             update.stability === "final"
@@ -119,11 +169,22 @@ export class MockStreamingSttAdapter implements StreamingSttAdapter {
         timestampMs: ++timestampMs,
         source,
       };
+      timestampMs += 1;
+      observeVoiceTransition(this.options.observation, {
+        stage: "endpoint",
+        utteranceId,
+        source,
+        provider: this.name,
+        remote: false,
+        eventTimestampMs: timestampMs,
+        elapsedMs: timestampMs - first.value.timestampMs,
+        reasonCode: "mock_stream_endpoint",
+      });
       yield {
         kind: "endpoint",
         utteranceId,
         reason: "mock_stream_endpoint",
-        timestampMs: ++timestampMs,
+        timestampMs,
         source,
       };
     } finally {

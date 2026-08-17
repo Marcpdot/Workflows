@@ -11,5 +11,7 @@
       "default": "./src/index.ts"
     }
   },
-  "dependencies": {}
+  "dependencies": {
+    "@workflows/observability": "file:../observability"
+  }
 }

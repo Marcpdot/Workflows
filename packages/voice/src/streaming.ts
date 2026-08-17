@@ -1,6 +1,10 @@
 /** Buffered compatibility bridges for the streaming voice contracts. */
 
 import { randomUUID } from "node:crypto";
+import {
+  observeVoiceTransition,
+  type VoiceObservationContext,
+} from "./observability.js";
 import type {
   AudioFormat,
   AudioFrame,
@@ -23,6 +27,7 @@ export interface BufferedStreamingSttOptions {
   createUtteranceId?: () => string;
   /** Explicit retained-audio reference; buffered audio is not retained implicitly. */
   audioRef?: string;
+  observation?: VoiceObservationContext;
 }
 
 /**
@@ -51,6 +56,19 @@ export class BufferedStreamingSttAdapter implements StreamingSttAdapter {
     if (!first) {
       throw new Error("BufferedStreamingSttAdapter: at least one frame is required");
     }
+    const utteranceId = this.options.createUtteranceId?.() ?? randomUUID();
+    observeVoiceTransition(this.options.observation, {
+      stage: "capture",
+      utteranceId,
+      source: first.source,
+      provider: this.name,
+      eventTimestampMs: first.timestampMs,
+      elapsedMs: 0,
+      audioBytes: buffered.reduce(
+        (total, frame) => total + frame.data.length,
+        0
+      ),
+    });
     throwIfAborted(opts.signal);
     const result = await this.adapter.transcribe({
       ...this.options.input,
@@ -62,7 +80,6 @@ export class BufferedStreamingSttAdapter implements StreamingSttAdapter {
     if (!text) {
       throw new Error("BufferedStreamingSttAdapter: empty transcript");
     }
-    const utteranceId = this.options.createUtteranceId?.() ?? randomUUID();
     const timestampMs = Date.now();
     const transcript = {
       text,
@@ -74,6 +91,16 @@ export class BufferedStreamingSttAdapter implements StreamingSttAdapter {
       ...(this.options.audioRef ? { audioRef: this.options.audioRef } : {}),
       timestampMs,
     };
+    observeVoiceTransition(this.options.observation, {
+      stage: "final",
+      utteranceId,
+      source: first.source,
+      provider: this.name,
+      remote: result.remote,
+      eventTimestampMs: timestampMs,
+      stability: "final",
+      textCharacters: text.length,
+    });
     yield {
       kind: "final_transcript",
       utteranceId,

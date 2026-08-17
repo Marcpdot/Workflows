@@ -36,6 +36,9 @@ No separate knowledge/voice brain. Propose/accept policy unchanged.
   and semantic durability are separate policies.
 - Runtime behavior should use declared provider capabilities. Existing
   `mock | local | cloud` names remain compatibility/configuration metadata.
+- Emit voice lifecycle diagnostics through the shared observer using IDs,
+  timings, counts, and bounded reason codes only. Never include full transcript,
+  audio, or hidden cognition; observer failure must not affect voice correctness.
 - Voice failures degrade locally and must not make cognition unavailable.
 
 ## Env

@@ -4,7 +4,54 @@ export type OrchestratorEventKind =
   | "error"
   | "cognition"
   | "knowledge"
-  | "background";
+  | "background"
+  | "voice";
+
+export type VoiceObservationStage =
+  | "capture"
+  | "speech_started"
+  | "first_partial"
+  | "final"
+  | "endpoint"
+  | "speculative_start"
+  | "cognition_start"
+  | "commitment"
+  | "tts_first_audio"
+  | "playback"
+  | "barge_in"
+  | "cancel"
+  | "speculative_discarded"
+  | "degradation";
+
+/** Privacy-safe diagnostic projection of one voice-runtime transition. */
+export interface VoiceObservation {
+  schemaVersion: 1;
+  stage: VoiceObservationStage;
+  utteranceId?: string;
+  outputId?: string;
+  source?: {
+    surfaceId: string;
+    deviceId?: string;
+    channel?: string;
+  };
+  provider?: string;
+  remote?: boolean;
+  eventTimestampMs?: number;
+  elapsedMs?: number;
+  reasonCode?: string;
+  stability?: "partial" | "stable" | "final";
+  confidence?: number;
+  completeness?: number;
+  textCharacters?: number;
+  audioBytes?: number;
+  inputExperienceId?: string;
+  outputExperienceId?: string;
+  degradedCapability?: string;
+  privacy: {
+    fullAudioIncluded: false;
+    fullTranscriptIncluded: false;
+  };
+}
 
 export interface CcExperienceReferences {
   inputExperienceId?: string;
@@ -172,6 +219,7 @@ export interface OrchestratorEvent {
   cognition?: CcOperationObservation;
   knowledge?: CcKnowledgeWriteObservation;
   background?: CcBackgroundPassObservation;
+  voice?: VoiceObservation;
   /** Policy reason, compression flags, etc. Avoid full prompts unless configured */
   meta?: Record<string, unknown>;
 }

@@ -79,6 +79,12 @@ export {
   type SpeechOutputState,
   type StartSpeechOutputOptions,
 } from "./duplex.js";
+export {
+  observeVoiceDegradation,
+  observeVoiceTransition,
+  type VoiceObservationContext,
+  type VoiceObservationInput,
+} from "./observability.js";
 export { loadVoiceConfig } from "./config.js";
 export {
   MockSttAdapter,

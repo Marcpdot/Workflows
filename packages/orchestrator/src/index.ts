@@ -1540,6 +1540,10 @@ async function runVoiceOnce(
       stt,
       tts,
       language: voiceCfg.language,
+      observation: {
+        observer: createObserverFromEnv(process.env),
+        sessionId: effectiveSessionId,
+      },
       handle: async (text, voiceContext) => {
         const result = await orch.handle(text, {
           ...voiceContext,
