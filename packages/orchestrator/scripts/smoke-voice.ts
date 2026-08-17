@@ -4,6 +4,8 @@
  */
 
 import {
+  BufferedStreamingSttAdapter,
+  BufferedStreamingTtsAdapter,
   createSttAdapter,
   createTtsAdapter,
   createVoiceSession,
@@ -17,11 +19,24 @@ import {
   type ProviderCapabilities,
   type SpeechEvent,
   type SpeechUtterance,
+  type StreamingSttAdapter,
+  type StreamingTtsAdapter,
+  type TtsAdapter,
   type TranscriptUpdate,
 } from "@workflows/voice";
 
 function assert(cond: boolean, msg: string): void {
   if (!cond) throw new Error(msg);
+}
+
+async function* one<T>(value: T): AsyncIterable<T> {
+  yield value;
+}
+
+async function collect<T>(values: AsyncIterable<T>): Promise<T[]> {
+  const collected: T[] = [];
+  for await (const value of values) collected.push(value);
+  return collected;
 }
 
 async function main(): Promise<void> {
@@ -86,7 +101,79 @@ async function main(): Promise<void> {
   );
   console.log("OK: streaming voice primitives are exported and composable");
 
-  // 2. Config defaults off / safe
+  // 2. Buffered adapters bridge into capability-described streaming contracts.
+  const bufferedCapabilities: ProviderCapabilities = {
+    ...capabilities,
+    streamingInput: false,
+    streamingOutput: false,
+    partialTranscripts: false,
+    cancellation: false,
+  };
+  const streamingStt: StreamingSttAdapter =
+    new BufferedStreamingSttAdapter(
+      new MockSttAdapter("buffered transcript"),
+      {
+        capabilities: bufferedCapabilities,
+        createUtteranceId: () => "buffered-utterance",
+      }
+    );
+  const recognized = await collect(streamingStt.recognize(one(frame), {}));
+  assert(
+    recognized.length === 1 && recognized[0]?.kind === "final_transcript",
+    "buffered STT exposes one final update"
+  );
+  assert(
+    recognized[0]?.transcript?.text === "buffered transcript" &&
+      recognized[0].source === source,
+    "buffered STT preserves transcript and source"
+  );
+  assert(
+    streamingStt.capabilities.streamingInput === false,
+    "compatibility behavior is described by capabilities"
+  );
+
+  let synthesizedText = "";
+  const legacyTts: TtsAdapter = {
+    name: "mock",
+    async speak(input) {
+      synthesizedText = input.text;
+      return {
+        spoken: true,
+        provider: "mock",
+        remote: false,
+        audio: new Uint8Array([2, 3]),
+      };
+    },
+  };
+  const streamingTts: StreamingTtsAdapter =
+    new BufferedStreamingTtsAdapter(legacyTts, {
+      capabilities: bufferedCapabilities,
+      outputFormat: frame.format,
+      outputSource: source,
+    });
+  async function* textChunks(): AsyncIterable<string> {
+    yield "buffered ";
+    yield "speech";
+  }
+  const synthesized = await collect(streamingTts.synthesize(textChunks(), {}));
+  assert(synthesizedText === "buffered speech", "buffered TTS joins text chunks");
+  assert(
+    synthesized.length === 1 && synthesized[0]?.data[1] === 3,
+    "in-memory legacy TTS audio becomes one frame"
+  );
+
+  const abort = new AbortController();
+  abort.abort(new Error("fixture cancellation"));
+  let cancelled = false;
+  try {
+    await collect(streamingStt.recognize(one(frame), { signal: abort.signal }));
+  } catch (error) {
+    cancelled = error instanceof Error && error.message === "fixture cancellation";
+  }
+  assert(cancelled, "streaming compatibility boundary accepts AbortSignal");
+  console.log("OK: buffered STT/TTS compatibility bridges");
+
+  // 3. Config defaults off / safe
   const cfg = loadVoiceConfig({
     VOICE_ENABLED: "false",
     VOICE_STT_PROVIDER: "mock",
@@ -97,7 +184,7 @@ async function main(): Promise<void> {
   assert(cfg.ttsProvider === "off", "tts off");
   console.log("OK: voice config defaults off");
 
-  // 3. Mock STT + same handle as text
+  // 4. Mock STT + same handle as text
   const heard: string[] = [];
   const handle = async (text: string) => {
     heard.push(text);
@@ -122,7 +209,7 @@ async function main(): Promise<void> {
   assert(tts.utterances[0] === "echo:status of heat", "tts utterance");
   console.log("OK: mock STT→handle→TTS same reply as text");
 
-  // 4. silent turn skips TTS speak content
+  // 5. silent turn skips TTS speak content
   const tts2 = new MockTtsAdapter();
   const silent = await runVoiceTurn(
     { stt, tts: tts2, handle },
@@ -132,7 +219,7 @@ async function main(): Promise<void> {
   assert(tts2.utterances.length === 0, "silent no tts");
   console.log("OK: silent skips TTS");
 
-  // 5. factory adapters from config
+  // 6. factory adapters from config
   const sttF = createSttAdapter({
     enabled: false,
     sttProvider: "mock",
@@ -158,7 +245,7 @@ async function main(): Promise<void> {
   assert(turn.reply === "ok:factory transcript", "session turn");
   console.log("OK: createVoiceSession + factories");
 
-  // 6. cloud STT blocked without remote flag
+  // 7. cloud STT blocked without remote flag
   const cloud = createSttAdapter({
     enabled: true,
     sttProvider: "cloud",
@@ -173,6 +260,19 @@ async function main(): Promise<void> {
     blocked = true;
   }
   assert(blocked, "cloud STT blocked without VOICE_ALLOW_REMOTE_AUDIO");
+  const streamingCloud = new BufferedStreamingSttAdapter(cloud, {
+    capabilities: { ...bufferedCapabilities, localOnly: false },
+  });
+  let streamingBlocked = false;
+  try {
+    await collect(streamingCloud.recognize(one(frame), {}));
+  } catch {
+    streamingBlocked = true;
+  }
+  assert(
+    streamingBlocked,
+    "streaming compatibility bridge preserves the cloud privacy gate"
+  );
   console.log("OK: privacy gate on cloud STT");
 
   // 6. knowledge tools are not special-cased — voice only delivers text

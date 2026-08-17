@@ -12,6 +12,8 @@ export type {
   SttInput,
   SttProviderName,
   SttResult,
+  StreamingSttAdapter,
+  StreamingTtsAdapter,
   TtsAdapter,
   TtsInput,
   TtsProviderName,
@@ -23,6 +25,12 @@ export type {
   VoiceTurnInput,
   VoiceTurnResult,
 } from "./types.js";
+export {
+  BufferedStreamingSttAdapter,
+  BufferedStreamingTtsAdapter,
+  type BufferedStreamingSttOptions,
+  type BufferedStreamingTtsOptions,
+} from "./streaming.js";
 export { loadVoiceConfig } from "./config.js";
 export {
   MockSttAdapter,

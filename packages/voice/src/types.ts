@@ -89,6 +89,24 @@ export interface ProviderCapabilities {
   localOnly: boolean;
 }
 
+export interface StreamingSttAdapter {
+  readonly name: string;
+  readonly capabilities: ProviderCapabilities;
+  recognize(
+    frames: AsyncIterable<AudioFrame>,
+    opts: { language?: string; signal?: AbortSignal }
+  ): AsyncIterable<SpeechEvent>;
+}
+
+export interface StreamingTtsAdapter {
+  readonly name: string;
+  readonly capabilities: ProviderCapabilities;
+  synthesize(
+    text: AsyncIterable<string> | string,
+    opts: { language?: string; signal?: AbortSignal }
+  ): AsyncIterable<AudioFrame>;
+}
+
 export type SttProviderName = "mock" | "local" | "cloud";
 export type TtsProviderName = "off" | "mock" | "local" | "cloud";
 
