@@ -9,7 +9,9 @@ import type {
   AudioFormat,
   AudioFrame,
   AudioSource,
-  ProviderCapabilities,
+  SpeechProviderMetadata,
+  SpeechRecognitionCapabilities,
+  SpeechSynthesisCapabilities,
   SpeechEvent,
   SttAdapter,
   SttInput,
@@ -21,7 +23,8 @@ import type {
 
 export interface BufferedStreamingSttOptions {
   /** Must describe the wrapped adapter's real behavior. */
-  capabilities: ProviderCapabilities;
+  capabilities: SpeechRecognitionCapabilities;
+  provider: SpeechProviderMetadata;
   /** Optional legacy file/transcript input retained when frames are buffered. */
   input?: Omit<SttInput, "audio" | "language">;
   createUtteranceId?: () => string;
@@ -37,13 +40,15 @@ export interface BufferedStreamingSttOptions {
  */
 export class BufferedStreamingSttAdapter implements StreamingSttAdapter {
   readonly name: string;
-  readonly capabilities: ProviderCapabilities;
+  readonly provider: SpeechProviderMetadata;
+  readonly capabilities: SpeechRecognitionCapabilities;
 
   constructor(
     private readonly adapter: SttAdapter,
     private readonly options: BufferedStreamingSttOptions
   ) {
     this.name = adapter.name;
+    this.provider = { ...options.provider };
     this.capabilities = { ...options.capabilities };
   }
 
@@ -74,6 +79,7 @@ export class BufferedStreamingSttAdapter implements StreamingSttAdapter {
       ...this.options.input,
       audio: concatenateAudio(buffered),
       language: opts.language,
+      signal: opts.signal,
     });
     throwIfAborted(opts.signal);
     const text = result.text.trim();
@@ -113,7 +119,8 @@ export class BufferedStreamingSttAdapter implements StreamingSttAdapter {
 
 export interface BufferedStreamingTtsOptions {
   /** Must describe the wrapped adapter's real behavior. */
-  capabilities: ProviderCapabilities;
+  capabilities: SpeechSynthesisCapabilities;
+  provider: SpeechProviderMetadata;
   outputFormat: AudioFormat;
   outputSource: AudioSource;
   /** Optional legacy output-file input used by file-based TTS adapters. */
@@ -127,13 +134,15 @@ export interface BufferedStreamingTtsOptions {
  */
 export class BufferedStreamingTtsAdapter implements StreamingTtsAdapter {
   readonly name: string;
-  readonly capabilities: ProviderCapabilities;
+  readonly provider: SpeechProviderMetadata;
+  readonly capabilities: SpeechSynthesisCapabilities;
 
   constructor(
     private readonly adapter: TtsAdapter,
     private readonly options: BufferedStreamingTtsOptions
   ) {
     this.name = adapter.name;
+    this.provider = { ...options.provider };
     this.capabilities = { ...options.capabilities };
   }
 
@@ -147,6 +156,7 @@ export class BufferedStreamingTtsAdapter implements StreamingTtsAdapter {
       ...this.options.input,
       text: bufferedText,
       language: opts.language,
+      signal: opts.signal,
     });
     throwIfAborted(opts.signal);
     if (!result.audio?.length) return;

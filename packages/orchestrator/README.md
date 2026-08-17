@@ -70,6 +70,13 @@ npx tsx src/index.ts --json --knowledge find label=heat
 # VOICE_MIC_CAPTURE_COMMAND='arecord -d 4 -f S16_LE -r 16000 -c 1 {output}' \
 # VOICE_STT_COMMAND='whisper-cli -f {input} -nt' \
 # npm run test:voice:microphone -- --show-transcript
+# Live raw-PCM microphone runtime; no complete recording file (manual, never CI):
+# VOICE_ENABLED=true \
+# VOICE_MIC_STREAM_COMMAND='arecord -q -t raw -f S16_LE -r 16000 -c 1' \
+# VOICE_STT_COMMAND='whisper-cli -f {input} -nt' \
+# npm run voice:live
+# This local fallback emits one final transcript per bounded VAD segment; it
+# does not claim native partial-transcript support.
 
 # Tool loop (models can call knowledge_* tools):
 # TOOLS_ENABLED=true KNOWLEDGE_TOOLS_ENABLED=true npm run dev -- "..."

@@ -9,7 +9,9 @@ export type OrchestratorEventKind =
 
 export type VoiceObservationStage =
   | "capture"
+  | "microphone_capture_start"
   | "speech_started"
+  | "speech_continuing"
   | "first_partial"
   | "final"
   | "endpoint"
@@ -44,6 +46,7 @@ export interface VoiceObservation {
   completeness?: number;
   textCharacters?: number;
   audioBytes?: number;
+  silenceMs?: number;
   inputExperienceId?: string;
   outputExperienceId?: string;
   degradedCapability?: string;

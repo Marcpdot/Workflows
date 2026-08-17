@@ -65,7 +65,7 @@ export class LocalSttAdapter implements SttAdapter {
     }
     const cmd = this.commandTemplate.replaceAll("{input}", audioPath);
     const started = Date.now();
-    const text = await runCommandCapture(cmd);
+    const text = await runCommandCapture(cmd, input.signal);
     return {
       text: text.trim(),
       provider: "local",
@@ -119,7 +119,10 @@ export function createSttAdapter(config: VoiceConfig): SttAdapter {
   }
 }
 
-function runCommandCapture(commandLine: string): Promise<string> {
+function runCommandCapture(
+  commandLine: string,
+  signal?: AbortSignal
+): Promise<string> {
   return new Promise((resolve, reject) => {
     // Shell form for user-configured templates (Windows + Unix)
     const child = spawn(commandLine, {
@@ -128,6 +131,22 @@ function runCommandCapture(commandLine: string): Promise<string> {
     });
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    const finish = (callback: () => void): void => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      callback();
+    };
+    const onAbort = (): void => {
+      child.kill();
+      finish(() => reject(abortError(signal)));
+    };
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
     child.stdout?.setEncoding("utf8");
     child.stderr?.setEncoding("utf8");
     child.stdout?.on("data", (c) => {
@@ -136,17 +155,23 @@ function runCommandCapture(commandLine: string): Promise<string> {
     child.stderr?.on("data", (c) => {
       stderr += c;
     });
-    child.on("error", reject);
+    child.on("error", (error) => finish(() => reject(error)));
     child.on("close", (code) => {
       if (code !== 0) {
-        reject(
+        finish(() => reject(
           new Error(
             `Local STT command failed (code ${code}): ${stderr || stdout || commandLine}`
           )
-        );
+        ));
         return;
       }
-      resolve(stdout);
+      finish(() => resolve(stdout));
     });
   });
+}
+
+function abortError(signal?: AbortSignal): Error {
+  return signal?.reason instanceof Error
+    ? signal.reason
+    : new Error("speech recognition aborted");
 }

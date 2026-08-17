@@ -10,7 +10,8 @@ import type {
   AudioFormat,
   AudioFrame,
   AudioSource,
-  ProviderCapabilities,
+  SpeechProviderMetadata,
+  SpeechSynthesisCapabilities,
   SpeechEvent,
   StreamingTtsAdapter,
 } from "./types.js";
@@ -26,14 +27,11 @@ export interface MockStreamingTtsOptions {
 /** Hardware-free native streaming fixture used to exercise duplex mechanics. */
 export class MockStreamingTtsAdapter implements StreamingTtsAdapter {
   readonly name: string;
-  readonly capabilities: ProviderCapabilities = {
-    streamingInput: true,
+  readonly provider: SpeechProviderMetadata = { localOnly: true };
+  readonly capabilities: SpeechSynthesisCapabilities = {
     streamingOutput: true,
-    partialTranscripts: false,
-    wordTimestamps: false,
+    streamingTextInput: true,
     cancellation: true,
-    diarization: false,
-    localOnly: true,
   };
   receivedText = "";
 

@@ -1,6 +1,7 @@
 # @workflows/voice
 
-Optional **I/O adapters** only: speech-to-text → string → `Orchestrator.handle` → optional TTS.
+Optional **streaming speech I/O** only: microphone/audio → speech events →
+`Orchestrator.handle` after commitment → optional streaming TTS/playback.
 
 The existing turn-based path is a compatibility surface. The core direction is
 streaming, full-duplex verbal interaction without moving cognition into voice.
@@ -57,6 +58,15 @@ VOICE_TTS_COMMAND=          # e.g. espeak "{text}"
 VOICE_ALLOW_REMOTE_AUDIO=false   # must be true for cloud STT/TTS
 VOICE_MIC_CAPTURE_COMMAND=  # manual smoke only; finite command with {output}
 VOICE_MIC_DEVICE_ID=        # optional diagnostic ID for that manual smoke
+VOICE_MIC_STREAM_COMMAND=   # live runtime: raw PCM stdout, no complete file
+VOICE_SAMPLE_RATE=16000
+VOICE_CHANNELS=1
+VOICE_PCM_ENCODING=pcm_s16le
+VOICE_VAD_THRESHOLD=0.025
+VOICE_VAD_END_SILENCE_MS=650
+VOICE_ENGAGEMENT_MODE=active_conversation|push_to_talk
+VOICE_TTS_STREAM_COMMAND=   # optional: UTF-8 text stdin -> raw PCM stdout
+VOICE_SPEAKER_STREAM_COMMAND= # optional: raw PCM stdin -> speaker
 ```
 
 ## Privacy
@@ -67,8 +77,14 @@ VOICE_MIC_DEVICE_ID=        # optional diagnostic ID for that manual smoke
 
 ## Real provider path
 
-1. Install a local Whisper-class CLI; set `VOICE_STT_PROVIDER=local` and `VOICE_STT_COMMAND`.
-2. Optional: local TTS via `VOICE_TTS_COMMAND`.
-3. Cloud: implement SDK in `CloudSttAdapter` / `CloudTtsAdapter` or keep remote blocked.
+1. Install a local Whisper-class CLI; set `VOICE_STT_COMMAND`.
+2. For live audio, configure `VOICE_MIC_STREAM_COMMAND` and run
+   `npm run voice:live` from `packages/orchestrator`.
+3. The current command STT fallback consumes live PCM but emits final text only
+   after bounded RMS-VAD segments. It declares `partialTranscripts: false`.
+4. Optional live speech uses `VOICE_TTS_STREAM_COMMAND` plus
+   `VOICE_SPEAKER_STREAM_COMMAND`; the older `VOICE_TTS_COMMAND` remains the
+   buffered compatibility path.
+5. Cloud: implement SDK in `CloudSttAdapter` / `CloudTtsAdapter` or keep remote blocked.
 
 See `AGENTS-M18.md` in knowledge package for milestone goals.

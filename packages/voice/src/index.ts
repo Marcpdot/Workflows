@@ -4,7 +4,9 @@ export type {
   AudioSource,
   EngagementMode,
   EngagementState,
-  ProviderCapabilities,
+  SpeechProviderMetadata,
+  SpeechRecognitionCapabilities,
+  SpeechSynthesisCapabilities,
   SpeechEvent,
   SpeechEventKind,
   SpeechUtterance,
@@ -34,6 +36,38 @@ export {
   type BufferedStreamingSttOptions,
   type BufferedStreamingTtsOptions,
 } from "./streaming.js";
+export {
+  CommandMicrophoneSource,
+  CommandPlaybackSink,
+  audioFrameDurationMs,
+  type AudioPlaybackSink,
+  type CommandMicrophoneOptions,
+  type CommandPlaybackOptions,
+  type MicrophoneFrameSource,
+} from "./audioTransport.js";
+export {
+  EnergyVoiceActivityDetector,
+  SpeechActivityTracker,
+  type EnergyVoiceActivityOptions,
+  type SpeechActivityOptions,
+  type VoiceActivityDetector,
+  type VoiceActivityEvent,
+  type VoiceActivityEventKind,
+  type VoiceActivitySample,
+} from "./vad.js";
+export {
+  SegmentedStreamingSttAdapter,
+  type SegmentedStreamingSttOptions,
+} from "./segmentedRecognition.js";
+export {
+  CommandStreamingTtsAdapter,
+  type CommandStreamingTtsOptions,
+} from "./commandStreamingTts.js";
+export {
+  runLiveVoiceSession,
+  type LiveVoiceSessionOptions,
+  type LiveVoiceSessionResult,
+} from "./liveSession.js";
 export {
   MockStreamingSttAdapter,
   assembleSpeechUtterance,

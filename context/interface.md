@@ -31,10 +31,10 @@ Primary human shell is a **minimal static web UI** on the same origin as M5 `POS
 
 **Status:** active  
 **Evidence:** confirmed  
-**Source:** M18 shell `6f11d1f`; `@workflows/voice`; CLI `--voice-once`, REPL `/voice`  
+**Source:** M18 shell `6f11d1f`; PR #34; `@workflows/voice`; CLI `--voice-once`, `voice:live`, REPL `/voice`
 **Revisit when:** local STT is daily-driven or ambient wake is required
 
-Speech enters as **transcript string** into the same orchestrator path as typed chat. TTS is default **off**. Mic/cloud paths are env-gated; mock STT supports offline smoke without a device.
+Live speech is represented as timestamped audio frames, VAD activity, and provisional transcript events. Only an engaged, endpointed final transcript enters the same orchestrator path as typed chat. Partial work stays reversible and non-durable. Output is incrementally playable and cancellable while microphone perception continues; correlated recent self-audio does not create commitment or barge-in. The one-shot file path remains compatible, TTS is default **off**, microphone/cloud paths are env-gated, and automated smokes require no device.
 
 **Reason:** Interface layer only — same tools, knowledge propose/accept, and session memory as text. Avoids a voice-specific product stack.
 

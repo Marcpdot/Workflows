@@ -7,7 +7,8 @@ import {
 } from "./observability.js";
 import type {
   AudioFrame,
-  ProviderCapabilities,
+  SpeechProviderMetadata,
+  SpeechRecognitionCapabilities,
   SpeechEvent,
   SpeechUtterance,
   StreamingSttAdapter,
@@ -51,14 +52,13 @@ const DEFAULT_UPDATES: readonly MockTranscriptStep[] = [
  */
 export class MockStreamingSttAdapter implements StreamingSttAdapter {
   readonly name: string;
-  readonly capabilities: ProviderCapabilities = {
+  readonly provider: SpeechProviderMetadata = { localOnly: true };
+  readonly capabilities: SpeechRecognitionCapabilities = {
     streamingInput: true,
-    streamingOutput: true,
     partialTranscripts: true,
     wordTimestamps: false,
     cancellation: true,
     diarization: false,
-    localOnly: true,
   };
   private readonly updates: readonly MockTranscriptStep[];
 

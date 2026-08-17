@@ -29,7 +29,8 @@ import {
   type AudioFrame,
   type AudioSource,
   type EngagementState,
-  type ProviderCapabilities,
+  type SpeechRecognitionCapabilities,
+  type SpeechSynthesisCapabilities,
   type SpeechEvent,
   type SpeechUtterance,
   type StreamingSttAdapter,
@@ -100,14 +101,12 @@ async function main(): Promise<void> {
     addressed: true,
     listening: true,
   };
-  const capabilities: ProviderCapabilities = {
+  const capabilities: SpeechRecognitionCapabilities = {
     streamingInput: true,
-    streamingOutput: false,
     partialTranscripts: true,
     wordTimestamps: false,
     cancellation: true,
     diarization: false,
-    localOnly: true,
   };
   assert(frame.source === source, "audio frame retains source identity");
   assert(
@@ -122,11 +121,15 @@ async function main(): Promise<void> {
   console.log("OK: streaming voice primitives are exported and composable");
 
   // 2. Buffered adapters bridge into capability-described streaming contracts.
-  const bufferedCapabilities: ProviderCapabilities = {
+  const bufferedCapabilities: SpeechRecognitionCapabilities = {
     ...capabilities,
     streamingInput: false,
-    streamingOutput: false,
     partialTranscripts: false,
+    cancellation: false,
+  };
+  const bufferedSynthesisCapabilities: SpeechSynthesisCapabilities = {
+    streamingOutput: false,
+    streamingTextInput: false,
     cancellation: false,
   };
   const streamingStt: StreamingSttAdapter =
@@ -134,6 +137,7 @@ async function main(): Promise<void> {
       new MockSttAdapter("buffered transcript"),
       {
         capabilities: bufferedCapabilities,
+        provider: { localOnly: true },
         createUtteranceId: () => "buffered-utterance",
       }
     );
@@ -167,7 +171,8 @@ async function main(): Promise<void> {
   };
   const streamingTts: StreamingTtsAdapter =
     new BufferedStreamingTtsAdapter(legacyTts, {
-      capabilities: bufferedCapabilities,
+      capabilities: bufferedSynthesisCapabilities,
+      provider: { localOnly: true },
       outputFormat: frame.format,
       outputSource: source,
     });
@@ -910,7 +915,8 @@ async function main(): Promise<void> {
   }
   assert(blocked, "cloud STT blocked without VOICE_ALLOW_REMOTE_AUDIO");
   const streamingCloud = new BufferedStreamingSttAdapter(cloud, {
-    capabilities: { ...bufferedCapabilities, localOnly: false },
+    capabilities: bufferedCapabilities,
+    provider: { localOnly: false },
   });
   let streamingBlocked = false;
   try {

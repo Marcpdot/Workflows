@@ -82,20 +82,31 @@ export interface EngagementState {
   listening: boolean;
 }
 
-/** Runtime-relevant provider traits; provider labels are compatibility metadata. */
-export interface ProviderCapabilities {
+/** Provider placement/privacy metadata, separate from functional speech traits. */
+export interface SpeechProviderMetadata {
+  localOnly: boolean;
+}
+
+/** Functional recognition traits only. */
+export interface SpeechRecognitionCapabilities {
   streamingInput: boolean;
-  streamingOutput: boolean;
   partialTranscripts: boolean;
   wordTimestamps: boolean;
   cancellation: boolean;
   diarization: boolean;
-  localOnly: boolean;
+}
+
+/** Functional synthesis traits only. */
+export interface SpeechSynthesisCapabilities {
+  streamingOutput: boolean;
+  streamingTextInput: boolean;
+  cancellation: boolean;
 }
 
 export interface StreamingSttAdapter {
   readonly name: string;
-  readonly capabilities: ProviderCapabilities;
+  readonly provider: SpeechProviderMetadata;
+  readonly capabilities: SpeechRecognitionCapabilities;
   recognize(
     frames: AsyncIterable<AudioFrame>,
     opts: { language?: string; signal?: AbortSignal }
@@ -104,7 +115,8 @@ export interface StreamingSttAdapter {
 
 export interface StreamingTtsAdapter {
   readonly name: string;
-  readonly capabilities: ProviderCapabilities;
+  readonly provider: SpeechProviderMetadata;
+  readonly capabilities: SpeechSynthesisCapabilities;
   synthesize(
     text: AsyncIterable<string> | string,
     opts: { language?: string; signal?: AbortSignal }
@@ -138,6 +150,7 @@ export interface SttInput {
   /** Force transcript (CLI/smoke); mock prefers this */
   transcript?: string;
   language?: string;
+  signal?: AbortSignal;
 }
 
 export interface SttResult {
@@ -153,6 +166,7 @@ export interface TtsInput {
   /** Optional output path for local TTS */
   outputPath?: string;
   language?: string;
+  signal?: AbortSignal;
 }
 
 export interface TtsResult {
