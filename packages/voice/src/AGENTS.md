@@ -16,6 +16,8 @@ No separate knowledge/voice brain. Propose/accept policy unchanged.
   voice-only memory/world model, general scheduler, or second interaction path.
 - Keep buffered/file adapters and `runVoiceTurn()` working as compatibility APIs.
 - Speech endpointing and cognitive commitment are separate decisions.
+- Speech detection and addressing are separate signals. Push-to-talk, active
+  conversation, and explicit address must not depend on one hard-coded wake word.
 - Partial transcripts are provisional representations. Voice code must not
   persist them as durable semantic truth or trigger irreversible actions.
 - Preserve lineage across audio source, utterance, transcript, durable

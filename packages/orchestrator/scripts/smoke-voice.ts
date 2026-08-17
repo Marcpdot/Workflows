@@ -11,10 +11,12 @@ import {
   createSttAdapter,
   createTtsAdapter,
   createVoiceSession,
+  decideEndpoint,
   loadVoiceConfig,
   MockSttAdapter,
   MockTtsAdapter,
   runVoiceTurn,
+  resolveEngagement,
   type AudioFrame,
   type AudioSource,
   type EngagementState,
@@ -251,7 +253,121 @@ async function main(): Promise<void> {
   assert(progressiveCancelled, "native progressive recognition is cancellable");
   console.log("OK: progressive speech lifecycle remains provisional");
 
-  // 4. Config defaults off / safe
+  // 4. Engagement and endpointing use explicit, independent signals.
+  const pushToTalk = resolveEngagement({
+    mode: "push_to_talk",
+    listening: true,
+    pushToTalkActive: true,
+  });
+  assert(
+    pushToTalk.participates && pushToTalk.reason === "push_to_talk_active",
+    "push-to-talk explicitly engages speech processing"
+  );
+  const activeConversation = resolveEngagement({
+    mode: "active_conversation",
+    listening: true,
+  });
+  assert(
+    activeConversation.participates && !activeConversation.state.addressed,
+    "active conversation does not require an address detector"
+  );
+  const addressed = resolveEngagement({
+    mode: "addressed",
+    listening: true,
+    addressSignals: [
+      {
+        detectorId: "fixture-addressee-detector",
+        addressed: true,
+        confidence: 0.91,
+        timestampMs: 20,
+      },
+    ],
+  });
+  assert(
+    addressed.participates &&
+      addressed.reason === "explicitly_addressed" &&
+      addressed.addressSignal?.detectorId === "fixture-addressee-detector",
+    "explicit address is detector-agnostic"
+  );
+  const notAddressed = resolveEngagement({
+    mode: "addressed",
+    listening: true,
+    addressSignals: [
+      {
+        detectorId: "fixture-addressee-detector",
+        addressed: false,
+        timestampMs: 21,
+      },
+    ],
+  });
+  assert(!notAddressed.participates, "speech detection alone is not addressing");
+
+  const silenceOnly = decideEndpoint(activeConversation.state, {
+    nowMs: 2_000,
+    utteranceStartedAtMs: 1_000,
+    silenceMs: 900,
+  });
+  assert(!silenceOnly.isEndpoint, "silence timeout alone is insufficient");
+  const completedSpeech = decideEndpoint(activeConversation.state, {
+    nowMs: 2_000,
+    utteranceStartedAtMs: 1_000,
+    speechEnded: true,
+    finalTranscript: true,
+  });
+  assert(
+    completedSpeech.reasons.includes("speech_ended_with_final"),
+    "speech end plus final transcript establishes endpoint evidence"
+  );
+  const endedWithSilence = decideEndpoint(activeConversation.state, {
+    nowMs: 2_000,
+    utteranceStartedAtMs: 1_000,
+    speechEnded: true,
+    silenceMs: 900,
+  });
+  assert(
+    endedWithSilence.reasons.includes("speech_ended_with_silence"),
+    "speech end and silence combine as endpoint evidence"
+  );
+  const heldPushToTalk = decideEndpoint(pushToTalk.state, {
+    nowMs: 2_000,
+    utteranceStartedAtMs: 1_000,
+    speechEnded: true,
+    finalTranscript: true,
+  });
+  assert(
+    !heldPushToTalk.isEndpoint,
+    "push-to-talk does not end before release from transcript timing alone"
+  );
+  const releasedPushToTalk = decideEndpoint(pushToTalk.state, {
+    nowMs: 2_100,
+    utteranceStartedAtMs: 1_000,
+    pushToTalkReleased: true,
+  });
+  assert(
+    releasedPushToTalk.reasons.includes("push_to_talk_released"),
+    "push-to-talk release is explicit endpoint evidence"
+  );
+  const providerEndpoint = decideEndpoint(activeConversation.state, {
+    nowMs: 2_200,
+    utteranceStartedAtMs: 1_000,
+    providerEndpoint: true,
+  });
+  assert(
+    providerEndpoint.reasons.includes("provider_endpoint") &&
+      !("commit" in providerEndpoint),
+    "provider endpoint remains separate from cognitive commitment"
+  );
+  const boundedEndpoint = decideEndpoint(activeConversation.state, {
+    nowMs: 31_000,
+    utteranceStartedAtMs: 0,
+  });
+  assert(
+    boundedEndpoint.reasons.includes("max_utterance_reached"),
+    "maximum utterance duration provides a bounded fallback"
+  );
+  console.log("OK: engagement and multi-signal endpoint decisions");
+
+  // 5. Config defaults off / safe
   const cfg = loadVoiceConfig({
     VOICE_ENABLED: "false",
     VOICE_STT_PROVIDER: "mock",
@@ -262,7 +378,7 @@ async function main(): Promise<void> {
   assert(cfg.ttsProvider === "off", "tts off");
   console.log("OK: voice config defaults off");
 
-  // 5. Mock STT + same handle as text
+  // 6. Mock STT + same handle as text
   const heard: string[] = [];
   const handle = async (text: string) => {
     heard.push(text);
@@ -287,7 +403,7 @@ async function main(): Promise<void> {
   assert(tts.utterances[0] === "echo:status of heat", "tts utterance");
   console.log("OK: mock STT→handle→TTS same reply as text");
 
-  // 6. silent turn skips TTS speak content
+  // 7. silent turn skips TTS speak content
   const tts2 = new MockTtsAdapter();
   const silent = await runVoiceTurn(
     { stt, tts: tts2, handle },
@@ -297,7 +413,7 @@ async function main(): Promise<void> {
   assert(tts2.utterances.length === 0, "silent no tts");
   console.log("OK: silent skips TTS");
 
-  // 7. factory adapters from config
+  // 8. factory adapters from config
   const sttF = createSttAdapter({
     enabled: false,
     sttProvider: "mock",
@@ -323,7 +439,7 @@ async function main(): Promise<void> {
   assert(turn.reply === "ok:factory transcript", "session turn");
   console.log("OK: createVoiceSession + factories");
 
-  // 8. cloud STT blocked without remote flag
+  // 9. cloud STT blocked without remote flag
   const cloud = createSttAdapter({
     enabled: true,
     sttProvider: "cloud",

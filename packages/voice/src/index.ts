@@ -37,6 +37,19 @@ export {
   type MockStreamingSttOptions,
   type MockTranscriptStep,
 } from "./progressive.js";
+export {
+  DEFAULT_ENDPOINT_POLICY,
+  decideEndpoint,
+  resolveEngagement,
+  type AddressSignal,
+  type EndpointDecision,
+  type EndpointEvidence,
+  type EndpointPolicy,
+  type EndpointReason,
+  type EngagementDecision,
+  type EngagementInput,
+  type EngagementReason,
+} from "./engagement.js";
 export { loadVoiceConfig } from "./config.js";
 export {
   MockSttAdapter,
