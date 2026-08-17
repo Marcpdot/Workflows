@@ -40,6 +40,9 @@ No separate knowledge/voice brain. Propose/accept policy unchanged.
   timings, counts, and bounded reason codes only. Never include full transcript,
   audio, or hidden cognition; observer failure must not affect voice correctness.
 - Voice failures degrade locally and must not make cognition unavailable.
+- Automated voice tests must remain deterministic and hardware-free. Real
+  microphone capture is an explicit manual command with operator-supplied local
+  capture/STT configuration and must never run in CI.
 
 ## Env
 
@@ -52,6 +55,8 @@ VOICE_MOCK_TRANSCRIPT=
 VOICE_STT_COMMAND=          # e.g. whisper-cli -f {input} -nt
 VOICE_TTS_COMMAND=          # e.g. espeak "{text}"
 VOICE_ALLOW_REMOTE_AUDIO=false   # must be true for cloud STT/TTS
+VOICE_MIC_CAPTURE_COMMAND=  # manual smoke only; finite command with {output}
+VOICE_MIC_DEVICE_ID=        # optional diagnostic ID for that manual smoke
 ```
 
 ## Privacy

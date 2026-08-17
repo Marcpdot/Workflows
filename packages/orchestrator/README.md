@@ -53,7 +53,7 @@ npx tsx scripts/smoke-knowledge-ingest.ts
 npx tsx scripts/smoke-knowledge-identity.ts
 npx tsx scripts/smoke-knowledge-fp.ts
 npx tsx scripts/smoke-knowledge-read.ts
-npx tsx scripts/smoke-voice.ts
+npm run test:voice
 npx tsx src/index.ts --knowledge merge fromId=... intoId=...
 npx tsx src/index.ts --knowledge contradictions
 npx tsx src/index.ts --knowledge fp --topic "continuous torque"
@@ -64,6 +64,12 @@ npx tsx src/index.ts --json --knowledge find label=heat
 # Voice I/O (M18 optional; mock STT, TTS off by default):
 # npx tsx src/index.ts --voice-once --transcript "What limits continuous torque?" --voice-silent
 # Local Whisper-class: VOICE_STT_PROVIDER=local VOICE_STT_COMMAND='whisper-cli -f {input} -nt'
+# Hardware-free deterministic runtime suite (the command CI runs):
+# npm run test:voice
+# Optional real microphone smoke; never run by CI:
+# VOICE_MIC_CAPTURE_COMMAND='arecord -d 4 -f S16_LE -r 16000 -c 1 {output}' \
+# VOICE_STT_COMMAND='whisper-cli -f {input} -nt' \
+# npm run test:voice:microphone -- --show-transcript
 
 # Tool loop (models can call knowledge_* tools):
 # TOOLS_ENABLED=true KNOWLEDGE_TOOLS_ENABLED=true npm run dev -- "..."
