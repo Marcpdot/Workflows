@@ -8,6 +8,8 @@ import {
   BufferedStreamingTtsAdapter,
   MockStreamingSttAdapter,
   assembleSpeechUtterance,
+  commitVoiceInput,
+  createFinalOnlyVoiceCognitionHooks,
   createSttAdapter,
   createTtsAdapter,
   createVoiceSession,
@@ -17,6 +19,7 @@ import {
   MockTtsAdapter,
   runVoiceTurn,
   resolveEngagement,
+  signalSpeculativeInput,
   type AudioFrame,
   type AudioSource,
   type EngagementState,
@@ -27,6 +30,7 @@ import {
   type StreamingTtsAdapter,
   type TtsAdapter,
   type TranscriptUpdate,
+  type VoiceCognitionHooks,
 } from "@workflows/voice";
 
 function assert(cond: boolean, msg: string): void {
@@ -367,7 +371,78 @@ async function main(): Promise<void> {
   );
   console.log("OK: engagement and multi-signal endpoint decisions");
 
-  // 5. Config defaults off / safe
+  // 5. Reversible cognition hooks never make the commitment decision.
+  const speculativeSignals: AbortSignal[] = [];
+  const speculativeTexts: string[] = [];
+  const committedTexts: string[] = [];
+  const hooks: VoiceCognitionHooks = {
+    onSpeculativeInput(text, meta) {
+      speculativeTexts.push(text);
+      speculativeSignals.push(meta.signal);
+    },
+    async onCommittedInput(text) {
+      committedTexts.push(text);
+      return { reply: `committed:${text}` };
+    },
+  };
+  const speculativeController = new AbortController();
+  assert(
+    signalSpeculativeInput(
+      hooks,
+      progressivePartial!,
+      speculativeController.signal
+    ),
+    "partial input can start optional cheap preparation"
+  );
+  assert(
+    speculativeTexts[0] === "status of" && committedTexts.length === 0,
+    "speculation cannot enter the committed path"
+  );
+  speculativeController.abort("transcript revised");
+  assert(
+    speculativeSignals[0]?.aborted === true,
+    "caller can cancel obsolete speculative work"
+  );
+  let partialCommitRejected = false;
+  try {
+    await commitVoiceInput(hooks, progressivePartial!);
+  } catch {
+    partialCommitRejected = true;
+  }
+  assert(
+    partialCommitRejected && committedTexts.length === 0,
+    "partial transcripts are rejected from the durable cognition hook"
+  );
+
+  const externallyAuthorized =
+    addressed.participates && providerEndpoint.isEndpoint;
+  assert(externallyAuthorized, "engagement and endpoint decisions stay external");
+  const committed = await commitVoiceInput(hooks, progressiveFinal!);
+  assert(
+    committed.reply === "committed:status of heat" &&
+      committedTexts.join(",") === "status of heat",
+    "only the explicitly submitted final transcript reaches cognition"
+  );
+
+  const finalOnlyHooks = createFinalOnlyVoiceCognitionHooks(async (text) => ({
+    reply: `final-only:${text}`,
+  }));
+  assert(
+    !signalSpeculativeInput(
+      finalOnlyHooks,
+      progressivePartial!,
+      new AbortController().signal
+    ),
+    "missing speculative hook degrades without extra work"
+  );
+  const finalOnly = await commitVoiceInput(finalOnlyHooks, progressiveFinal!);
+  assert(
+    finalOnly.reply === "final-only:status of heat",
+    "final-only hooks preserve the existing handle contract"
+  );
+  console.log("OK: reversible cognition hooks and final-only fallback");
+
+  // 6. Config defaults off / safe
   const cfg = loadVoiceConfig({
     VOICE_ENABLED: "false",
     VOICE_STT_PROVIDER: "mock",
@@ -378,7 +453,7 @@ async function main(): Promise<void> {
   assert(cfg.ttsProvider === "off", "tts off");
   console.log("OK: voice config defaults off");
 
-  // 6. Mock STT + same handle as text
+  // 7. Mock STT + same handle as text
   const heard: string[] = [];
   const handle = async (text: string) => {
     heard.push(text);
@@ -403,7 +478,7 @@ async function main(): Promise<void> {
   assert(tts.utterances[0] === "echo:status of heat", "tts utterance");
   console.log("OK: mock STT→handle→TTS same reply as text");
 
-  // 7. silent turn skips TTS speak content
+  // 8. silent turn skips TTS speak content
   const tts2 = new MockTtsAdapter();
   const silent = await runVoiceTurn(
     { stt, tts: tts2, handle },
@@ -413,7 +488,7 @@ async function main(): Promise<void> {
   assert(tts2.utterances.length === 0, "silent no tts");
   console.log("OK: silent skips TTS");
 
-  // 8. factory adapters from config
+  // 9. factory adapters from config
   const sttF = createSttAdapter({
     enabled: false,
     sttProvider: "mock",
@@ -439,7 +514,7 @@ async function main(): Promise<void> {
   assert(turn.reply === "ok:factory transcript", "session turn");
   console.log("OK: createVoiceSession + factories");
 
-  // 9. cloud STT blocked without remote flag
+  // 10. cloud STT blocked without remote flag
   const cloud = createSttAdapter({
     enabled: true,
     sttProvider: "cloud",

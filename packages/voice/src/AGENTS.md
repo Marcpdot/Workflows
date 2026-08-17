@@ -20,6 +20,9 @@ No separate knowledge/voice brain. Propose/accept policy unchanged.
   conversation, and explicit address must not depend on one hard-coded wake word.
 - Partial transcripts are provisional representations. Voice code must not
   persist them as durable semantic truth or trigger irreversible actions.
+- Speculative cognition is an optional caller-owned, `AbortSignal`-cancellable
+  hook. It may not use tools, write permanent knowledge, or perform irreversible
+  actions. Only externally authorized stable/final input enters the normal path.
 - Preserve lineage across audio source, utterance, transcript, durable
   experience, response/action, and speech output when those stages are retained.
 - Continuous room audio is not permanently retained by default. Audio retention

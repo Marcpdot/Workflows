@@ -50,6 +50,14 @@ export {
   type EngagementInput,
   type EngagementReason,
 } from "./engagement.js";
+export {
+  commitVoiceInput,
+  createFinalOnlyVoiceCognitionHooks,
+  signalSpeculativeInput,
+  type CommittedVoiceInputMetadata,
+  type SpeculativeVoiceInputMetadata,
+  type VoiceCognitionHooks,
+} from "./cognitionHooks.js";
 export { loadVoiceConfig } from "./config.js";
 export {
   MockSttAdapter,
