@@ -6,6 +6,8 @@
 import {
   BufferedStreamingSttAdapter,
   BufferedStreamingTtsAdapter,
+  MockStreamingSttAdapter,
+  assembleSpeechUtterance,
   createSttAdapter,
   createTtsAdapter,
   createVoiceSession,
@@ -173,7 +175,83 @@ async function main(): Promise<void> {
   assert(cancelled, "streaming compatibility boundary accepts AbortSignal");
   console.log("OK: buffered STT/TTS compatibility bridges");
 
-  // 3. Config defaults off / safe
+  // 3. Native mock STT exposes progressive speech without committing it.
+  const progressiveStt = new MockStreamingSttAdapter({
+    utteranceId: "progressive-utterance",
+    updates: [
+      {
+        text: "status of",
+        stability: "partial",
+        confidence: 0.72,
+        completeness: 0.45,
+      },
+      {
+        text: "status of heat",
+        stability: "final",
+        confidence: 0.96,
+        completeness: 1,
+      },
+    ],
+  });
+  const progressiveEvents = await collect(
+    progressiveStt.recognize(one(frame), {})
+  );
+  assert(
+    progressiveEvents.map((item) => item.kind).join(",") ===
+      "speech_started,partial_transcript,final_transcript,speech_ended,endpoint",
+    "progressive STT emits the complete ordered speech lifecycle"
+  );
+  const progressivePartial = progressiveEvents.find(
+    (item) => item.kind === "partial_transcript"
+  )?.transcript;
+  assert(
+    progressivePartial?.stability === "partial" &&
+      progressivePartial.confidence === 0.72 &&
+      progressivePartial.completeness === 0.45,
+    "partial stability, confidence, and completeness survive"
+  );
+  const progressiveFinal = progressiveEvents.find(
+    (item) => item.kind === "final_transcript"
+  )?.transcript;
+  assert(
+    progressiveFinal?.stability === "final" &&
+      progressiveFinal.completeness === 1 &&
+      progressiveFinal.isEndpoint === false,
+    "final transcript remains distinct from endpoint"
+  );
+  assert(
+    progressiveEvents.at(-1)?.kind === "endpoint" &&
+      progressiveEvents.at(-1)?.transcript === undefined,
+    "endpoint is a separate non-commit event"
+  );
+  const progressiveUtterance = assembleSpeechUtterance(progressiveEvents);
+  assert(
+    progressiveUtterance.finalText === "status of heat" &&
+      progressiveUtterance.finalText !== progressivePartial?.text,
+    "utterance final text never promotes a partial transcript"
+  );
+  assert(
+    progressiveStt.capabilities.streamingInput &&
+      progressiveStt.capabilities.partialTranscripts,
+    "native streaming support is capability-described"
+  );
+  const progressiveAbort = new AbortController();
+  progressiveAbort.abort(new Error("cancel progressive fixture"));
+  let progressiveCancelled = false;
+  try {
+    await collect(
+      progressiveStt.recognize(one(frame), {
+        signal: progressiveAbort.signal,
+      })
+    );
+  } catch (error) {
+    progressiveCancelled =
+      error instanceof Error && error.message === "cancel progressive fixture";
+  }
+  assert(progressiveCancelled, "native progressive recognition is cancellable");
+  console.log("OK: progressive speech lifecycle remains provisional");
+
+  // 4. Config defaults off / safe
   const cfg = loadVoiceConfig({
     VOICE_ENABLED: "false",
     VOICE_STT_PROVIDER: "mock",
@@ -184,7 +262,7 @@ async function main(): Promise<void> {
   assert(cfg.ttsProvider === "off", "tts off");
   console.log("OK: voice config defaults off");
 
-  // 4. Mock STT + same handle as text
+  // 5. Mock STT + same handle as text
   const heard: string[] = [];
   const handle = async (text: string) => {
     heard.push(text);
@@ -209,7 +287,7 @@ async function main(): Promise<void> {
   assert(tts.utterances[0] === "echo:status of heat", "tts utterance");
   console.log("OK: mock STT→handle→TTS same reply as text");
 
-  // 5. silent turn skips TTS speak content
+  // 6. silent turn skips TTS speak content
   const tts2 = new MockTtsAdapter();
   const silent = await runVoiceTurn(
     { stt, tts: tts2, handle },
@@ -219,7 +297,7 @@ async function main(): Promise<void> {
   assert(tts2.utterances.length === 0, "silent no tts");
   console.log("OK: silent skips TTS");
 
-  // 6. factory adapters from config
+  // 7. factory adapters from config
   const sttF = createSttAdapter({
     enabled: false,
     sttProvider: "mock",
@@ -245,7 +323,7 @@ async function main(): Promise<void> {
   assert(turn.reply === "ok:factory transcript", "session turn");
   console.log("OK: createVoiceSession + factories");
 
-  // 7. cloud STT blocked without remote flag
+  // 8. cloud STT blocked without remote flag
   const cloud = createSttAdapter({
     enabled: true,
     sttProvider: "cloud",

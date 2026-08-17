@@ -31,6 +31,12 @@ export {
   type BufferedStreamingSttOptions,
   type BufferedStreamingTtsOptions,
 } from "./streaming.js";
+export {
+  MockStreamingSttAdapter,
+  assembleSpeechUtterance,
+  type MockStreamingSttOptions,
+  type MockTranscriptStep,
+} from "./progressive.js";
 export { loadVoiceConfig } from "./config.js";
 export {
   MockSttAdapter,

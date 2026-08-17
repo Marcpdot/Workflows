@@ -30,6 +30,8 @@ export interface TranscriptUpdate {
   text: string;
   stability: TranscriptStability;
   confidence?: number;
+  /** Provider-reported estimate from 0 (incomplete) to 1 (complete). */
+  completeness?: number;
   isEndpoint?: boolean;
   utteranceId: string;
   source: AudioSource;
