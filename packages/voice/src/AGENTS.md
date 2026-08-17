@@ -23,6 +23,9 @@ No separate knowledge/voice brain. Propose/accept policy unchanged.
 - Speculative cognition is an optional caller-owned, `AbortSignal`-cancellable
   hook. It may not use tools, write permanent knowledge, or perform irreversible
   actions. Only externally authorized stable/final input enters the normal path.
+- Full-duplex behavior is overlapping independent perception and expression.
+  Barge-in cancels only the active speech output; recently correlated self-audio
+  is not treated as new user speech or as a cognitive commitment.
 - Preserve lineage across audio source, utterance, transcript, durable
   experience, response/action, and speech output when those stages are retained.
 - Continuous room audio is not permanently retained by default. Audio retention

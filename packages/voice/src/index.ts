@@ -58,6 +58,23 @@ export {
   type SpeculativeVoiceInputMetadata,
   type VoiceCognitionHooks,
 } from "./cognitionHooks.js";
+export {
+  MockStreamingTtsAdapter,
+  applyBargeIn,
+  correlateSelfAudio,
+  createSelfAudioReference,
+  decideBargeIn,
+  startSpeechOutput,
+  type BargeInDecision,
+  type BargeInReason,
+  type BargeInResult,
+  type CancellableSpeechOutput,
+  type MockStreamingTtsOptions,
+  type SelfAudioMatch,
+  type SelfAudioReference,
+  type SpeechOutputState,
+  type StartSpeechOutputOptions,
+} from "./duplex.js";
 export { loadVoiceConfig } from "./config.js";
 export {
   MockSttAdapter,

@@ -4,12 +4,16 @@
  */
 
 import {
+  MockStreamingTtsAdapter,
   BufferedStreamingSttAdapter,
   BufferedStreamingTtsAdapter,
   MockStreamingSttAdapter,
+  applyBargeIn,
   assembleSpeechUtterance,
   commitVoiceInput,
+  correlateSelfAudio,
   createFinalOnlyVoiceCognitionHooks,
+  createSelfAudioReference,
   createSttAdapter,
   createTtsAdapter,
   createVoiceSession,
@@ -20,6 +24,7 @@ import {
   runVoiceTurn,
   resolveEngagement,
   signalSpeculativeInput,
+  startSpeechOutput,
   type AudioFrame,
   type AudioSource,
   type EngagementState,
@@ -33,7 +38,7 @@ import {
   type VoiceCognitionHooks,
 } from "@workflows/voice";
 
-function assert(cond: boolean, msg: string): void {
+function assert(cond: boolean, msg: string): asserts cond {
   if (!cond) throw new Error(msg);
 }
 
@@ -442,7 +447,111 @@ async function main(): Promise<void> {
   );
   console.log("OK: reversible cognition hooks and final-only fallback");
 
-  // 6. Config defaults off / safe
+  // 6. Perception can continue while cancellable speech output is active.
+  const outputSource: AudioSource = {
+    surfaceId: "command-center",
+    deviceId: "mock-speaker",
+    channel: "mono",
+  };
+  const nativeTts = new MockStreamingTtsAdapter({
+    source: outputSource,
+    format: frame.format,
+    audioChunks: [
+      new Uint8Array([10, 11]),
+      new Uint8Array([12, 13]),
+      new Uint8Array([14, 15]),
+    ],
+    startTimestampMs: 100,
+  });
+  async function* progressiveReply(): AsyncIterable<string> {
+    yield "status ";
+    yield "received";
+    yield ".";
+  }
+  const speechOutput = startSpeechOutput(nativeTts, progressiveReply(), {
+    outputId: "speech-output-1",
+  });
+  const outputFrames = speechOutput.frames[Symbol.asyncIterator]();
+  const firstOutput = await outputFrames.next();
+  assert(
+    !firstOutput.done && speechOutput.active,
+    "streaming output is active after its first frame"
+  );
+  assert(
+    nativeTts.capabilities.streamingOutput &&
+      nativeTts.capabilities.cancellation,
+    "native TTS declares streaming and cancellation support"
+  );
+
+  const selfAudioReference = createSelfAudioReference(
+    speechOutput.id,
+    firstOutput.value
+  );
+  const perceivedEcho: AudioFrame = {
+    ...firstOutput.value,
+    timestampMs: firstOutput.value.timestampMs + 10,
+    source,
+  };
+  const selfAudio = correlateSelfAudio(perceivedEcho, [selfAudioReference]);
+  assert(
+    selfAudio?.outputId === speechOutput.id && selfAudio.lagMs === 10,
+    "recent perceived output is correlated without retaining transcript content"
+  );
+  const echoSpeechStarted: SpeechEvent = {
+    kind: "speech_started",
+    utteranceId: "echo-utterance",
+    timestampMs: perceivedEcho.timestampMs,
+    source,
+  };
+  const ignoredEcho = applyBargeIn(
+    speechOutput,
+    echoSpeechStarted,
+    selfAudio
+  );
+  assert(
+    !ignoredEcho.decision.interrupt &&
+      ignoredEcho.decision.reason === "self_audio" &&
+      speechOutput.active,
+    "self-audio is not treated as user barge-in"
+  );
+
+  const secondOutput = await outputFrames.next();
+  assert(
+    !secondOutput.done && speechOutput.active,
+    "speech output and input perception can overlap"
+  );
+  const externalSpeechStarted: SpeechEvent = {
+    kind: "speech_started",
+    utteranceId: "external-utterance",
+    timestampMs: 130,
+    source,
+  };
+  const interrupted = applyBargeIn(speechOutput, externalSpeechStarted);
+  assert(
+    interrupted.decision.interrupt &&
+      interrupted.decision.reason === "external_speech_started" &&
+      interrupted.event?.kind === "barge_in" &&
+      speechOutput.signal.aborted,
+    "external speech cancels only the active speech output"
+  );
+  let outputCancelled = false;
+  try {
+    await outputFrames.next();
+  } catch (error) {
+    outputCancelled =
+      error instanceof Error && error.message.includes("interrupted");
+  }
+  assert(
+    outputCancelled && nativeTts.receivedText === "status received",
+    "barge-in stops future synthesis without waiting for the full reply"
+  );
+  assert(
+    committedTexts.join(",") === "status of heat",
+    "output interruption does not create a cognitive commitment"
+  );
+  console.log("OK: full-duplex output, self-audio correlation, and barge-in");
+
+  // 7. Config defaults off / safe
   const cfg = loadVoiceConfig({
     VOICE_ENABLED: "false",
     VOICE_STT_PROVIDER: "mock",
