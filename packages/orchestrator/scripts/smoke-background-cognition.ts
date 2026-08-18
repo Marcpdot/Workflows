@@ -6,6 +6,7 @@ import { emitCcEvaluationResult } from "@workflows/eval";
 import {
   acquireRepresentation,
   createKnowledgePostgresPool,
+  endKnowledgePostgresPool,
   createKnowledgeStore,
   createPostgresVectorRepository,
   KNOWLEDGE_VECTOR_DIMENSION,
@@ -378,7 +379,7 @@ async function main(): Promise<void> {
     });
   } finally {
     memory.close();
-    await pool.end();
+    await endKnowledgePostgresPool(pool);
     await runtime.dispose();
     for (const suffix of ["", "-wal", "-shm"]) {
       const path = `${memoryPath}${suffix}`;

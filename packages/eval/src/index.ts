@@ -6,7 +6,9 @@ export {
   CC_EVALUATION_RESULT_PROTOCOL,
   createCcEvaluationReport,
   emitCcEvaluationResult,
+  isKnownPostgresTeardownNoise,
   readCcEvaluationResult,
+  resolveCcScenarioOutcome,
 } from "./continuousCognition.js";
 export {
   buildCostBreakdown,

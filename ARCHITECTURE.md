@@ -165,4 +165,5 @@ CLI + eventuelt enkel web/UI. Jarvis-følelsen kommer via tekst/stemme + proakti
 - Enkel undergraf-visning og/eller strukturert read-API
 
 ## Milestone 18 - Voice / multimodal I/O (valgfritt)
-- Tale → samme knowledge-tools (interface, ikke ny hjerne)
+- Streaming mikrofon/VAD/STT og kansellerbar TTS/playback → samme `handle()` og
+  durable experience-sti etter final commitment (interface, ikke ny hjerne)

@@ -1,5 +1,7 @@
 import {
   createKnowledgePostgresPool,
+  disposeIsolatedKnowledgeDatabase,
+  endKnowledgePostgresPool,
   loadKnowledgeMigrations,
   resolvePostgresKnowledgeConfig,
   runKnowledgeMigrations,
@@ -36,7 +38,7 @@ export async function startKnowledgePostgresTest(): Promise<{
       await loadKnowledgeMigrations(base.migrationsDir)
     );
   } finally {
-    await pool.end();
+    await endKnowledgePostgresPool(pool);
   }
 
   const previous = process.env.KNOWLEDGE_DATABASE_URL;
@@ -46,12 +48,7 @@ export async function startKnowledgePostgresTest(): Promise<{
     async dispose() {
       if (previous === undefined) delete process.env.KNOWLEDGE_DATABASE_URL;
       else process.env.KNOWLEDGE_DATABASE_URL = previous;
-      await admin.query(
-        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()",
-        [database]
-      );
-      await admin.query(`DROP DATABASE IF EXISTS ${database}`);
-      await admin.end();
+      await disposeIsolatedKnowledgeDatabase(admin, database);
     },
   };
 }

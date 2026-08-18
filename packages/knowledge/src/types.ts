@@ -462,7 +462,7 @@ export interface KnowledgeStore {
   /** Bounded alias hydration for an already bounded canonical candidate set. */
   listAliasesForCanonicalIds(canonicalNodeIds: readonly string[]): Promise<KnowledgeAlias[]>;
 
-  close(): void;
+  close(): void | Promise<void>;
 }
 
 /** Structured extraction output (from model or fixture). */

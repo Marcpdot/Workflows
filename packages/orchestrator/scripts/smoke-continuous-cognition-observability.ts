@@ -6,6 +6,8 @@ import {
   buildCostBreakdown,
   createCcEvaluationReport,
   emitCcEvaluationResult,
+  isKnownPostgresTeardownNoise,
+  resolveCcScenarioOutcome,
   type CcEvaluationResult,
 } from "@workflows/eval";
 import type {
@@ -29,6 +31,46 @@ import type {
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`ASSERT: ${message}`);
+}
+
+function assertTeardownProtocolHandling(): void {
+  const prefix = "@@workflows:cc-evaluation-result@@";
+  const passed = {
+    scenarioId: "wp6-background-cognition",
+    pass: true,
+    durationMs: 12,
+  };
+  const kept = resolveCcScenarioOutcome({
+    scenarioId: "wp6-background-cognition",
+    exitCode: 1,
+    stdout: `${prefix}${JSON.stringify(passed)}\n`,
+    stderr:
+      "error: terminating connection due to administrator command\n    code: '57P01'\n",
+    durationMs: 40,
+  });
+  assert(kept.pass === true, "post-pass 57P01 teardown keeps protocol pass");
+  assert(
+    isKnownPostgresTeardownNoise(
+      "error: terminating connection due to administrator command"
+    ),
+    "admin disconnect is recognized as teardown noise"
+  );
+  const crashed = resolveCcScenarioOutcome({
+    scenarioId: "wp6-background-cognition",
+    exitCode: 1,
+    stdout: `${prefix}${JSON.stringify(passed)}\n`,
+    stderr: "TypeError: unexpected crash in scenario\n",
+    durationMs: 40,
+  });
+  assert(crashed.pass === false, "non-teardown crash after pass still fails");
+  const missing = resolveCcScenarioOutcome({
+    scenarioId: "wp6-background-cognition",
+    exitCode: 1,
+    stdout: "",
+    stderr: "error: terminating connection due to administrator command\n",
+    durationMs: 8,
+  });
+  assert(missing.pass === false, "teardown without protocol result still fails");
 }
 
 const evaluationStarted = performance.now();
@@ -212,6 +254,7 @@ for (const suffix of ["", "-shm", "-wal"]) {
 }
 const memory = createMemory({ dbPath: memoryPath });
 try {
+  assertTeardownProtocolHandling();
   const firstObserver = new InMemoryObserver();
   const first = new Orchestrator(config({ memory, observer: firstObserver }), {
     local: new FixtureModel("local", "fixture-local-a"),

@@ -105,6 +105,7 @@ export interface Memory extends ExperienceStore {
     message: ChatMessage,
     context?: {
       workspaceId?: string;
+      payloadRef?: string;
       source?: ExperienceSource;
       parentExperienceIds?: string[];
       metadata?: Record<string, unknown>;

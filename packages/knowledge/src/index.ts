@@ -75,6 +75,9 @@ export {
 } from "./postgres/migrations.js";
 export {
   createKnowledgePostgresPool,
+  disposeIsolatedKnowledgeDatabase,
+  endKnowledgePostgresPool,
+  isExpectedPostgresAdminShutdown,
   migratePostgresKnowledge,
 } from "./postgres/runtime.js";
 export {

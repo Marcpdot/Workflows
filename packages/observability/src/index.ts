@@ -12,6 +12,8 @@ export type {
   Observer,
   OrchestratorEvent,
   OrchestratorEventKind,
+  VoiceObservation,
+  VoiceObservationStage,
 } from "./types.js";
 export {
   CompositeObserver,

@@ -283,6 +283,10 @@ export interface OrchestratorHandleOptions {
   sourcePrompt?: string;
   /** Modality/caller metadata for the raw input experience. */
   experienceSource?: ExperienceSource;
+  /** Optional retained source-payload pointer for the raw input experience. */
+  experiencePayloadRef?: string;
+  /** Non-semantic source lineage retained on the authoritative input experience. */
+  experienceMetadata?: Record<string, unknown>;
   /** Structured referent/source facts supplied by an input adapter. */
   representation?: RepresentationSourceMetadata & {
     /** Explicit pending gap when a UI/caller already has its stable ID. */

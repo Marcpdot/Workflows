@@ -6,7 +6,10 @@ import type {
   VectorRepository,
 } from "../storage/contracts.js";
 import type { PostgresKnowledgeConfig } from "./config.js";
-import { createKnowledgePostgresPool } from "./runtime.js";
+import {
+  createKnowledgePostgresPool,
+  endKnowledgePostgresPool,
+} from "./runtime.js";
 
 type Queryable = Pick<Pool | PoolClient, "query">;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -158,7 +161,9 @@ export class PostgresVectorRepository implements VectorRepository {
     return result.rows.map((row) => ({ record: record(row), score: Number(row.similarity) }));
   }
 
-  async close(): Promise<void> { if (this.ownsPool) await this.pool.end(); }
+  async close(): Promise<void> {
+    if (this.ownsPool) await endKnowledgePostgresPool(this.pool);
+  }
 }
 
 export function createPostgresVectorRepository(config: PostgresVectorRepositoryConfig): VectorRepository {

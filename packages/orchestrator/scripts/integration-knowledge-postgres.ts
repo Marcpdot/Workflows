@@ -3,6 +3,8 @@ import {
   createKnowledgePostgresPool,
   createKnowledgeStore,
   createPostgresSpatialRepository,
+  disposeIsolatedKnowledgeDatabase,
+  endKnowledgePostgresPool,
   loadKnowledgeMigrations,
   resolvePostgresKnowledgeConfig,
   runKnowledgeMigrations,
@@ -145,13 +147,8 @@ async function main(): Promise<void> {
 
     console.log("PostgreSQL/PostGIS/pgvector integration checks passed.");
   } finally {
-    if (testPool) await testPool.end();
-    await adminPool.query(
-      "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()",
-      [database]
-    );
-    await adminPool.query(`DROP DATABASE IF EXISTS ${database}`);
-    await adminPool.end();
+    if (testPool) await endKnowledgePostgresPool(testPool);
+    await disposeIsolatedKnowledgeDatabase(adminPool, database);
   }
 }
 

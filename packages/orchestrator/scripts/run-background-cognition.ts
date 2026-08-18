@@ -1,5 +1,6 @@
 import {
   createKnowledgePostgresPool,
+  endKnowledgePostgresPool,
   createKnowledgeStore,
   createNeo4jGraphRepository,
   createPostgresVectorRepository,
@@ -77,7 +78,7 @@ async function main(): Promise<void> {
     memory.close();
     await graph.close();
     await vector.close();
-    await pool.end();
+    await endKnowledgePostgresPool(pool);
   }
 }
 

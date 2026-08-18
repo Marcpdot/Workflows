@@ -11,5 +11,14 @@
       "default": "./src/index.ts"
     }
   },
-  "dependencies": {}
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@workflows/observability": "file:../observability"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2"
+  }
 }

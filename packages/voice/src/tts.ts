@@ -59,7 +59,7 @@ export class LocalTtsAdapter implements TtsAdapter {
     const cmd = this.commandTemplate
       .replaceAll("{text}", text.replace(/"/g, '\\"'))
       .replaceAll("{output}", output);
-    await runCommand(cmd);
+    await runCommand(cmd, input.signal);
     return {
       spoken: true,
       provider: "local",
@@ -106,21 +106,45 @@ export function createTtsAdapter(config: VoiceConfig): TtsAdapter {
   }
 }
 
-function runCommand(commandLine: string): Promise<void> {
+function runCommand(commandLine: string, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(commandLine, { shell: true, windowsHide: true });
     let stderr = "";
+    let settled = false;
+    const finish = (callback: () => void): void => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      callback();
+    };
+    const onAbort = (): void => {
+      child.kill();
+      finish(() =>
+        reject(
+          signal?.reason instanceof Error
+            ? signal.reason
+            : new Error("speech synthesis aborted")
+        )
+      );
+    };
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
     child.stderr?.setEncoding("utf8");
     child.stderr?.on("data", (c) => {
       stderr += c;
     });
-    child.on("error", reject);
+    child.on("error", (error) => finish(() => reject(error)));
     child.on("close", (code) => {
       if (code !== 0) {
-        reject(new Error(`Local TTS command failed (code ${code}): ${stderr}`));
+        finish(() =>
+          reject(new Error(`Local TTS command failed (code ${code}): ${stderr}`))
+        );
         return;
       }
-      resolve();
+      finish(resolve);
     });
   });
 }

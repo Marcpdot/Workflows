@@ -65,6 +65,11 @@ contracts. PostgreSQL/PostGIS is the sole canonical knowledge runtime.
 - Schema changes use ordered files under `packages/knowledge/migrations`.
 - `createKnowledgeStore()` always creates the PostgreSQL canonical repository.
 - Knowledge integration/smoke tests use isolated PostgreSQL databases.
+- Every `createKnowledgePostgresPool` attaches a non-fatal idle `error`
+  listener. Close work pools with `endKnowledgePostgresPool` before
+  `DROP DATABASE` / `pg_terminate_backend`. Expected admin-shutdown codes
+  (`57P01` and related closed-connection states) must not crash Node during
+  intentional teardown. Query failures during active work still reject.
 - Do not add SQLite knowledge runtime, importer or cutover compatibility code.
 - SQLite in memory/embeddings is separately owned and must not be removed here.
 - Use fake data only in public tests; private knowledge stays in the configured
