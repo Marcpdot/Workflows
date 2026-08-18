@@ -385,7 +385,7 @@ async function main(): Promise<void> {
     console.log("OK: rate-limit skips auto extract");
   } finally {
     memory.close();
-    knowledge.close();
+    await knowledge.close();
     await postgres.dispose();
     for (const p of [memPath, knowPath]) {
       try {

@@ -1,5 +1,6 @@
 /** Explicit manual live microphone runtime. Never invoked by CI. */
 
+import { createInterface } from "node:readline";
 import { resolve } from "node:path";
 import { createMemory } from "@workflows/memory";
 import { createObserverFromEnv } from "@workflows/observability";
@@ -41,6 +42,13 @@ Linux microphone example:
 
 Windows ffmpeg microphone example:
   VOICE_MIC_STREAM_COMMAND='ffmpeg -hide_banner -loglevel error -f dshow -i audio="Microphone" -f s16le -ac 1 -ar 16000 pipe:1'
+
+Push-to-talk (VOICE_ENGAGEMENT_MODE=push_to_talk):
+  Starts not transmitting. Press Enter to open one utterance window, Enter
+  again to release it. Only speech engaged during an open window can commit.
+  After one committed input the session stops (maxCommittedInputs=1).
+
+Active conversation (default) listens continuously until Ctrl+C.
 
 Ctrl+C propagates AbortSignal and shuts capture/STT/TTS/playback down cleanly.
 The existing test:voice:microphone command remains available for finite-file diagnostics.
@@ -127,10 +135,35 @@ async function main(): Promise<void> {
     process.env.VOICE_ENGAGEMENT_MODE?.trim() === "push_to_talk"
       ? "push_to_talk"
       : "active_conversation";
+  const pushToTalk = { active: false };
+  const readline =
+    engagementMode === "push_to_talk"
+      ? createInterface({
+          input: process.stdin,
+          output: process.stdout,
+          terminal: true,
+        })
+      : undefined;
+  if (readline) {
+    readline.on("line", () => {
+      if (abort.signal.aborted) return;
+      pushToTalk.active = !pushToTalk.active;
+      console.log(
+        pushToTalk.active
+          ? "[voice live] PTT window open — speak, then press Enter to release"
+          : "[voice live] PTT window released"
+      );
+    });
+  }
 
   console.log(
     `[voice live] listening mode=${engagementMode} stt=${recognition.name} partials=${recognition.capabilities.partialTranscripts} tts=${synthesis?.name ?? "off"}`
   );
+  if (engagementMode === "push_to_talk") {
+    console.log(
+      "[voice live] PTT idle — press Enter to start talking, Enter again to release, Ctrl+C to stop"
+    );
+  }
   try {
     const result = await runLiveVoiceSession({
       microphone,
@@ -144,11 +177,12 @@ async function main(): Promise<void> {
           sourcePrompt: text,
         });
       }),
-      engagement: {
+      engagement: () => ({
         mode: engagementMode,
         listening: true,
-        pushToTalkActive: engagementMode === "push_to_talk" ? true : undefined,
-      },
+        pushToTalkActive:
+          engagementMode === "push_to_talk" ? pushToTalk.active : undefined,
+      }),
       synthesis,
       speaker,
       language: voice.language,
@@ -162,6 +196,7 @@ async function main(): Promise<void> {
   } catch (error) {
     if (!abort.signal.aborted) throw error;
   } finally {
+    readline?.close();
     process.removeListener("SIGINT", stop);
     process.removeListener("SIGTERM", stop);
     orchestrator.close();

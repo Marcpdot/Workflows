@@ -32,7 +32,10 @@ import type {
   RepositoryHealth,
 } from "../storage/contracts.js";
 import type { PostgresKnowledgeConfig } from "./config.js";
-import { createKnowledgePostgresPool } from "./runtime.js";
+import {
+  createKnowledgePostgresPool,
+  endKnowledgePostgresPool,
+} from "./runtime.js";
 
 type Queryable = Pick<Pool | PoolClient, "query">;
 const PROJECT_RELATIONS: ProjectLinkRelation[] = ["used_in", "about", "part_of"];
@@ -991,7 +994,9 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     return result.rows.map(alias);
   }
 
-  close(): void { if (this.ownsPool) void this.pool.end(); }
+  async close(): Promise<void> {
+    if (this.ownsPool) await endKnowledgePostgresPool(this.pool);
+  }
 
   private async getAlias(db: Queryable, normalized: string): Promise<KnowledgeAlias | null> {
     const result = await db.query("SELECT * FROM knowledge_aliases WHERE normalized_alias_label = $1", [normalized]); return result.rows[0] ? alias(result.rows[0]) : null;

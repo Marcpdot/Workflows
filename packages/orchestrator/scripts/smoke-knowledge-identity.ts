@@ -193,7 +193,7 @@ async function main(): Promise<void> {
     assert(toolPairs.ok, toolPairs.error ?? "find contradictions tool");
     console.log("OK: M15 knowledge tools");
   } finally {
-    store.close();
+    await store.close();
     await postgres.dispose();
     try {
       if (existsSync(dbPath)) rmSync(dbPath);

@@ -98,6 +98,7 @@ async function main(): Promise<void> {
   await typedCapabilitiesAndVad();
   await segmentedRecognitionFallback();
   await progressiveCommitAndPlayback();
+  await pushToTalkWindowGatesCommitment();
   await duplexSelfAudioAndBargeIn();
   await cancellationAndProviderDegradation();
   console.log("All live voice runtime checks passed.");
@@ -266,6 +267,62 @@ async function progressiveCommitAndPlayback(): Promise<void> {
     assert(observedStages.has(stage), `live observability includes ${stage}`);
   }
   console.log("OK: partial supersession, single durable commit, and playback");
+}
+
+async function pushToTalkWindowGatesCommitment(): Promise<void> {
+  const inactive = { active: false };
+  let durableWrites = 0;
+  const inactiveResult = await runLiveVoiceSession({
+    microphone: new FixtureMicrophone([pcmFrame(8_000, 10)]),
+    recognition: new MockStreamingSttAdapter({
+      utteranceId: "ptt-inactive",
+      updates: [{ text: "should stay uncommitted", stability: "final" }],
+    }),
+    cognition: {
+      async onCommittedInput() {
+        durableWrites += 1;
+        return { reply: "" };
+      },
+    },
+    engagement: () => ({
+      mode: "push_to_talk",
+      listening: true,
+      pushToTalkActive: inactive.active,
+    }),
+    signal: new AbortController().signal,
+    maxCommittedInputs: 1,
+  });
+  assert(
+    durableWrites === 0 && inactiveResult.committedInputs === 0,
+    "inactive PTT window does not commit speech"
+  );
+
+  const held = { active: true };
+  const activeResult = await runLiveVoiceSession({
+    microphone: new FixtureMicrophone([pcmFrame(8_000, 20)]),
+    recognition: new MockStreamingSttAdapter({
+      utteranceId: "ptt-active",
+      updates: [{ text: "commit this window", stability: "final" }],
+    }),
+    cognition: {
+      async onCommittedInput() {
+        durableWrites += 1;
+        return { reply: "" };
+      },
+    },
+    engagement: () => ({
+      mode: "push_to_talk",
+      listening: true,
+      pushToTalkActive: held.active,
+    }),
+    signal: new AbortController().signal,
+    maxCommittedInputs: 1,
+  });
+  assert(
+    durableWrites === 1 && activeResult.committedInputs === 1,
+    "speech engaged during an open PTT window can commit once"
+  );
+  console.log("OK: PTT engagement input gates live commitment");
 }
 
 async function duplexSelfAudioAndBargeIn(): Promise<void> {

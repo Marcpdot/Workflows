@@ -1,5 +1,5 @@
 import {
-  createHybridKnowledgeRetrievalService, createKnowledgeAgent, createKnowledgePostgresPool,
+  createHybridKnowledgeRetrievalService, createKnowledgeAgent, createKnowledgePostgresPool, endKnowledgePostgresPool,
   createKnowledgeStore, createNeo4jGraphRepository, createPostgresSpatialRepository, createPostgresVectorRepository,
   KNOWLEDGE_VECTOR_DIMENSION, rebuildGraphProjection, resolvePostgresKnowledgeConfig,
   type GraphRepository, type KnowledgeAgentAuditEvent, type KnowledgeAgentDecision,
@@ -85,6 +85,6 @@ async function main() {
     assert(unknownRejected, "unknown proposal kinds fail closed instead of dispatching to supersession");
     assert((await canonical.listProposals({ status: "pending" })).some((proposal) => proposal.id === unknown.id), "failed unknown proposal remains pending after rollback");
     console.log("Knowledge Agent controlled navigation/curation checks passed.");
-  } finally { await graph.close(); await vectors.close(); await spatial.close(); await pool.end(); await neo4jRuntime.dispose(); await postgresRuntime.dispose(); }
+  } finally { await graph.close(); await vectors.close(); await spatial.close(); await endKnowledgePostgresPool(pool); await neo4jRuntime.dispose(); await postgresRuntime.dispose(); }
 }
 main().catch((error) => { console.error(error instanceof Error ? error.stack : String(error)); process.exitCode = 1; });

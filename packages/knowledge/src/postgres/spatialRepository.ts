@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
 import type { PostgresKnowledgeConfig } from "./config.js";
-import { createKnowledgePostgresPool } from "./runtime.js";
+import { createKnowledgePostgresPool, endKnowledgePostgresPool } from "./runtime.js";
 import type { RepositoryHealth, SpatialHit, SpatialRecord, SpatialRepository } from "../storage/contracts.js";
 
 export interface PostgresSpatialRepositoryConfig extends PostgresKnowledgeConfig { pool?: Pool; }
@@ -19,6 +19,6 @@ export class PostgresSpatialRepository implements SpatialRepository {
     const result = await this.pool.query(`SELECT l.canonical_node_id::text, ST_AsGeoJSON(l.geometry) AS geometry_json, l.properties, l.updated_at, ST_Distance(l.geometry::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) AS distance_meters FROM knowledge_locations l JOIN knowledge_nodes n ON n.id = l.canonical_node_id WHERE n.status = 'accepted' ${workspace} AND ST_DWithin(l.geometry::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3) ORDER BY distance_meters ASC, l.canonical_node_id ASC LIMIT $${params.length}`, params); return result.rows.map(spatial);
   }
   async delete(canonicalId: string): Promise<boolean> { const result = await this.pool.query("DELETE FROM knowledge_locations WHERE canonical_node_id = $1", [canonicalId]); return (result.rowCount ?? 0) > 0; }
-  async close(): Promise<void> { if (this.ownsPool) await this.pool.end(); }
+  async close(): Promise<void> { if (this.ownsPool) await endKnowledgePostgresPool(this.pool); }
 }
 export const createPostgresSpatialRepository = (config: PostgresSpatialRepositoryConfig) => new PostgresSpatialRepository(config);

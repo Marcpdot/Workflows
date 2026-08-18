@@ -158,7 +158,7 @@ async function main(): Promise<void> {
 
     console.log("All knowledge (M11) smoke checks passed.");
   } finally {
-    store.close();
+    await store.close();
     await postgres.dispose();
     try {
       if (existsSync(dbPath)) rmSync(dbPath);

@@ -187,7 +187,7 @@ async function main(): Promise<void> {
     assert((data.proposalIds?.length ?? 0) >= 1, "tool proposals");
     console.log("OK: knowledge_first_principles tool");
   } finally {
-    store.close();
+    await store.close();
     await postgres.dispose();
     try {
       if (existsSync(dbPath)) rmSync(dbPath);

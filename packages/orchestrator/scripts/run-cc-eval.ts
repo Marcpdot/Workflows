@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import {
   CC_EVALUATION_RESULT_PROTOCOL,
   createCcEvaluationReport,
-  readCcEvaluationResult,
+  resolveCcScenarioOutcome,
   type CcEvaluationResult,
 } from "@workflows/eval";
 
@@ -57,34 +57,13 @@ async function runScenario(
     child.on("close", (code) => resolveExit(code ?? 1));
   });
   const durationMs = Math.round(performance.now() - started);
-  if (exitCode === 0) {
-    try {
-      const scenarioResult = readCcEvaluationResult(stdout, scenarioId);
-      if (!scenarioResult) {
-        return {
-          scenarioId,
-          pass: false,
-          durationMs,
-          failureReason: "scenario did not emit a CcEvaluationResult",
-        };
-      }
-      return scenarioResult;
-    } catch (error) {
-      return {
-        scenarioId,
-        pass: false,
-        durationMs,
-        failureReason: error instanceof Error ? error.message : String(error),
-      };
-    }
-  }
-  return {
+  return resolveCcScenarioOutcome({
     scenarioId,
-    pass: false,
+    exitCode,
+    stdout,
+    stderr,
     durationMs,
-    failureReason:
-      stderr.trim().split(/\r?\n/).slice(-3).join(" | ") || `exit ${exitCode}`,
-  };
+  });
 }
 
 async function main(): Promise<void> {

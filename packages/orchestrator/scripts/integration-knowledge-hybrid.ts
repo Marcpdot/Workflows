@@ -1,5 +1,5 @@
 import {
-  createHybridKnowledgeRetrievalService, createKnowledgePostgresPool, createKnowledgeStore,
+  createHybridKnowledgeRetrievalService, createKnowledgePostgresPool, createKnowledgeStore, endKnowledgePostgresPool,
   createNeo4jGraphRepository, createPostgresVectorRepository, KNOWLEDGE_VECTOR_DIMENSION,
   rebuildGraphProjection, resolvePostgresKnowledgeConfig, type GraphRepository,
   type SemanticVectorRecord, type VectorRepository,
@@ -82,7 +82,7 @@ async function main(): Promise<void> {
     const degraded = await createHybridKnowledgeRetrievalService({ canonical, graph: failingGraph, vector: vectors }).retrieve({ canonicalIds: [alpha.id], graphRootIds: [alpha.id], queryVector: vector([0, 1]), embeddingModel: "hybrid-fixture", embeddingModelVersion: "v1" });
     assert(degraded.items[0]?.node.id === alpha.id && degraded.strategies.graph.state === "degraded" && degraded.strategies.semantic.state === "skipped", "failed graph reports degradation and refuses unsafe global semantic widening");
     console.log("Hybrid canonical/graph/pgvector retrieval checks passed.");
-  } finally { await graph.close(); await vectors.close(); await pool.end(); await neo4jRuntime.dispose(); await postgresRuntime.dispose(); }
+  } finally { await graph.close(); await vectors.close(); await endKnowledgePostgresPool(pool); await neo4jRuntime.dispose(); await postgresRuntime.dispose(); }
 }
 
 main().catch((error) => { console.error(error instanceof Error ? error.stack : String(error)); process.exitCode = 1; });

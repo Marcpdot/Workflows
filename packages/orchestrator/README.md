@@ -75,6 +75,9 @@ npx tsx src/index.ts --json --knowledge find label=heat
 # VOICE_MIC_STREAM_COMMAND='arecord -q -t raw -f S16_LE -r 16000 -c 1' \
 # VOICE_STT_COMMAND='whisper-cli -f {input} -nt' \
 # npm run voice:live
+# PTT: VOICE_ENGAGEMENT_MODE=push_to_talk — Enter starts one window, Enter
+# releases it; session stops after one committed input. Default mode listens
+# continuously until Ctrl+C.
 # This local fallback emits one final transcript per bounded VAD segment; it
 # does not claim native partial-transcript support.
 

@@ -1,5 +1,5 @@
 import {
-  createKnowledgePostgresPool, createKnowledgeStore, createNeo4jGraphRepository, createPostgresVectorRepository,
+  createKnowledgePostgresPool, createKnowledgeStore, createNeo4jGraphRepository, createPostgresVectorRepository, endKnowledgePostgresPool,
   KNOWLEDGE_VECTOR_DIMENSION, processGraphProjectionOutbox, processVectorProjectionOutbox,
   rebuildGraphProjection, rebuildSemanticVectorProjection, resolvePostgresKnowledgeConfig, semanticVectorRecordId,
   type CanonicalKnowledgeRepository, type GraphRepository, type KnowledgeEdge, type KnowledgeNode, type SemanticEmbeddingProvider,
@@ -123,7 +123,7 @@ async function main(): Promise<void> {
     await canonical.mergeNodes({ fromId: failureNode.id, intoId: alpha.id }); await processGraphProjectionOutbox({ pool, canonical, graph, limit: 100 }); await pool.query("UPDATE knowledge_projection_outbox SET available_at = now() WHERE canonical_id = $1 AND projection = 'graph' AND processed_at IS NULL", [failureNode.id]); await processGraphProjectionOutbox({ pool, canonical, graph, limit: 100 });
     const remainingOldGraphJobs = await pool.query<{ count: number }>("SELECT count(*)::int AS count FROM knowledge_projection_outbox WHERE canonical_id = $1 AND projection = 'graph' AND processed_at IS NULL", [failureNode.id]); assert(remainingOldGraphJobs.rows[0].count === 0 && await graph.getNode(failureNode.id) === null, "newer merge/delete supersedes an older failed graph upsert and prevents resurrection");
     console.log("Neo4j canonical graph projection checks passed.");
-  } finally { await graph.close(); await vectors.close(); await pool.end(); await neo4jRuntime.dispose(); await postgresRuntime.dispose(); }
+  } finally { await graph.close(); await vectors.close(); await endKnowledgePostgresPool(pool); await neo4jRuntime.dispose(); await postgresRuntime.dispose(); }
 }
 
 main().catch((error) => { console.error(error instanceof Error ? error.stack : String(error)); process.exitCode = 1; });

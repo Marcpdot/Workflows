@@ -179,7 +179,7 @@ async function main(): Promise<void> {
     );
     console.log("OK: chat segment ingest proposals-only");
   } finally {
-    store.close();
+    await store.close();
     await postgres.dispose();
     for (const p of [dbPath, fixturePath]) {
       try {

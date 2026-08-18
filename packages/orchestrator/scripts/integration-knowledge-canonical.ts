@@ -1,6 +1,8 @@
 import {
   createKnowledgePostgresPool,
   createKnowledgeStore,
+  disposeIsolatedKnowledgeDatabase,
+  endKnowledgePostgresPool,
   loadKnowledgeMigrations,
   resolvePostgresKnowledgeConfig,
   runKnowledgeMigrations,
@@ -169,10 +171,8 @@ async function main(): Promise<void> {
     assert(outbox.rows[0].count > 0, "canonical writes retain projection outbox contract");
     console.log("PostgreSQL canonical cutover and identity correctness checks passed.");
   } finally {
-    if (pool) await pool.end();
-    await admin.query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()", [database]);
-    await admin.query(`DROP DATABASE IF EXISTS ${database}`);
-    await admin.end();
+    if (pool) await endKnowledgePostgresPool(pool);
+    await disposeIsolatedKnowledgeDatabase(admin, database);
   }
 }
 

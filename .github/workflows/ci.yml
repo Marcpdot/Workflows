@@ -60,7 +60,7 @@ jobs:
         run: |
           for test in scripts/smoke-*.ts; do
             case "$test" in
-              scripts/smoke-voice.ts|scripts/smoke-experience.ts|scripts/smoke-capability-activation.ts|scripts/smoke-continuous-cognition.ts|scripts/smoke-representation-acquisition.ts|scripts/smoke-background-cognition.ts|scripts/smoke-continuous-cognition-observability.ts)
+              scripts/smoke-voice.ts|scripts/smoke-voice-live.ts|scripts/smoke-experience.ts|scripts/smoke-capability-activation.ts|scripts/smoke-continuous-cognition.ts|scripts/smoke-representation-acquisition.ts|scripts/smoke-background-cognition.ts|scripts/smoke-continuous-cognition-observability.ts)
                 continue
                 ;;
             esac

@@ -1,5 +1,5 @@
 import {
-  createKnowledgePostgresPool, createKnowledgeStore, createPostgresVectorRepository,
+  createKnowledgePostgresPool, createKnowledgeStore, createPostgresVectorRepository, endKnowledgePostgresPool,
   KNOWLEDGE_VECTOR_DIMENSION, processVectorProjectionOutbox,
   rebuildSemanticVectorProjection, resolvePostgresKnowledgeConfig,
   semanticVectorRecordId, type SemanticEmbeddingProvider, type SemanticVectorRecord,
@@ -160,7 +160,7 @@ async function main(): Promise<void> {
     await canonical.mergeNodes({ fromId: failureNode.id, intoId: alpha.id }); await processVectorProjectionOutbox({ pool, canonical, vector: vectors, embedder: fixtureEmbedder(), limit: 100 }); await pool.query("UPDATE knowledge_projection_outbox SET available_at = now() WHERE canonical_id = $1 AND projection = 'vector' AND processed_at IS NULL", [failureNode.id]); await processVectorProjectionOutbox({ pool, canonical, vector: vectors, embedder: fixtureEmbedder(), limit: 100 });
     const remainingOldVectorJobs = await pool.query<{ count: number }>("SELECT count(*)::int AS count FROM knowledge_projection_outbox WHERE canonical_id = $1 AND projection = 'vector' AND processed_at IS NULL", [failureNode.id]); assert(remainingOldVectorJobs.rows[0].count === 0 && await vectors.get(semanticVectorRecordId(failureNode.id, "fixture-semantic", "v1")) === null, "newer merge/delete supersedes an older failed vector upsert and prevents resurrection");
     console.log("PostgreSQL pgvector semantic projection checks passed.");
-  } finally { await vectors.close(); await pool.end(); await runtime.dispose(); }
+  } finally { await vectors.close(); await endKnowledgePostgresPool(pool); await runtime.dispose(); }
 }
 
 main().catch((error) => { console.error(error instanceof Error ? error.stack : String(error)); process.exitCode = 1; });

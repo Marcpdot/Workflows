@@ -3,6 +3,8 @@ import {
   createKnowledgePostgresPool,
   createKnowledgeReader,
   createKnowledgeStore,
+  disposeIsolatedKnowledgeDatabase,
+  endKnowledgePostgresPool,
   extractionToProposalItems,
   ingestText,
   loadKnowledgeMigrations,
@@ -240,10 +242,8 @@ async function main(): Promise<void> {
       },
     });
   } finally {
-    if (pool) await pool.end();
-    await admin.query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()", [database]);
-    await admin.query(`DROP DATABASE IF EXISTS ${database}`);
-    await admin.end();
+    if (pool) await endKnowledgePostgresPool(pool);
+    await disposeIsolatedKnowledgeDatabase(admin, database);
   }
 }
 

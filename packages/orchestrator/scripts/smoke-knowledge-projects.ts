@@ -215,7 +215,7 @@ async function main(): Promise<void> {
     );
     console.log("OK: unlinkFromProject");
   } finally {
-    store.close();
+    await store.close();
     await postgres.dispose();
     try {
       if (existsSync(dbPath)) rmSync(dbPath);

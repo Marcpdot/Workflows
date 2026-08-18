@@ -176,7 +176,7 @@ async function main(): Promise<void> {
   );
   console.log("OK: tools absent when not registered (KNOWLEDGE_TOOLS_ENABLED off path)");
 
-  store.close();
+  await store.close();
   await postgres.dispose();
   try {
     if (existsSync(dbPath)) rmSync(dbPath);

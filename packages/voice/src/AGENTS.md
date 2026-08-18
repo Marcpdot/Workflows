@@ -65,6 +65,7 @@ VOICE_PCM_ENCODING=pcm_s16le
 VOICE_VAD_THRESHOLD=0.025
 VOICE_VAD_END_SILENCE_MS=650
 VOICE_ENGAGEMENT_MODE=active_conversation|push_to_talk
+# push_to_talk: voice:live starts idle. Enter opens one window, Enter releases it.
 VOICE_TTS_STREAM_COMMAND=   # optional: UTF-8 text stdin -> raw PCM stdout
 VOICE_SPEAKER_STREAM_COMMAND= # optional: raw PCM stdin -> speaker
 ```
@@ -80,6 +81,11 @@ VOICE_SPEAKER_STREAM_COMMAND= # optional: raw PCM stdin -> speaker
 1. Install a local Whisper-class CLI; set `VOICE_STT_COMMAND`.
 2. For live audio, configure `VOICE_MIC_STREAM_COMMAND` and run
    `npm run voice:live` from `packages/orchestrator`.
+   `VOICE_ENGAGEMENT_MODE=active_conversation` (default) listens continuously.
+   `VOICE_ENGAGEMENT_MODE=push_to_talk` starts not transmitting: press Enter to
+   open one utterance window, Enter again to release. The live script only
+   supplies that engagement input; commitment still uses existing helpers.
+   After one committed PTT input the session stops.
 3. The current command STT fallback consumes live PCM but emits final text only
    after bounded RMS-VAD segments. It declares `partialTranscripts: false`.
 4. Optional live speech uses `VOICE_TTS_STREAM_COMMAND` plus

@@ -17,6 +17,71 @@ export function emitCcEvaluationResult(result: CcEvaluationResult): void {
   console.log(`${CC_EVALUATION_RESULT_PREFIX}${JSON.stringify(result)}`);
 }
 
+/** True when child stderr/stdout is only a known Postgres admin-disconnect. */
+export function isKnownPostgresTeardownNoise(text: string): boolean {
+  if (!text.trim()) return false;
+  if (/\bASSERT:/i.test(text)) return false;
+  return (
+    /\b57P01\b/i.test(text) ||
+    /terminating connection due to administrator command/i.test(text)
+  );
+}
+
+/**
+ * Prefer a protocol-valid CcEvaluationResult over a post-pass teardown exit.
+ * Real assertion failures, missing protocol, and non-teardown crashes still fail.
+ */
+export function resolveCcScenarioOutcome(input: {
+  scenarioId: string;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+}): CcEvaluationResult {
+  let protocol: CcEvaluationResult | undefined;
+  try {
+    protocol = readCcEvaluationResult(input.stdout, input.scenarioId);
+  } catch (error) {
+    return {
+      scenarioId: input.scenarioId,
+      pass: false,
+      durationMs: input.durationMs,
+      failureReason: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  if (input.exitCode === 0) {
+    if (!protocol) {
+      return {
+        scenarioId: input.scenarioId,
+        pass: false,
+        durationMs: input.durationMs,
+        failureReason: "scenario did not emit a CcEvaluationResult",
+      };
+    }
+    return protocol;
+  }
+
+  const trailing = `${input.stderr}\n${input.stdout}`;
+  if (protocol?.pass === true && isKnownPostgresTeardownNoise(trailing)) {
+    return protocol;
+  }
+
+  if (protocol && protocol.pass === false) {
+    return protocol;
+  }
+
+  return {
+    scenarioId: input.scenarioId,
+    pass: false,
+    durationMs: input.durationMs,
+    failureReason:
+      protocol?.failureReason ||
+      input.stderr.trim().split(/\r?\n/).slice(-3).join(" | ") ||
+      `exit ${input.exitCode}`,
+  };
+}
+
 /** Read the last scenario result from captured child-process output. */
 export function readCcEvaluationResult(
   output: string,

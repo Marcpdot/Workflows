@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { emitCcEvaluationResult } from "@workflows/eval";
 import {
   createKnowledgePostgresPool,
+  endKnowledgePostgresPool,
   createKnowledgeStore,
   resolvePostgresKnowledgeConfig,
   type KnowledgeProposal,
@@ -416,7 +417,7 @@ try {
   });
 } finally {
   memory.close();
-  await pool.end();
+  await endKnowledgePostgresPool(pool);
   await postgres.dispose();
   for (const suffix of ["", "-shm", "-wal"]) {
     if (existsSync(memoryPath + suffix)) rmSync(memoryPath + suffix);

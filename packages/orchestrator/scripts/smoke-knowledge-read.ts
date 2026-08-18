@@ -231,7 +231,7 @@ async function main(): Promise<void> {
       await new Promise<void>((r) => server.close(() => r()));
     }
   } finally {
-    store.close();
+    await store.close();
     await postgres.dispose();
     delete process.env.KNOWLEDGE_HTTP_READ;
     try {
