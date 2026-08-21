@@ -10,6 +10,11 @@ external repo / script
   Orchestrator (single brain)
 ```
 
+For the **work surface** client boundary (status, streaming chat, knowledge
+maps, events, voice-turn, proposals), see **[surface-contract.md](./surface-contract.md)**.
+That document is the target contract for a usable surface; this file remains
+the baseline CLI + HTTP chat contract.
+
 ## CLI
 
 ```bash
@@ -65,6 +70,8 @@ npm run serve
 | `POST` | `/v1/chat` | `{ "prompt", "sessionId?", "workspaceRoot?", "options?" }` → chat JSON |
 
 Default bind: `127.0.0.1`.
+
+Full surface-oriented routes (status, stream, knowledge, events, voice): [surface-contract.md](./surface-contract.md).
 
 ## Boundaries (M5)
 
