@@ -16,6 +16,8 @@ Other projects call Workflows through a **documented CLI contract** and optional
 
 **Status, streaming, focus, events, session metadata:** `/v1/status` is best-effort probes (knowledge health, local `ollama --version`, env voice/model flags, in-flight busy) — a failed probe sets `degraded`, not a 5xx, and is not a new central controller. `POST /v1/chat` accepts optional structured `focus` (node ids/labels/project) and forwards it into knowledge retrieval via `handle()`; existing clients that omit it are unchanged. Chat SSE (`token|status|done|error`) is the same result as JSON; `done` is authoritative because `ModelClient.complete()` is still one-shot. `GET /v1/events` is an in-process SSE hub of observed turn/proposal/degraded/error events. `GET /v1/session` returns metadata only (no transcript dump). Command Center UI and voice duplex over this HTTP surface stay out of this adapter.
 
+**Work surface package:** `packages/surface` is a Vite client of this HTTP boundary (`sessionId=surface-main`). Localhost CORS is enabled so the browser can call `127.0.0.1:8787` without a second origin policy. The M6 chat shell in orchestrator remains a separate, same-origin debug UI.
+
 **Reason:** External repos must use the stack without living in Orchestrator’s cwd or reimplementing routing/memory. A thin adapter layer is enough; a second orchestrator in the API would drift.
 
 **Rejected alternatives:**

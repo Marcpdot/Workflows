@@ -26,8 +26,13 @@ Runnable glue is **`packages/orchestrator`**. Feature layers are sibling folders
 | `agents` | Sequential multi-role pipeline |
 | `knowledge` | Semantic graph shell (M11–M17): graph + ingest + identity + FP + read surface |
 | `voice` | Optional STT/TTS I/O adapters (M18) — same handle path as text |
+| `surface` | Work-surface HTTP client (Vite). Talks only to `127.0.0.1:8787`; no `handle()` |
 
 **Why knowledge vs voice split:** Graph propose/accept and domain types stay in `knowledge`. Voice never owns permanent writes — only string I/O into orchestrator. That keeps privacy/env gates for mic/remote audio out of the knowledge package.
+
+**Why a separate surface package:** The M6 UI is a same-origin chat shell inside orchestrator. The work surface is a first-class client of the integration HTTP contract (presence, events, staged objects, proposals) and must not import the orchestrator class. A separate package makes “no second brain” structural.
+
+**Rejected alternatives:** putting the work surface under `packages/orchestrator/src/ui` (tempts in-process handle and chat-app UX); a React widget kit; Command Center as a second product.
 
 **Integration HTTP** lives under `packages/orchestrator/src/integration` (not a separate package) so the HTTP adapter can import the Orchestrator class without a circular package graph. Knowledge read (M17) reuses that server when `KNOWLEDGE_HTTP_READ=true` (same token gate) — not a separate knowledge service.
 

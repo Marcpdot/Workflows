@@ -12,7 +12,8 @@ npm run dev -- "your prompt"
 # or
 npx tsx src/index.ts --json --route-only "Oppsummer denne teksten kort"
 npm run serve   # HTTP integration
-npm run ui      # localhost web shell
+npm run ui      # localhost web shell (M6)
+# Work surface client: packages/surface (HTTP to 127.0.0.1:8787)
 ```
 
 ## Layout (this package)

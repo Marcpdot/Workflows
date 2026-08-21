@@ -118,6 +118,21 @@ async function main(): Promise<void> {
     assert(miss.status === 404, "404 unknown path");
     console.log("OK: HTTP 404");
 
+    const preflight = await fetch(`${url}/v1/status`, {
+      method: "OPTIONS",
+      headers: { Origin: "http://127.0.0.1:5173" },
+    });
+    assert(preflight.status === 204, `CORS preflight ${preflight.status}`);
+    const corsHealth = await fetch(`${url}/health`, {
+      headers: { Origin: "http://127.0.0.1:5173" },
+    });
+    assert(
+      corsHealth.headers.get("access-control-allow-origin") ===
+        "http://127.0.0.1:5173",
+      "localhost CORS for work surface"
+    );
+    console.log("OK: localhost CORS for surface origin");
+
     const statusRes = await fetch(`${url}/v1/status`);
     const statusBody = (await statusRes.json()) as {
       ok?: boolean;

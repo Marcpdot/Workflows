@@ -61,7 +61,8 @@ npx tsx src/index.ts --json --route-only "Oppsummer denne teksten kort"
 ```
 
 See [packages/orchestrator/README.md](packages/orchestrator/README.md) for CLI,
-HTTP, and UI usage.
+HTTP, and UI usage. The work surface client is [packages/surface](packages/surface)
+(`npm run awake` after knowledge compose + `KNOWLEDGE_HTTP_READ=true` serve).
 
 ### Knowledge infrastructure
 

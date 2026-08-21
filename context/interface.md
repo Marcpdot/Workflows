@@ -12,6 +12,18 @@ Scripts, eval, and CI use CLI (`tsx src/index.ts`, pure `--json` stdout, `--work
 
 See [integration.md](integration.md) for the external call-in contract and [workspace.md](workspace.md) for session/workspace isolation.
 
+## Work surface is a separate HTTP client, not a second M6 chat app
+
+**Status:** active  
+**Evidence:** confirmed  
+**Source:** `packages/surface`; `surface-contract.md` LIVE routes  
+
+The work surface (`packages/surface`) is a Vite TypeScript client of `http://127.0.0.1:8787`. It boots health → status → `/v1/events`, shows presence, stages knowledge objects in one persistent room, sends work through streaming `POST /v1/chat` with `sessionId=surface-main`, and accept/rejects proposals via explicit HTTP. It does not run `handle()`, does not implement `POST /v1/voice/turn`, and is not a Command Center redesign.
+
+**Reason:** A usable room needs presence and objects, not a chat transcript as the product. Keeping it out of the orchestrator package prevents a second brain.
+
+**Rejected alternatives:** copy the M6 chat shell; in-process Orchestrator in the browser bundle; scene-switching as the information model.
+
 ## Milestone 6 chose simple localhost web over TUI
 
 **Status:** active  

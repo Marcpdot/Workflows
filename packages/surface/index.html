@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Workflows - work surface</title>
+  </head>
+  <body>
+    <div class="room">
+      <header class="presence" id="presence">
+        <div class="presence-brand">
+          <strong>Work surface</strong>
+          <span class="muted">one room, same brain</span>
+        </div>
+        <div class="presence-pills" id="presencePills">
+          <span class="pill down">system down</span>
+        </div>
+      </header>
+
+      <div class="room-body">
+        <section class="panel find" aria-label="Find objects">
+          <h2>Find</h2>
+          <form id="searchForm" class="search-row">
+            <input
+              id="searchLabel"
+              type="search"
+              placeholder="Search accepted objects"
+              autocomplete="off"
+            />
+            <select id="searchType" aria-label="Type">
+              <option value="">Any type</option>
+              <option value="concept">concept</option>
+              <option value="claim">claim</option>
+              <option value="project">project</option>
+              <option value="artifact">artifact</option>
+              <option value="source">source</option>
+              <option value="event">event</option>
+            </select>
+            <button type="submit">Search</button>
+          </form>
+          <p class="hint muted" id="searchHint">
+            Pull an object into the room. Knowledge read needs
+            <code>KNOWLEDGE_HTTP_READ=true</code>.
+          </p>
+          <ul id="searchResults" class="object-list"></ul>
+        </section>
+
+        <section class="panel stage" aria-label="Object stage">
+          <h2>On stage</h2>
+          <div id="stageEmpty" class="empty">
+            No object on stage. Search and open one — the room stays put.
+          </div>
+          <article id="stageObject" class="stage-object" hidden></article>
+          <div id="neighborhood" class="neighborhood" hidden>
+            <h3>Neighborhood</h3>
+            <ul id="neighborhoodList" class="object-list"></ul>
+          </div>
+          <div class="work-result" id="workResult">
+            <h3>Latest work</h3>
+            <p class="muted" id="workStatus">Idle. The system is a client of handle().</p>
+            <pre id="workReply" class="reply" hidden></pre>
+            <dl id="workMeta" class="work-meta" hidden></dl>
+          </div>
+        </section>
+
+        <section class="panel proposals" aria-label="Pending proposals">
+          <div class="panel-head">
+            <h2>Proposals</h2>
+            <span class="muted" id="proposalCount">0 pending</span>
+          </div>
+          <p class="hint muted">
+            Accept is an explicit gate. This surface does not write the graph
+            itself.
+          </p>
+          <ul id="proposalList" class="proposal-list"></ul>
+        </section>
+      </div>
+
+      <footer class="work">
+        <form id="workForm" class="work-form">
+          <label class="work-label" for="prompt">Work</label>
+          <textarea
+            id="prompt"
+            rows="3"
+            placeholder="What should the system work on?"
+            required
+          ></textarea>
+          <div class="work-actions">
+            <span class="muted" id="focusHint">No focus</span>
+            <button type="submit" id="workBtn">Work</button>
+          </div>
+        </form>
+      </footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

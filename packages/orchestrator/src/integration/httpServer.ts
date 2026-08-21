@@ -64,16 +64,38 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
+function isLocalBrowserOrigin(origin: string | undefined): boolean {
+  if (!origin) return false;
+  try {
+    const url = new URL(origin);
+    return url.hostname === "127.0.0.1" || url.hostname === "localhost";
+  } catch {
+    return false;
+  }
+}
+
+/** Allow the separate work-surface package on localhost to call 127.0.0.1:8787. */
+function applyLocalCors(req: IncomingMessage, res: ServerResponse): void {
+  const origin = req.headers.origin;
+  if (!isLocalBrowserOrigin(origin)) return;
+  res.setHeader("Access-Control-Allow-Origin", origin!);
+  res.setHeader("Vary", "Origin");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Authorization, Content-Type, Accept"
+  );
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+}
+
 function sendJson(
   res: ServerResponse,
   status: number,
   body: unknown
 ): void {
   const payload = JSON.stringify(body);
-  res.writeHead(status, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Content-Length": Buffer.byteLength(payload),
-  });
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Content-Length", Buffer.byteLength(payload));
+  res.writeHead(status);
   res.end(payload);
 }
 
@@ -297,6 +319,12 @@ export function createIntegrationServer(
     try {
       const url = new URL(req.url ?? "/", `http://${host}:${port}`);
       const path = url.pathname;
+      applyLocalCors(req, res);
+      if (req.method === "OPTIONS") {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
 
       // Static UI (no auth) — same host as API for simple fetch
       if (
