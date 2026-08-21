@@ -67,7 +67,12 @@ npm run serve
 | Method | Path | Body / notes |
 |--------|------|----------------|
 | `GET` | `/health` | `{ "ok": true, "service": "orchestrator", "version": "…" }` |
-| `POST` | `/v1/chat` | `{ "prompt", "sessionId?", "workspaceRoot?", "options?" }` → chat JSON |
+| `GET` | `/v1/status` | Best-effort knowledge/model/busy/degraded/voice flags |
+| `GET` | `/v1/events` | SSE: presence, turn.*, proposal.created, degraded, error |
+| `GET` | `/v1/session` | `?sessionId=` metadata only (no transcript) |
+| `POST` | `/v1/chat` | `{ "prompt", "sessionId?", "workspaceRoot?", "focus?", "stream?", "options?" }` → chat JSON or SSE |
+| `POST` | `/v1/knowledge/proposals/:id/accept` | Thin wrap of `acceptProposal` |
+| `POST` | `/v1/knowledge/proposals/:id/reject` | Thin wrap of `rejectProposal` |
 
 Default bind: `127.0.0.1`.
 

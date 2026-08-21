@@ -782,6 +782,7 @@ export class Orchestrator {
       prompt,
       maxChars: cognition.limits.knowledgeChars,
       hops: this.config.knowledgeSettings?.injectHops ?? 1,
+      focus: options?.focus,
     });
     cognition = await contributeProvenanceLineage(cognition, this.knowledge);
 

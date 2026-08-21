@@ -53,25 +53,34 @@ Liveness only.
 { "ok": true, "service": "orchestrator", "version": "optional" }
 ```
 
-### `GET /v1/status` — PLANNED
+### `GET /v1/status` — LIVE
 
-Rich presence for the surface shell ("system is here").
+Rich presence for the surface shell ("system is here"). Best-effort probes;
+failures set `degraded` and stay HTTP 200. Not a central controller; the
+surface does not probe Docker itself.
 
 ```json
 {
   "ok": true,
   "service": "orchestrator",
   "version": "optional",
-  "knowledge": { "postgres": "up" | "down" | "unknown", "neo4j": "up" | "down" | "unknown" },
-  "models": { "local": "up" | "down" | "unknown", "defaultModel": "llama3.1:8b" },
   "busy": false,
-  "degraded": [],
-  "voice": { "enabled": false }
+  "degraded": false,
+  "knowledge": { "configured": true, "ok": true, "backend": "postgresql", "detail": "optional" },
+  "model": {
+    "local": { "ok": true, "bin": "ollama", "model": "llama3.1:8b" },
+    "frontier": { "configured": false, "model": "grok-3" },
+    "mid": { "configured": false }
+  },
+  "voice": {
+    "enabled": false,
+    "sttProvider": "mock",
+    "ttsProvider": "off",
+    "allowRemoteAudio": false,
+    "language": "en"
+  }
 }
 ```
-
-`degraded` is a list of short machine-readable codes (e.g. `knowledge_postgres_down`).
-Surface renders presence from this; it does not probe Docker itself.
 
 ---
 
@@ -89,19 +98,24 @@ Full turn through `handle()`.
   "sessionId": "string (optional, default from env/server)",
   "workspaceRoot": "absolute path (optional)",
   "focus": {
-    "knowledgeId": "string (optional)",
+    "knowledgeId": "string (optional, alias for a seed node id)",
+    "nodeIds": ["optional canonical ids"],
+    "labels": ["optional"],
+    "projectId": "string (optional)",
     "projectLabel": "string (optional)",
-    "workspaceId": "string (optional)"
+    "workspaceId": "string (optional)",
+    "hops": 1
   },
+  "stream": false,
   "options": {
     "toolsEnabled": false,
-    "forceModel": "local" | "frontier",
+    "forceModel": "local | frontier",
     "noMemory": false
   }
 }
 ```
 
-- `focus` is **PLANNED** as a first-class field; until implemented, clients may embed focus in `prompt` but the contract target is structured `focus`.
+- `focus` is an attention hint for knowledge retrieval. Existing clients that omit it keep prompt-based selection.
 - Prefer a stable surface session id (e.g. `surface-main`) for continuity.
 
 **Response** — same machine-readable chat shape as CLI `--json` / `IntegrationChatResponse`:
@@ -111,7 +125,7 @@ Full turn through `handle()`.
   "reply": "…",
   "routing": { "model": "…", "reason": "…", "taskType": "…", "complexity": "…" },
   "model": "…",
-  "provider": "local" | "frontier" | "…",
+  "provider": "local | frontier | …",
   "latencyMs": 0,
   "sessionId": "…",
   "logicalSessionId": "…",
@@ -122,13 +136,14 @@ Full turn through `handle()`.
 
 Optional fields when features run: `usage`, `compression`, `retrieval`, `toolSteps`, `suggestions`, knowledge capture metadata.
 
-### `POST /v1/chat` with streaming — PLANNED
+### `POST /v1/chat` with streaming — LIVE
 
-Same request semantics as `/v1/chat`. Response transport:
+Same request semantics as `/v1/chat`. Enable with `stream: true` or
+`Accept: text/event-stream`.
 
-- **SSE** (`Accept: text/event-stream`) or chunked JSON lines.
-- Events at minimum: `token` | `status` | `done` | `error`.
-- Final `done` payload MUST be equivalent to the non-streaming chat response (so clients can rely on one semantic result).
+- Events: `token` | `status` | `done` | `error`.
+- Final `done` payload is the non-streaming chat response.
+- `ModelClient.complete()` is still one-shot; `token` is currently emitted after `handle()` returns. `done` is authoritative.
 
 Surface must not block the whole room on a single turn; streaming is part of usable latency, not a luxury.
 
@@ -160,11 +175,11 @@ Writes stay owned by the system. Surface triggers them; it does not write Postgr
 
 | Action | Contract target | Status |
 |--------|-----------------|--------|
-| Accept proposal | `POST /v1/knowledge/proposals/:id/accept` | PLANNED |
-| Reject proposal | `POST /v1/knowledge/proposals/:id/reject` | PLANNED |
+| Accept proposal | `POST /v1/knowledge/proposals/:id/accept` | LIVE |
+| Reject proposal | `POST /v1/knowledge/proposals/:id/reject` | LIVE |
 | Explicit capture / ingest | `POST /v1/knowledge/ingest` `{ text \| refs }` or documented tool/chat path | PLANNED as explicit API or single documented path |
 
-Until PLANNED routes exist, surface may use chat/tools only if documented; the **goal** is explicit, idempotent endpoints so the UI never depends on prompt phrasing for accept/reject.
+Accept/reject are thin wraps of `store.acceptProposal` / `store.rejectProposal` (optional `{ edits }` on accept). They do not auto-accept.
 
 ---
 
@@ -175,7 +190,7 @@ Until PLANNED routes exist, surface may use chat/tools only if documented; the *
 | `sessionId` on chat | LIVE | Short-term continuity |
 | `workspaceRoot` on chat | LIVE | Tool + workspace binding |
 | Namespaced sessions `ws:<workspaceId>:<logical>` | LIVE (M9) | Isolation |
-| `GET /v1/session?sessionId=` | PLANNED | Metadata / history summary for surface chrome without dumping raw logs |
+| `GET /v1/session?sessionId=` | LIVE | Metadata only (`exists`, `historyCount`, mode/flags). No transcript dump. |
 
 Recommended surface default: `sessionId=surface-main` unless the user switches room context intentionally.
 
@@ -183,20 +198,22 @@ Recommended surface default: `sessionId=surface-main` unless the user switches r
 
 ## 6. Events (system → surface)
 
-### `GET /v1/events` — PLANNED
+### `GET /v1/events` — LIVE
 
-SSE (or WebSocket) stream so the surface does not poll.
+SSE stream so the surface does not poll. In-process observations from chat and
+proposal HTTP paths; no durable event log. Heartbeat is an SSE comment.
 
 **Event types (minimum)**
 
 | Type | When |
 |------|------|
-| `presence` | status snapshot / change |
+| `presence` | first event on subscribe |
 | `turn.started` | chat/voice turn begins |
-| `turn.progress` | optional status line |
-| `turn.completed` | turn finished (reference session / latency) |
-| `proposal.created` | new pending proposal |
-| `degraded` | capability lost |
+| `turn.progress` | optional status line (**PLANNED**) |
+| `turn.completed` | turn finished (session / latency) |
+| `turn.failed` | chat handler threw |
+| `proposal.created` | new pending proposal from a chat result |
+| `degraded` | capability lost (from `handle()` activation) |
 | `error` | recoverable client-visible error |
 
 Surface subscribes on boot after `GET /health` succeeds.
@@ -260,6 +277,7 @@ One user-facing command (e.g. `workflows-awake`) should orchestrate this.
 - Moving policy or model selection into the surface
 - Multi-tenant cloud auth (local bind + optional token is enough)
 - Replacing Linux as OS; surface runs *on* the host and talks *to* Workflows
+- Command Center UI in the integration server (surface remains an HTTP client)
 
 ---
 

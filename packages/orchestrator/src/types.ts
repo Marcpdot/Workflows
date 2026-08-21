@@ -266,10 +266,28 @@ export interface OrchestratorResult {
   activation?: ActivationTrace;
 }
 
+/**
+ * Caller-supplied attention hint for knowledge retrieval.
+ * Prompt-based selection still runs when this is omitted; explicit ids/labels
+ * are extra seeds, not a second retrieval brain.
+ */
+export interface KnowledgeFocus {
+  nodeIds?: string[];
+  labels?: string[];
+  projectId?: string;
+  projectLabel?: string;
+  hops?: 1 | 2;
+  /** Contract alias for a single seed node id. */
+  knowledgeId?: string;
+  workspaceId?: string;
+}
+
 export interface OrchestratorHandleOptions {
   forceModel?: ModelChoice;
   history?: ChatMessage[];
   sessionId?: string;
+  /** Optional attention hint forwarded into knowledge retrieval. */
+  focus?: KnowledgeFocus;
   /** Session interaction mode (default active). */
   interactionMode?: InteractionMode;
   proposalsEnabled?: boolean;

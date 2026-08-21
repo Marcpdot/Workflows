@@ -40,6 +40,7 @@ import {
 } from "@workflows/tools";
 import type {
   ChatMessage,
+  KnowledgeFocus,
   ModelClient,
   ModelChoice,
   ModelResponse,
@@ -692,6 +693,7 @@ export async function contributeKnowledgeRetrieval(
     prompt: string;
     maxChars: number;
     hops: 1 | 2;
+    focus?: KnowledgeFocus;
   }
 ): Promise<CognitiveOperationContext> {
   if (!input.store || !isCapabilityActive(context, "knowledge_retrieval")) {
@@ -700,7 +702,14 @@ export async function contributeKnowledgeRetrieval(
   try {
     const selected = await selectKnowledgeContext(input.store, input.prompt, {
       maxChars: input.maxChars,
-      hops: input.hops,
+      hops: input.focus?.hops ?? input.hops,
+      seedNodeIds: [
+        ...(input.focus?.nodeIds ?? []),
+        ...(input.focus?.knowledgeId ? [input.focus.knowledgeId] : []),
+      ],
+      projectId: input.focus?.projectId,
+      projectLabel: input.focus?.projectLabel,
+      labels: input.focus?.labels,
     });
     let next = contributeCapabilityOutput(context, {
       capabilityId: "knowledge_retrieval",

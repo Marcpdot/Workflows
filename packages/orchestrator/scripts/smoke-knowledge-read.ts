@@ -12,6 +12,7 @@ import {
   renderNeighborhoodRead,
   renderProjectStatusReport,
   renderSearchRead,
+  selectKnowledgeContext,
 } from "@workflows/knowledge";
 import { listenIntegrationServer } from "../src/integration/index.js";
 import { startKnowledgePostgresTest } from "./knowledge-postgres-test-runtime.js";
@@ -226,7 +227,61 @@ async function main(): Promise<void> {
       const pageText = await page.text();
       assert(pageText.includes("Knowledge read"), "html title");
 
-      console.log("OK: HTTP knowledge read routes");
+      const focused = await selectKnowledgeContext(store, "unrelated-xyz-query", {
+        seedNodeIds: [heat.id],
+      });
+      assert(
+        focused?.canonicalIds.includes(heat.id) === true,
+        "focus seedNodeIds retrieve accepted neighborhood without prompt match"
+      );
+      console.log("OK: knowledge focus seeds");
+
+      const pendingListed = await fetch(
+        `${base}/v1/knowledge/proposals?status=pending`
+      );
+      const pendingBody = (await pendingListed.json()) as {
+        ok?: boolean;
+        proposals?: Array<{ id: string; payload?: { label?: string } }>;
+      };
+      const pendingOnly = pendingBody.proposals?.find(
+        (p) => p.payload?.label === "pending-only"
+      );
+      assert(pendingOnly?.id, "pending-only proposal");
+      const rejectRes = await fetch(
+        `${base}/v1/knowledge/proposals/${encodeURIComponent(pendingOnly!.id)}/reject`,
+        { method: "POST" }
+      );
+      const rejectBody = (await rejectRes.json()) as {
+        ok?: boolean;
+        action?: string;
+      };
+      assert(rejectRes.status === 200 && rejectBody.ok === true, "http reject");
+      assert(rejectBody.action === "reject", "reject action");
+      const rejected = await store.getProposal(pendingOnly!.id);
+      assert(rejected?.status === "rejected", "store reject via HTTP");
+
+      const acceptEvent = await store.createEvent({
+        sourceType: "manual",
+        sourceRef: "smoke-read-accept-http",
+      });
+      const [toAccept] = await store.addProposals(acceptEvent.id, [
+        { kind: "node", payload: { type: "concept", label: "http-accepted" } },
+      ]);
+      const acceptRes = await fetch(
+        `${base}/v1/knowledge/proposals/${encodeURIComponent(toAccept!.id)}/accept`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }
+      );
+      const acceptBody = (await acceptRes.json()) as { ok?: boolean; action?: string };
+      assert(acceptRes.status === 200 && acceptBody.ok === true, "http accept");
+      const accepted = await store.getProposal(toAccept!.id);
+      assert(accepted?.status === "accepted", "store accept via HTTP");
+      const missAccept = await fetch(
+        `${base}/v1/knowledge/proposals/not-a-real-id/accept`,
+        { method: "POST" }
+      );
+      assert(missAccept.status === 400 || missAccept.status === 404, "unknown proposal");
+
+      console.log("OK: HTTP knowledge read + accept/reject routes");
     } finally {
       await new Promise<void>((r) => server.close(() => r()));
     }

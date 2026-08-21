@@ -14,6 +14,17 @@ export interface KnowledgeContextSelection {
   contradictionIds: string[];
 }
 
+/** Optional attention hint; prompt-based selection still runs when omitted. */
+export interface KnowledgeContextOptions {
+  maxChars?: number;
+  hops?: 1 | 2;
+  maxSeeds?: number;
+  seedNodeIds?: string[];
+  projectId?: string;
+  projectLabel?: string;
+  labels?: string[];
+}
+
 export interface KnowledgeLineageContext {
   text: string | null;
   claimIds: string[];
@@ -39,6 +50,29 @@ function promptMatchesProjectLabel(
   return re.test(promptLower);
 }
 
+function formatProjectSelection(
+  status: Awaited<ReturnType<KnowledgeStore["getProjectStatus"]>>,
+  maxChars: number
+): KnowledgeContextSelection {
+  let text = [
+    "Project status (accepted graph only):",
+    ...status.summaryLines,
+  ].join("\n");
+  if (text.length > maxChars) {
+    text =
+      text.slice(0, Math.max(0, maxChars - 20)) +
+      `\n…[truncated ${text.length} chars]`;
+  }
+  return {
+    text,
+    canonicalIds: [status.project.id, ...status.linkedNodes.map((node) => node.id)],
+    claimIds: status.claims.map((claim) => claim.id),
+    contradictionIds: status.edges
+      .filter((edge) => edge.relation === "contradicts")
+      .map((edge) => edge.id),
+  };
+}
+
 /**
  * Build a compact context block from accepted graph hits for a user prompt.
  * Returns null when nothing useful is found.
@@ -46,17 +80,29 @@ function promptMatchesProjectLabel(
 export async function selectKnowledgeContext(
   store: KnowledgeStore,
   userPrompt: string,
-  options?: {
-    maxChars?: number;
-    hops?: 1 | 2;
-    maxSeeds?: number;
-  }
+  options?: KnowledgeContextOptions
 ): Promise<KnowledgeContextSelection | null> {
   const maxChars = options?.maxChars ?? 2000;
   const hops = options?.hops === 2 ? 2 : 1;
   const maxSeeds = options?.maxSeeds ?? 3;
   const tokens = simpleQueryTokens(userPrompt, 10);
+  const extraLabels = (options?.labels ?? [])
+    .map((label) => label.trim())
+    .filter(Boolean);
   const promptLower = userPrompt.toLowerCase();
+
+  try {
+    if (options?.projectId?.trim() || options?.projectLabel?.trim()) {
+      const status = await store.getProjectStatus({
+        projectId: options.projectId?.trim() || undefined,
+        label: options.projectLabel?.trim() || undefined,
+        hops: hops as 1 | 2,
+      });
+      return formatProjectSelection(status, maxChars);
+    }
+  } catch {
+    // explicit focus miss falls through to neighborhood seeds
+  }
 
   // M13: project-status first when a project label is mentioned
   try {
@@ -71,33 +117,31 @@ export async function selectKnowledgeContext(
         projectId: p.id,
         hops: hops as 1 | 2,
       });
-      let text = [
-        "Project status (accepted graph only):",
-        ...status.summaryLines,
-      ].join("\n");
-      if (text.length > maxChars) {
-        text =
-          text.slice(0, Math.max(0, maxChars - 20)) +
-          `\n…[truncated ${text.length} chars]`;
-      }
-      return {
-        text,
-        canonicalIds: [status.project.id, ...status.linkedNodes.map((node) => node.id)],
-        claimIds: status.claims.map((claim) => claim.id),
-        contradictionIds: status.edges
-          .filter((edge) => edge.relation === "contradicts")
-          .map((edge) => edge.id),
-      };
+      return formatProjectSelection(status, maxChars);
     }
   } catch {
     // fall through to neighborhood inject
   }
 
-  if (tokens.length === 0) return null;
-
   const seedIds: string[] = [];
-  for (const t of tokens) {
-    if (seedIds.length >= maxSeeds) break;
+  const focusIds = (options?.seedNodeIds ?? [])
+    .map((id) => id.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+  for (const id of focusIds) {
+    try {
+      const node = await store.getNode(id);
+      if (node && node.status === "accepted" && !seedIds.includes(node.id)) {
+        seedIds.push(node.id);
+      }
+    } catch {
+      /* ignore invalid focus ids */
+    }
+  }
+
+  const searchLabels = [...extraLabels, ...tokens];
+  for (const t of searchLabels) {
+    if (seedIds.length >= Math.max(maxSeeds, focusIds.length)) break;
     const hits = await store.findNodes({
       label: t,
       status: "accepted",
@@ -105,7 +149,7 @@ export async function selectKnowledgeContext(
     });
     for (const h of hits) {
       if (!seedIds.includes(h.id)) seedIds.push(h.id);
-      if (seedIds.length >= maxSeeds) break;
+      if (seedIds.length >= Math.max(maxSeeds, focusIds.length)) break;
     }
   }
   if (seedIds.length === 0) return null;
@@ -153,11 +197,7 @@ export async function selectKnowledgeContext(
 export async function buildKnowledgeInjectBlock(
   store: KnowledgeStore,
   userPrompt: string,
-  options?: {
-    maxChars?: number;
-    hops?: 1 | 2;
-    maxSeeds?: number;
-  }
+  options?: KnowledgeContextOptions
 ): Promise<string | null> {
   const selected = await selectKnowledgeContext(store, userPrompt, options);
   return selected?.text ?? null;

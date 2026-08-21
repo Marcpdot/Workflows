@@ -113,6 +113,7 @@ export {
   buildKnowledgeInjectBlock,
   hydrateKnowledgeLineageContext,
   selectKnowledgeContext,
+  type KnowledgeContextOptions,
   type KnowledgeContextSelection,
   type KnowledgeLineageContext,
 } from "./inject.js";

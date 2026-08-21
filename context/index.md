@@ -14,6 +14,6 @@ Lean index of why-knowledge. Load a topic file only when relevant.
 - [models.md](models.md) — default small local model, Ollama CLI, Grok frontier
 - [privacy.md](privacy.md) — personal model out of public repo; knowledge DB + voice remote gates
 - [interface.md](interface.md) — CLI first; M6 web; M18 voice; mode/proposals chrome; interactive accepted-knowledge network
-- [integration.md](integration.md) — CLI + HTTP same brain; knowledge read + session proposals queue
+- [integration.md](integration.md) — CLI + HTTP same brain; status/events/session metadata; knowledge read + accept/reject
 - [observability.md](observability.md) — local JSONL events, prompts off (M8)
 - Design (how): [`docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md`](../docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md), [`docs/INTERACTION_CAPTURE_ITERATION.md`](../docs/INTERACTION_CAPTURE_ITERATION.md), [`docs/STRUCTURED_CAPTURE_AND_NETWORK_VIZ.md`](../docs/STRUCTURED_CAPTURE_AND_NETWORK_VIZ.md)

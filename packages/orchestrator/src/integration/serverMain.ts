@@ -37,6 +37,9 @@ async function main(): Promise<void> {
   });
   console.error(`Orchestrator integration HTTP listening on ${url}`);
   console.error(`  GET  ${url}/health`);
+  console.error(`  GET  ${url}/v1/status`);
+  console.error(`  GET  ${url}/v1/events`);
+  console.error(`  GET  ${url}/v1/session?sessionId=`);
   console.error(`  POST ${url}/v1/chat`);
   if (process.env.INTEGRATION_HTTP_TOKEN) {
     console.error("  Auth: Authorization: Bearer <INTEGRATION_HTTP_TOKEN>");

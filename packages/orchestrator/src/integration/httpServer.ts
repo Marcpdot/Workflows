@@ -23,8 +23,13 @@ import type {
   IntegrationChatRequest,
   IntegrationChatResponse,
   IntegrationErrorResponse,
+  IntegrationFocus,
   IntegrationHealthResponse,
+  IntegrationSessionResponse,
 } from "./types.js";
+import { initSse, writeSse } from "./sse.js";
+import { SurfaceEventHub } from "./surfaceEvents.js";
+import { collectIntegrationStatus } from "./surfaceStatus.js";
 
 function envFlagTrue(value: string | undefined): boolean {
   return value === "1" || value === "true" || value === "yes";
@@ -86,6 +91,132 @@ function checkAuth(
   if (!token) return true;
   const h = req.headers.authorization ?? "";
   return h === `Bearer ${token}` || h === `bearer ${token}`;
+}
+
+function wantsChatStream(
+  req: IncomingMessage,
+  parsed: IntegrationChatRequest
+): boolean {
+  if (parsed.stream === true) return true;
+  if (parsed.stream === false) return false;
+  const accept = req.headers.accept ?? "";
+  return accept.includes("text/event-stream");
+}
+
+function parseFocus(raw: unknown): IntegrationFocus | undefined {
+  if (raw == null) return undefined;
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error("focus must be an object");
+  }
+  const o = raw as Record<string, unknown>;
+  const focus: IntegrationFocus = {};
+  if (o.nodeIds != null) {
+    if (
+      !Array.isArray(o.nodeIds) ||
+      o.nodeIds.some((id) => typeof id !== "string")
+    ) {
+      throw new Error("focus.nodeIds must be string[]");
+    }
+    focus.nodeIds = o.nodeIds.map((id) => id.trim()).filter(Boolean);
+  }
+  if (o.labels != null) {
+    if (
+      !Array.isArray(o.labels) ||
+      o.labels.some((label) => typeof label !== "string")
+    ) {
+      throw new Error("focus.labels must be string[]");
+    }
+    focus.labels = o.labels.map((label) => label.trim()).filter(Boolean);
+  }
+  if (o.projectId != null) {
+    if (typeof o.projectId !== "string") {
+      throw new Error("focus.projectId must be a string");
+    }
+    const id = o.projectId.trim();
+    if (id) focus.projectId = id;
+  }
+  if (o.projectLabel != null) {
+    if (typeof o.projectLabel !== "string") {
+      throw new Error("focus.projectLabel must be a string");
+    }
+    const label = o.projectLabel.trim();
+    if (label) focus.projectLabel = label;
+  }
+  if (o.hops != null) {
+    if (o.hops !== 1 && o.hops !== 2) {
+      throw new Error("focus.hops must be 1 or 2");
+    }
+    focus.hops = o.hops;
+  }
+  if (o.knowledgeId != null) {
+    if (typeof o.knowledgeId !== "string") {
+      throw new Error("focus.knowledgeId must be a string");
+    }
+    const id = o.knowledgeId.trim();
+    if (id) {
+      focus.knowledgeId = id;
+      if (!focus.nodeIds?.includes(id)) {
+        focus.nodeIds = [...(focus.nodeIds ?? []), id];
+      }
+    }
+  }
+  if (o.workspaceId != null) {
+    if (typeof o.workspaceId !== "string") {
+      throw new Error("focus.workspaceId must be a string");
+    }
+    const id = o.workspaceId.trim();
+    if (id) focus.workspaceId = id;
+  }
+  return focus;
+}
+
+function matchProposalAction(
+  path: string
+): { id: string; action: "accept" | "reject" } | null {
+  const m = path.match(
+    /^\/v1\/knowledge\/proposals\/([^/]+)\/(accept|reject)$/
+  );
+  if (!m) return null;
+  try {
+    return {
+      id: decodeURIComponent(m[1]!),
+      action: m[2] as "accept" | "reject",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function resolveSessionIds(input: {
+  sessionId?: string;
+  workspaceRoot?: string;
+}): {
+  sessionId: string;
+  logicalSessionId: string;
+  workspaceId: string;
+  workspaceRoot: string;
+} {
+  const raw = input.sessionId?.trim();
+  const namespaced = raw?.match(/^ws:([a-f0-9]{12}):(.+)$/i);
+  if (raw && namespaced) {
+    const ws = resolveWorkspace({ workspaceRoot: input.workspaceRoot });
+    return {
+      sessionId: raw,
+      logicalSessionId: namespaced[2]!,
+      workspaceId: namespaced[1]!,
+      workspaceRoot: ws.rootPath,
+    };
+  }
+  const ws = resolveWorkspace({
+    workspaceRoot: input.workspaceRoot,
+    sessionId: raw,
+  });
+  return {
+    sessionId: ws.sessionId,
+    logicalSessionId: ws.logicalSessionId,
+    workspaceId: ws.id,
+    workspaceRoot: ws.rootPath,
+  };
 }
 
 function packageVersion(): string {
@@ -159,6 +290,8 @@ export function createIntegrationServer(
   );
   const knowledgeReadEnabled =
     options.knowledgeReadEnabled ?? knowledgeHttpReadEnabled();
+  const events = new SurfaceEventHub();
+  let inflightChats = 0;
 
   const server = createServer(async (req, res) => {
     try {
@@ -199,6 +332,52 @@ export function createIntegrationServer(
           version,
         };
         sendJson(res, 200, body);
+        return;
+      }
+
+      if (req.method === "GET" && path === "/v1/status") {
+        if (!checkAuth(req, token)) {
+          unauthorized(res);
+          return;
+        }
+        const body = await collectIntegrationStatus({
+          version,
+          busy: inflightChats > 0,
+        });
+        sendJson(res, 200, body);
+        return;
+      }
+
+      if (req.method === "GET" && path === "/v1/events") {
+        if (!checkAuth(req, token)) {
+          unauthorized(res);
+          return;
+        }
+        events.subscribe(req, res, {
+          service: "orchestrator",
+          version,
+          busy: inflightChats > 0,
+        });
+        return;
+      }
+
+      if (req.method === "GET" && path === "/v1/session") {
+        if (!checkAuth(req, token)) {
+          unauthorized(res);
+          return;
+        }
+        await handleSessionMetadata(req, res, url);
+        return;
+      }
+
+      const proposalAction =
+        req.method === "POST" ? matchProposalAction(path) : null;
+      if (proposalAction) {
+        if (!checkAuth(req, token)) {
+          unauthorized(res);
+          return;
+        }
+        await handleProposalAction(req, res, proposalAction, events);
         return;
       }
 
@@ -260,144 +439,68 @@ export function createIntegrationServer(
           } satisfies IntegrationErrorResponse);
           return;
         }
-
-        const started = performance.now();
-
-        if (parsed.options?.toolsEnabled != null) {
-          process.env.TOOLS_ENABLED = parsed.options.toolsEnabled
-            ? "true"
-            : "false";
+        if (parsed.stream != null && typeof parsed.stream !== "boolean") {
+          sendJson(res, 400, {
+            ok: false,
+            error: "stream must be a boolean",
+          } satisfies IntegrationErrorResponse);
+          return;
         }
 
-        // M9: per-request workspace + namespaced session
-        const ws = resolveWorkspace({
-          workspaceRoot: parsed.workspaceRoot,
-          sessionId: parsed.sessionId,
-        });
-        process.env.WORKSPACE_ROOT = ws.rootPath;
-
-        const config = loadConfigFromEnv(process.env, {
-          workspaceRoot: ws.rootPath,
-          sessionId: ws.logicalSessionId,
-        });
-        if (config.tools) {
-          config.tools = await createRegistryFromConfig();
-        }
-        const sessionId = ws.sessionId;
-        const useMemory = !parsed.options?.noMemory;
-        const memory = useMemory
-          ? createMemory({
-              dbPath: resolve(
-                process.cwd(),
-                process.env.MEMORY_DB_PATH ?? "./data/memory.db"
-              ),
-            })
-          : null;
-        config.experienceStore = memory ?? undefined;
-        const orch = new Orchestrator(config);
-
-        let historyCount = 0;
+        let focus: IntegrationFocus | undefined;
         try {
-          let history: { role: "user" | "assistant" | "system"; content: string }[] =
-            [];
+          focus = parseFocus(parsed.focus);
+        } catch (err) {
+          sendJson(res, 400, {
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          } satisfies IntegrationErrorResponse);
+          return;
+        }
+        parsed = { ...parsed, focus };
 
-          try {
-            if (memory) {
-              history = await memory.getHistory(sessionId);
-              historyCount = history.length;
-            }
-
-            const cmd = await tryHandleSessionCommand(parsed.prompt, {
-              memory,
-              sessionId,
-              knowledge: orch.knowledge,
-            });
-            if (cmd.kind === "handled") {
-              if (memory) {
-                const inputExperience = await memory.addMessage(
-                  sessionId,
-                  { role: "user", content: parsed.prompt },
-                  { workspaceId: ws.id, source: { type: "http" } }
-                );
-                await memory.addMessage(
-                  sessionId,
-                  { role: "assistant", content: cmd.message },
-                  {
-                    workspaceId: ws.id,
-                    source: { type: "command" },
-                    parentExperienceIds: [inputExperience.id],
-                  }
-                );
-              }
-              sendJson(res, 200, {
-                reply: cmd.message,
-                sessionId,
-                logicalSessionId: ws.logicalSessionId,
-                historyCount,
-                latencyMs: Math.round(performance.now() - started),
-                workspaceRoot: config.workspaceRoot,
-                workspaceId: ws.id,
-                interactionMode: cmd.sessionState?.interactionMode,
-                proposalsEnabled: cmd.sessionState?.proposalsEnabled,
-                command: true,
-                data: cmd.data,
-              });
-              return;
-            }
-
-            const sessionState = memory
-              ? await memory.getSessionState(sessionId)
-              : null;
-            const forceCapture = cmd.kind === "force_capture";
-            const promptForModel =
-              forceCapture && cmd.restPrompt === "capture last segment"
-                ? "(Session capture of recent conversation — acknowledge briefly.)"
-                : forceCapture
-                  ? cmd.restPrompt
-                  : parsed.prompt;
-
-            const lastExtractAt = sessionState?.lastExtractTurnId
-              ? Number(sessionState.lastExtractTurnId)
-              : undefined;
-            const result = await orch.handle(promptForModel, {
-              history,
-              forceModel: parsed.options?.forceModel,
-              sessionId,
-              interactionMode: sessionState?.interactionMode ?? "active",
-              proposalsEnabled: sessionState?.proposalsEnabled ?? true,
-              forceCapture,
-              maxProposalsPerTurn: sessionState?.maxProposalsPerTurn,
-              minUserMessageLength: sessionState?.minUserMessageLength,
-              lastExtractAt: Number.isFinite(lastExtractAt)
-                ? lastExtractAt
-                : undefined,
-              sourcePrompt: parsed.prompt,
-              experienceSource: { type: "http" },
-            });
-
-            if (memory) {
-              if (result.capture?.ran) {
-                await memory.updateSessionState(sessionId, {
-                  lastExtractTurnId: String(Date.now()),
-                });
-              }
-            }
-
-            const response: IntegrationChatResponse = {
-              ...result,
-              sessionId,
-              logicalSessionId: ws.logicalSessionId,
-              historyCount,
-              latencyMs: Math.round(performance.now() - started),
-              workspaceRoot: config.workspaceRoot,
-              workspaceId: ws.id,
-            };
-            sendJson(res, 200, response);
-          } finally {
-            memory?.close();
+        const stream = wantsChatStream(req, parsed);
+        const sessionHint = parsed.sessionId?.trim();
+        events.emit({ type: "turn.started", sessionId: sessionHint });
+        inflightChats += 1;
+        try {
+          if (stream) {
+            initSse(res);
+            writeSse(res, "status", { phase: "accepted" });
+            writeSse(res, "status", { phase: "running" });
+          }
+          const body = await executeChat(parsed);
+          publishChatObservations(events, body);
+          if (stream) {
+            writeSse(res, "status", { phase: "complete" });
+            if (body.reply) writeSse(res, "token", { text: body.reply });
+            writeSse(res, "done", body);
+            res.end();
+          } else {
+            sendJson(res, 200, body);
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          events.emit({
+            type: "turn.failed",
+            sessionId: sessionHint,
+            error: message,
+          });
+          events.emit({ type: "error", error: message, sessionId: sessionHint });
+          if (stream && res.headersSent) {
+            writeSse(res, "error", {
+              ok: false,
+              error: message,
+            } satisfies IntegrationErrorResponse);
+            res.end();
+          } else {
+            sendJson(res, 500, {
+              ok: false,
+              error: message,
+            } satisfies IntegrationErrorResponse);
           }
         } finally {
-          orch.close();
+          inflightChats = Math.max(0, inflightChats - 1);
         }
         return;
       }
@@ -438,6 +541,302 @@ export function listenIntegrationServer(
     });
     server.on("error", reject);
   });
+}
+
+function publishChatObservations(
+  events: SurfaceEventHub,
+  body: IntegrationChatResponse
+): void {
+  events.emit({
+    type: "turn.completed",
+    sessionId: body.sessionId,
+    latencyMs: body.latencyMs,
+    command: Boolean(body.command),
+    proposalCount: body.proposals?.length ?? 0,
+  });
+  for (const proposal of body.proposals ?? []) {
+    events.emit({
+      type: "proposal.created",
+      sessionId: body.sessionId,
+      proposalId: proposal.id,
+      kind: proposal.kind,
+    });
+  }
+  const degradations = body.activation?.degradations ?? [];
+  if (degradations.length) {
+    events.emit({
+      type: "degraded",
+      sessionId: body.sessionId,
+      capabilities: degradations.map((d) => d.capabilityId),
+    });
+  }
+}
+
+async function executeChat(
+  parsed: IntegrationChatRequest
+): Promise<IntegrationChatResponse> {
+  const started = performance.now();
+
+  if (parsed.options?.toolsEnabled != null) {
+    process.env.TOOLS_ENABLED = parsed.options.toolsEnabled
+      ? "true"
+      : "false";
+  }
+
+  const ws = resolveWorkspace({
+    workspaceRoot: parsed.workspaceRoot,
+    sessionId: parsed.sessionId,
+  });
+  process.env.WORKSPACE_ROOT = ws.rootPath;
+
+  const config = loadConfigFromEnv(process.env, {
+    workspaceRoot: ws.rootPath,
+    sessionId: ws.logicalSessionId,
+  });
+  if (config.tools) {
+    config.tools = await createRegistryFromConfig();
+  }
+  const sessionId = ws.sessionId;
+  const useMemory = !parsed.options?.noMemory;
+  const memory = useMemory
+    ? createMemory({
+        dbPath: resolve(
+          process.cwd(),
+          process.env.MEMORY_DB_PATH ?? "./data/memory.db"
+        ),
+      })
+    : null;
+  config.experienceStore = memory ?? undefined;
+  const orch = new Orchestrator(config);
+
+  let historyCount = 0;
+  try {
+    let history: { role: "user" | "assistant" | "system"; content: string }[] =
+      [];
+    try {
+      if (memory) {
+        history = await memory.getHistory(sessionId);
+        historyCount = history.length;
+      }
+
+      const cmd = await tryHandleSessionCommand(parsed.prompt, {
+        memory,
+        sessionId,
+        knowledge: orch.knowledge,
+      });
+      if (cmd.kind === "handled") {
+        if (memory) {
+          const inputExperience = await memory.addMessage(
+            sessionId,
+            { role: "user", content: parsed.prompt },
+            { workspaceId: ws.id, source: { type: "http" } }
+          );
+          await memory.addMessage(
+            sessionId,
+            { role: "assistant", content: cmd.message },
+            {
+              workspaceId: ws.id,
+              source: { type: "command" },
+              parentExperienceIds: [inputExperience.id],
+            }
+          );
+        }
+        return {
+          reply: cmd.message,
+          sessionId,
+          logicalSessionId: ws.logicalSessionId,
+          historyCount,
+          latencyMs: Math.round(performance.now() - started),
+          workspaceRoot: config.workspaceRoot,
+          workspaceId: ws.id,
+          interactionMode: cmd.sessionState?.interactionMode,
+          proposalsEnabled: cmd.sessionState?.proposalsEnabled,
+          command: true,
+          data: cmd.data,
+          focus: parsed.focus,
+        } as IntegrationChatResponse;
+      }
+
+      const sessionState = memory
+        ? await memory.getSessionState(sessionId)
+        : null;
+      const forceCapture = cmd.kind === "force_capture";
+      const promptForModel =
+        forceCapture && cmd.restPrompt === "capture last segment"
+          ? "(Session capture of recent conversation — acknowledge briefly.)"
+          : forceCapture
+            ? cmd.restPrompt
+            : parsed.prompt;
+
+      const lastExtractAt = sessionState?.lastExtractTurnId
+        ? Number(sessionState.lastExtractTurnId)
+        : undefined;
+      const result = await orch.handle(promptForModel, {
+        history,
+        forceModel: parsed.options?.forceModel,
+        sessionId,
+        interactionMode: sessionState?.interactionMode ?? "active",
+        proposalsEnabled: sessionState?.proposalsEnabled ?? true,
+        forceCapture,
+        maxProposalsPerTurn: sessionState?.maxProposalsPerTurn,
+        minUserMessageLength: sessionState?.minUserMessageLength,
+        lastExtractAt: Number.isFinite(lastExtractAt)
+          ? lastExtractAt
+          : undefined,
+        sourcePrompt: parsed.prompt,
+        experienceSource: { type: "http" },
+        experienceMetadata: parsed.focus
+          ? { focus: parsed.focus }
+          : undefined,
+        focus: parsed.focus,
+      });
+
+      if (memory && result.capture?.ran) {
+        await memory.updateSessionState(sessionId, {
+          lastExtractTurnId: String(Date.now()),
+        });
+      }
+
+      return {
+        ...result,
+        sessionId,
+        logicalSessionId: ws.logicalSessionId,
+        historyCount,
+        latencyMs: Math.round(performance.now() - started),
+        workspaceRoot: config.workspaceRoot,
+        workspaceId: ws.id,
+        focus: parsed.focus,
+      };
+    } finally {
+      memory?.close();
+    }
+  } finally {
+    orch.close();
+  }
+}
+
+async function handleSessionMetadata(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  url: URL
+): Promise<void> {
+  const rawSession = url.searchParams.get("sessionId")?.trim();
+  if (!rawSession) {
+    sendJson(res, 400, {
+      ok: false,
+      error: "sessionId query param required",
+    } satisfies IntegrationErrorResponse);
+    return;
+  }
+  const ids = resolveSessionIds({
+    sessionId: rawSession,
+    workspaceRoot: url.searchParams.get("workspaceRoot")?.trim() || undefined,
+  });
+  const memory = createMemory({
+    dbPath: resolve(
+      process.cwd(),
+      process.env.MEMORY_DB_PATH ?? "./data/memory.db"
+    ),
+  });
+  try {
+    const sessions = await memory.listSessions();
+    const exists = sessions.includes(ids.sessionId);
+    const history = exists
+      ? await memory.getHistoryRecords(ids.sessionId, 10_000)
+      : [];
+    const state = await memory.getSessionState(ids.sessionId);
+    sendJson(res, 200, {
+      ok: true,
+      sessionId: ids.sessionId,
+      logicalSessionId: ids.logicalSessionId,
+      workspaceId: ids.workspaceId,
+      workspaceRoot: ids.workspaceRoot,
+      exists,
+      historyCount: history.length,
+      interactionMode: state.interactionMode,
+      proposalsEnabled: state.proposalsEnabled,
+      lastExtractTurnId: state.lastExtractTurnId,
+      updatedAt: state.updatedAt,
+    } satisfies IntegrationSessionResponse);
+  } finally {
+    memory.close();
+  }
+}
+
+async function handleProposalAction(
+  req: IncomingMessage,
+  res: ServerResponse,
+  action: { id: string; action: "accept" | "reject" },
+  events: SurfaceEventHub
+): Promise<void> {
+  if (!action.id.trim()) {
+    sendJson(res, 400, {
+      ok: false,
+      error: "proposal id required",
+    } satisfies IntegrationErrorResponse);
+    return;
+  }
+  let edits: Record<string, unknown> | undefined;
+  const raw = await readBody(req);
+  if (raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw) as { edits?: unknown };
+      if (parsed.edits != null) {
+        if (
+          typeof parsed.edits !== "object" ||
+          Array.isArray(parsed.edits)
+        ) {
+          sendJson(res, 400, {
+            ok: false,
+            error: "edits must be an object",
+          } satisfies IntegrationErrorResponse);
+          return;
+        }
+        edits = parsed.edits as Record<string, unknown>;
+      }
+    } catch {
+      sendJson(res, 400, {
+        ok: false,
+        error: "Invalid JSON body",
+      } satisfies IntegrationErrorResponse);
+      return;
+    }
+  }
+
+  const store = createKnowledgeStore();
+  try {
+    if (action.action === "accept") {
+      await store.acceptProposal(action.id, edits);
+    } else {
+      await store.rejectProposal(action.id);
+    }
+    sendJson(res, 200, {
+      ok: true,
+      id: action.id,
+      action: action.action,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const lower = message.toLowerCase();
+    const status = lower.includes("unknown id")
+      ? 404
+      : lower.includes("already")
+        ? 409
+        : 400;
+    if (status >= 500) {
+      events.emit({ type: "error", error: message });
+    }
+    sendJson(res, status, {
+      ok: false,
+      error: message,
+    } satisfies IntegrationErrorResponse);
+  } finally {
+    try {
+      await store.close();
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 /**
@@ -592,6 +991,8 @@ async function handleKnowledgeRead(
           "GET /v1/knowledge/contradictions?nodeId=",
           "GET /v1/knowledge/proposals?status=pending",
           "GET /v1/knowledge/proposals?sessionId= (session pending queue)",
+          "POST /v1/knowledge/proposals/:id/accept",
+          "POST /v1/knowledge/proposals/:id/reject",
           "GET /knowledge  (minimal HTML browse)",
         ],
       });

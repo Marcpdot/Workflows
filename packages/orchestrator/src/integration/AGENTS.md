@@ -75,12 +75,21 @@ POST /v1/chat
   "prompt": "…",
   "sessionId": "optional",
   "workspaceRoot": "/path",
+  "focus": { "nodeIds": [], "labels": [], "projectId": "", "hops": 1 },
+  "stream": false,
   "options": { "toolsEnabled": false }
 }
 → 200 + samme form som JSON CLI
+→ SSE when stream=true or Accept: text/event-stream (token|status|done|error)
 
 GET /health → { ok: true, version?: string }
+GET /v1/status → knowledge/model/busy/degraded/voice (best-effort probes)
+GET /v1/events → SSE process events
+GET /v1/session?sessionId= → metadata only
+POST /v1/knowledge/proposals/:id/accept|reject
 ```
+
+See `surface-contract.md` for LIVE vs PLANNED.
 
 - Bind default `127.0.0.1`
 - Env: `INTEGRATION_HTTP_PORT`, `INTEGRATION_HTTP_TOKEN` (hvis satt, krev header)
@@ -96,9 +105,11 @@ GET /health → { ok: true, version?: string }
 ```
 src/integration/
   AGENTS.md
-  contract.md       # menneskelig kontrakt (kan merges inn i README)
-  httpServer.ts     # valgfri
-  types.ts          # delte request/response-typer for JSON
+  contract.md          # CLI + HTTP overview
+  surface-contract.md  # LIVE/PLANNED HTTP inventory
+  httpServer.ts
+  types.ts
+  sse.ts / surfaceEvents.ts / surfaceStatus.ts
 
 examples/integration/
   curl-chat.sh
