@@ -223,6 +223,7 @@ export async function getNeighborhood(nodeId: string): Promise<{
   return readJson(res);
 }
 
+/** Session-scoped pending queue (capture / chat proposals). */
 export async function listProposals(sessionId: string): Promise<{
   proposals: Array<Record<string, unknown>>;
   count: number;
@@ -231,6 +232,21 @@ export async function listProposals(sessionId: string): Promise<{
     url(`/v1/knowledge/proposals?sessionId=${encodeURIComponent(sessionId)}`),
     { headers: authHeaders() }
   );
+  if (res.status === 404) {
+    return { proposals: [], count: 0 };
+  }
+  return readJson(res);
+}
+
+/** Global pending proposals (ingest, extract, any event) — full payload. */
+export async function listPendingProposals(): Promise<{
+  proposals: Array<Record<string, unknown>>;
+  count: number;
+  status?: string;
+}> {
+  const res = await fetch(url(`/v1/knowledge/proposals?status=pending`), {
+    headers: authHeaders(),
+  });
   if (res.status === 404) {
     return { proposals: [], count: 0 };
   }
