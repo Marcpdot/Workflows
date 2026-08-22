@@ -5,6 +5,7 @@ import {
   getNode,
   getSession,
   getStatus,
+  listPendingProposals,
   listProposals,
   resolveProposal,
   searchNodes,
@@ -53,10 +54,22 @@ let workBusy = false;
 
 function escapeHtml(value: string): string {
   return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/&/g, "&")
+    .replace(/</g, "<")
+    .replace(/>/g, ">")
+    .replace(/"/g, """);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return undefined;
+}
+
+function strField(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  return undefined;
 }
 
 function pill(label: string, state: "ok" | "warn" | "down"): string {
@@ -237,14 +250,58 @@ function renderSearch(
   }
 }
 
-function proposalLabel(p: Record<string, unknown>): string {
-  if (typeof p.label === "string" && p.label.trim()) return p.label;
-  const payload = p.payload as Record<string, unknown> | undefined;
-  if (payload && typeof payload.label === "string") return payload.label;
-  if (payload && typeof payload.relation === "string") {
-    return `${payload.relation}`;
+function proposalPayload(p: Record<string, unknown>): Record<string, unknown> {
+  return asRecord(p.payload) ?? {};
+}
+
+function proposalHeadline(p: Record<string, unknown>): string {
+  const payload = proposalPayload(p);
+  const kind = strField(p.kind) ?? "proposal";
+  if (kind === "edge" || payload.relation != null) {
+    const relation = strField(payload.relation) ?? "related";
+    const from =
+      strField(payload.from) ??
+      strField(payload.fromId) ??
+      strField(payload.fromNodeId) ??
+      "?";
+    const to =
+      strField(payload.to) ??
+      strField(payload.toId) ??
+      strField(payload.toNodeId) ??
+      "?";
+    return `${from} —${relation}→ ${to}`;
   }
+  if (typeof p.label === "string" && p.label.trim()) return p.label.trim();
+  if (strField(payload.label)) return strField(payload.label)!;
   return String(p.id ?? "proposal");
+}
+
+function proposalMetaRows(p: Record<string, unknown>): Array<[string, string]> {
+  const payload = proposalPayload(p);
+  const rows: Array<[string, string]> = [];
+  const kind = strField(p.kind);
+  if (kind) rows.push(["kind", kind]);
+  const nodeType = strField(payload.type);
+  if (nodeType) rows.push(["type", nodeType]);
+  const description = strField(payload.description);
+  if (description) rows.push(["description", description]);
+  const relation = strField(payload.relation);
+  if (relation) rows.push(["relation", relation]);
+  const from =
+    strField(payload.from) ??
+    strField(payload.fromId) ??
+    strField(payload.fromNodeId);
+  if (from) rows.push(["from", from]);
+  const to =
+    strField(payload.to) ??
+    strField(payload.toId) ??
+    strField(payload.toNodeId);
+  if (to) rows.push(["to", to]);
+  const eventId = strField(p.eventId);
+  if (eventId) rows.push(["event", eventId]);
+  const method = strField(asRecord(payload.derivation)?.method);
+  if (method) rows.push(["derivation", method]);
+  return rows;
 }
 
 function renderProposals(items: Array<Record<string, unknown>>): void {
@@ -253,18 +310,35 @@ function renderProposals(items: Array<Record<string, unknown>>): void {
   if (items.length === 0) {
     const li = document.createElement("li");
     li.className = "muted";
-    li.textContent = "No pending proposals for this session.";
+    li.textContent = "No pending proposals.";
     proposalList.appendChild(li);
     return;
   }
   for (const p of items) {
     const id = String(p.id ?? "");
-    const kind = String(p.kind ?? payloadKind(p));
+    const kind = strField(p.kind) ?? "item";
+    const payload = proposalPayload(p);
+    const rows = proposalMetaRows(p);
+    const payloadJson = JSON.stringify(payload, null, 2);
     const li = document.createElement("li");
     li.className = "proposal";
     li.innerHTML = `
       <div class="kind">${escapeHtml(kind)}</div>
-      <div class="label">${escapeHtml(proposalLabel(p))}</div>
+      <div class="label">${escapeHtml(proposalHeadline(p))}</div>
+      <dl class="proposal-meta">
+        ${
+          rows
+            .map(
+              ([k, v]) =>
+                `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`
+            )
+            .join("")
+        }
+      </dl>
+      <details class="proposal-structure">
+        <summary>Structure (payload)</summary>
+        <pre class="proposal-payload">${escapeHtml(payloadJson)}</pre>
+      </details>
       <div class="id muted">${escapeHtml(id)}</div>
       <div class="actions">
         <button type="button" data-act="accept" data-id="${escapeHtml(id)}">Accept</button>
@@ -275,24 +349,24 @@ function renderProposals(items: Array<Record<string, unknown>>): void {
   }
 }
 
-function payloadKind(p: Record<string, unknown>): string {
-  const payload = p.payload as Record<string, unknown> | undefined;
-  return typeof payload?.type === "string" ? payload.type : "item";
-}
-
 async function refreshProposals(): Promise<void> {
   try {
-    const body = await listProposals(namespacedSessionId);
-    renderProposals(body.proposals ?? []);
-  } catch {
-    try {
-      const body = await listProposals(SESSION_ID);
-      renderProposals(body.proposals ?? []);
-    } catch (err) {
-      proposalList.innerHTML = `<li class="muted">${escapeHtml(
-        err instanceof Error ? err.message : "Proposals unavailable"
-      )}</li>`;
+    const global = await listPendingProposals();
+    if ((global.proposals?.length ?? 0) > 0) {
+      renderProposals(global.proposals);
+      return;
     }
+    const sessionBody = await listProposals(namespacedSessionId);
+    if ((sessionBody.proposals?.length ?? 0) > 0) {
+      renderProposals(sessionBody.proposals);
+      return;
+    }
+    const fallback = await listProposals(SESSION_ID);
+    renderProposals(fallback.proposals ?? []);
+  } catch (err) {
+    proposalList.innerHTML = `<li class="muted">${escapeHtml(
+      err instanceof Error ? err.message : "Proposals unavailable"
+    )}</li>`;
   }
 }
 
