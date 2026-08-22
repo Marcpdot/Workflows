@@ -82,7 +82,7 @@ body {
 
 .room-body {
   display: grid;
-  grid-template-columns: minmax(220px, 280px) 1fr minmax(240px, 300px);
+  grid-template-columns: minmax(220px, 280px) 1fr minmax(260px, 340px);
   min-height: 0;
   overflow: hidden;
 }
@@ -245,6 +245,58 @@ button:disabled {
   border-radius: 8px;
   padding: 0.65rem;
   margin-bottom: 0.6rem;
+}
+
+.proposal .label {
+  font-size: 0.9rem;
+  line-height: 1.35;
+  margin: 0.25rem 0 0.5rem;
+  word-break: break-word;
+}
+
+.proposal-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.55rem;
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.proposal-meta dt {
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.proposal-meta dd {
+  margin: 0;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.proposal-structure {
+  margin: 0.35rem 0 0.5rem;
+  font-size: 0.75rem;
+}
+
+.proposal-structure summary {
+  cursor: pointer;
+  color: var(--accent);
+  user-select: none;
+}
+
+.proposal-payload {
+  margin: 0.4rem 0 0;
+  max-height: 14rem;
+  overflow: auto;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 0.7rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .proposal .actions {
