@@ -1,10 +1,14 @@
 /**
  * Controlled tool loop: model → tool_calls → execute → append → model …
+ * Seeds explicit read_file intent from the user prompt so self-access does not
+ * depend on the model emitting perfect tool_call JSON.
  */
 
 import { parseToolCalls } from "./parseToolCalls.js";
+import { inferReadFileCallsFromUserPrompt } from "./recoverToolCalls.js";
 import type {
   ChatMessage,
+  ToolCall,
   ToolLoopOptions,
   ToolLoopResult,
   ToolLoopStep,
@@ -29,6 +33,48 @@ function formatToolResultMessage(
   return `Tool result for ${name} (id=${id}, ${status}):\n${capped}`;
 }
 
+function lastUserText(messages: ChatMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]!;
+    if (msg.role === "user" && msg.content?.trim()) return msg.content;
+  }
+  return "";
+}
+
+async function executeCalls(
+  calls: ToolCall[],
+  options: ToolLoopOptions,
+  messages: ChatMessage[],
+  steps: ToolLoopStep[],
+  modelOutputExperienceId?: string
+): Promise<void> {
+  const ctx = { workspaceRoot: options.workspaceRoot };
+  for (const call of calls) {
+    const toolCallExperienceId = await options.onToolCall?.(
+      call,
+      modelOutputExperienceId
+    );
+    const started = performance.now();
+    const result = await options.registry.execute(call.name, call.args, ctx);
+    const durationMs = Math.round(performance.now() - started);
+
+    const loopStep: ToolLoopStep = { call, result, durationMs };
+    steps.push(loopStep);
+    await options.onToolResult?.(loopStep, toolCallExperienceId || undefined);
+
+    messages.push({
+      role: "user",
+      content: formatToolResultMessage(
+        call.name,
+        call.id,
+        result.ok,
+        result.output,
+        result.error
+      ),
+    });
+  }
+}
+
 /**
  * Run the model/tool loop until the model stops requesting tools or maxSteps.
  */
@@ -42,7 +88,19 @@ export async function runToolLoop(
   let lastText = "";
 
   const tools = options.registry.list();
-  const ctx = { workspaceRoot: options.workspaceRoot };
+
+  // Deterministic self-read: user asked to read a concrete path → execute first.
+  const seeded = inferReadFileCallsFromUserPrompt(lastUserText(messages));
+  if (seeded.length > 0) {
+    messages.push({
+      role: "assistant",
+      content: JSON.stringify({
+        tool_calls: seeded.map((c) => ({ name: c.name, args: c.args })),
+        note: "seeded from user prompt (system self-access)",
+      }),
+    });
+    await executeCalls(seeded, options, messages, steps);
+  }
 
   for (let step = 1; step <= maxSteps; step++) {
     const response = await options.complete(messages, tools);
@@ -76,33 +134,13 @@ export async function runToolLoop(
         }),
     });
 
-    for (const call of calls) {
-      const toolCallExperienceId = await options.onToolCall?.(
-        call,
-        modelOutputExperienceId || undefined
-      );
-      const started = performance.now();
-      const result = await options.registry.execute(call.name, call.args, ctx);
-      const durationMs = Math.round(performance.now() - started);
-
-      const loopStep: ToolLoopStep = { call, result, durationMs };
-      steps.push(loopStep);
-      await options.onToolResult?.(
-        loopStep,
-        toolCallExperienceId || undefined
-      );
-
-      messages.push({
-        role: "user",
-        content: formatToolResultMessage(
-          call.name,
-          call.id,
-          result.ok,
-          result.output,
-          result.error
-        ),
-      });
-    }
+    await executeCalls(
+      calls,
+      options,
+      messages,
+      steps,
+      modelOutputExperienceId || undefined
+    );
   }
 
   return {
