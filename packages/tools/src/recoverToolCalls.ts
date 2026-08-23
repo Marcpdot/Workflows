@@ -10,7 +10,6 @@ import type { ToolCall } from "./types.js";
 const READ_VERB_RE =
   /\b(read|open|inspect|show|cat|les|åpne|inspiser|vis)\b/i;
 
-/** List / browse directory intent (EN + NO). */
 const LIST_VERB_RE =
   /\b(list|ls|dir|tree|contents?|inside|hvilke|innhold|hva finnes|what(?:'s| is) (?:in|inside)|show (?:me )?(?:the )?(?:files|dirs|directories|packages|contents?))\b/i;
 
@@ -20,25 +19,24 @@ const EXISTS_RE =
 const SEARCH_VERB_RE =
   /\b(search|find|grep|locate|søk|finn)\b/i;
 
-/** "Where is X defined/resolved" without saying search. */
 const WHERE_IS_RE =
   /\b(where\s+is|where\s+does|hvor\s+(?:er|defineres|resolves?))\b/i;
 
 const DEFINED_RE =
-  /\b(defined|resolved|implemented|declared|defineres|resolves)\b/i;
+  /\b(defined|resolved|implemented|declared|defineres|resolves|owns?)\b/i;
 
-/** Workspace-relative paths that look like repo files. */
+const SEARCH_STOP =
+  /^(where|which|what|when|that|this|from|with|into|about|the|for|and|repo|code|file|files|package|packages|defined|resolved)$/i;
+
 const PATH_RE =
   /(?:^|\s|[`"'(])((?:packages\/|apps\/|docs\/|src\/|scripts\/|\.?\/?)?[\w./-]+\.(?:md|ts|tsx|js|mjs|cjs|json|yml|yaml|toml|txt|css|html))(?:$|\s|[`"')])/gi;
 
-/** Directory-like paths (packages/foo, packages/foo/src, docs, …). */
 const DIR_PATH_RE =
   /(?:^|\s|[`"'(?])((?:packages\/|apps\/|docs\/|src\/|scripts\/)[\w./-]*)(?:$|\s|[`"')?,.!])/gi;
 
 const PACKAGE_NAME_RE =
   /\bpackages\/([a-z][\w.-]*(?:\/[\w.-]+)*)\b/gi;
 
-/** Known symbols → file to read when asked where/how they resolve. */
 const SYMBOL_READ: Array<{ re: RegExp; path: string }> = [
   {
     re: /\bOLLAMA_TIMEOUT_MS\b/,
@@ -54,7 +52,6 @@ const SYMBOL_READ: Array<{ re: RegExp; path: string }> = [
   },
 ];
 
-/** Soft aliases: spoken name → concrete path to read. */
 const READ_ALIASES: Array<{ re: RegExp; path: string }> = [
   {
     re: /\b(surface[- ]?readme|readme (?:for |to )?surface|surface package readme)\b/i,
@@ -91,7 +88,7 @@ function pushUnique(
   calls.push({ id: callId(prefix), name, args });
 }
 
-/** SCREAMING_SNAKE or clear CamelCase identifiers in the prompt. */
+/** SCREAMING_SNAKE env-style names. */
 export function extractSymbols(text: string): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
@@ -106,9 +103,21 @@ export function extractSymbols(text: string): string[] {
   return out;
 }
 
-/**
- * Pull read_file / list_dir style calls out of messy model text when JSON.parse fails.
- */
+/** camelCase / PascalCase identifiers (e.g. runToolLoop). */
+export function extractCamelIdents(text: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const re = /\b([a-z][a-zA-Z0-9]*[A-Z][a-zA-Z0-9]*)\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const s = m[1]!;
+    if (SEARCH_STOP.test(s) || seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out;
+}
+
 export function recoverToolCallsFromBrokenText(text: string): ToolCall[] {
   if (!text || !text.trim()) return [];
   const calls: ToolCall[] = [];
@@ -194,9 +203,6 @@ export function extractDirPaths(text: string): string[] {
   return paths;
 }
 
-/**
- * When the user explicitly asks to read/open a file path, force read_file.
- */
 export function inferReadFileCallsFromUserPrompt(prompt: string): ToolCall[] {
   if (!prompt || !prompt.trim()) return [];
   const calls: ToolCall[] = [];
@@ -213,10 +219,11 @@ export function inferReadFileCallsFromUserPrompt(prompt: string): ToolCall[] {
     }
   }
 
-  // Known symbols + where/read/how → concrete file
+  // Find/where/defined + known symbol → read the owning file
   const symbolAsk =
     WHERE_IS_RE.test(prompt) ||
     DEFINED_RE.test(prompt) ||
+    SEARCH_VERB_RE.test(prompt) ||
     READ_VERB_RE.test(prompt);
   if (symbolAsk) {
     for (const sym of SYMBOL_READ) {
@@ -235,9 +242,6 @@ export function inferReadFileCallsFromUserPrompt(prompt: string): ToolCall[] {
   return calls;
 }
 
-/**
- * list_dir when user asks to list / does X exist / what is inside packages/…
- */
 export function inferListDirCallsFromUserPrompt(prompt: string): ToolCall[] {
   if (!prompt || !prompt.trim()) return [];
   const calls: ToolCall[] = [];
@@ -285,15 +289,18 @@ export function inferListDirCallsFromUserPrompt(prompt: string): ToolCall[] {
   return calls;
 }
 
-/**
- * search_files when user asks to search/find, or "where is SYMBOL".
- */
 export function inferSearchCallsFromUserPrompt(prompt: string): ToolCall[] {
   if (!prompt || !prompt.trim()) return [];
   const calls: ToolCall[] = [];
   const seen = new Set<string>();
 
-  if (SEARCH_VERB_RE.test(prompt)) {
+  // Prefer real identifiers over stopwords ("Find where runToolLoop" → runToolLoop)
+  const idents = [
+    ...extractCamelIdents(prompt),
+    ...extractSymbols(prompt),
+  ];
+
+  if (SEARCH_VERB_RE.test(prompt) || WHERE_IS_RE.test(prompt)) {
     const quoted = prompt.match(
       /\b(?:search|find|grep|søk|finn)\b[\s\S]{0,30}?["'`]([^"'`]{2,80})["'`]/i
     );
@@ -305,41 +312,35 @@ export function inferSearchCallsFromUserPrompt(prompt: string): ToolCall[] {
         { query: quoted[1].trim() },
         "seed"
       );
-      return calls;
     }
 
-    const forTerm = prompt.match(
-      /\b(?:search|find|grep|søk|finn)\s+(?:the\s+repo\s+for\s+|for\s+|etter\s+)?([\w./-]{3,60})/i
-    );
-    if (forTerm?.[1] && !/^(the|repo|code|files|in)$/i.test(forTerm[1])) {
-      pushUnique(calls, seen, "search_files", { query: forTerm[1] }, "seed");
+    for (const id of idents) {
+      pushUnique(calls, seen, "search_files", { query: id }, "seed");
     }
-  }
 
-  // "Where is OLLAMA_TIMEOUT_MS resolved?" → search when no dedicated read hit yet
-  if (WHERE_IS_RE.test(prompt) || (DEFINED_RE.test(prompt) && WHERE_IS_RE.test(prompt))) {
-    for (const sym of extractSymbols(prompt)) {
-      pushUnique(calls, seen, "search_files", { query: sym }, "seed");
-    }
-  } else if (WHERE_IS_RE.test(prompt)) {
-    for (const sym of extractSymbols(prompt)) {
-      pushUnique(calls, seen, "search_files", { query: sym }, "seed");
-    }
-  }
-
-  // Always search SCREAMING_SNAKE on where-is
-  if (WHERE_IS_RE.test(prompt)) {
-    for (const sym of extractSymbols(prompt)) {
-      pushUnique(calls, seen, "search_files", { query: sym }, "seed");
+    if (calls.length === 0) {
+      const forTerm = prompt.match(
+        /\b(?:search|find|grep|søk|finn)\s+(?:the\s+repo\s+for\s+|for\s+|etter\s+)?([\w./-]{3,60})/i
+      );
+      if (
+        forTerm?.[1] &&
+        !SEARCH_STOP.test(forTerm[1]) &&
+        !/^(the|repo|code|files|in)$/i.test(forTerm[1])
+      ) {
+        pushUnique(
+          calls,
+          seen,
+          "search_files",
+          { query: forTerm[1] },
+          "seed"
+        );
+      }
     }
   }
 
   return calls;
 }
 
-/**
- * Unified workspace seed: read + list + search from natural user prompts.
- */
 export function inferWorkspaceToolCallsFromUserPrompt(
   prompt: string
 ): ToolCall[] {
