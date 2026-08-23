@@ -34,4 +34,9 @@ export {
   TOOLS_SYSTEM_ADDENDUM,
 } from "./schema.js";
 export { parseToolCalls } from "./parseToolCalls.js";
+export {
+  recoverToolCallsFromBrokenText,
+  inferReadFileCallsFromUserPrompt,
+  extractPaths,
+} from "./recoverToolCalls.js";
 export { runToolLoop } from "./loop.js";
