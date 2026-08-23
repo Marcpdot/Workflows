@@ -1,11 +1,11 @@
 /**
  * Controlled tool loop: model → tool_calls → execute → append → model …
- * Seeds explicit read_file intent from the user prompt so self-access does not
+ * Seeds workspace tool intent from the user prompt so self-access does not
  * depend on the model emitting perfect tool_call JSON.
  */
 
 import { parseToolCalls } from "./parseToolCalls.js";
-import { inferReadFileCallsFromUserPrompt } from "./recoverToolCalls.js";
+import { inferWorkspaceToolCallsFromUserPrompt } from "./recoverToolCalls.js";
 import type {
   ChatMessage,
   ToolCall,
@@ -27,7 +27,6 @@ function formatToolResultMessage(
   const body = ok
     ? output
     : `${error ?? "tool failed"}${output ? `\n${output}` : ""}`;
-  // Cap very large tool outputs so the next model turn stays usable.
   const capped =
     body.length > 12_000 ? body.slice(0, 12_000) + "\n…[truncated]" : body;
   return `Tool result for ${name} (id=${id}, ${status}):\n${capped}`;
@@ -89,8 +88,8 @@ export async function runToolLoop(
 
   const tools = options.registry.list();
 
-  // Deterministic self-read: user asked to read a concrete path → execute first.
-  const seeded = inferReadFileCallsFromUserPrompt(lastUserText(messages));
+  // Deterministic self-access: clear workspace intent → execute tools first.
+  const seeded = inferWorkspaceToolCallsFromUserPrompt(lastUserText(messages));
   if (seeded.length > 0) {
     messages.push({
       role: "assistant",
@@ -124,7 +123,6 @@ export async function runToolLoop(
       };
     }
 
-    // Record assistant turn (include text so the model sees its own call intent).
     messages.push({
       role: "assistant",
       content:
