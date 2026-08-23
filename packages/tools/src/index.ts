@@ -37,6 +37,10 @@ export { parseToolCalls } from "./parseToolCalls.js";
 export {
   recoverToolCallsFromBrokenText,
   inferReadFileCallsFromUserPrompt,
+  inferListDirCallsFromUserPrompt,
+  inferSearchCallsFromUserPrompt,
+  inferWorkspaceToolCallsFromUserPrompt,
   extractPaths,
+  extractDirPaths,
 } from "./recoverToolCalls.js";
 export { runToolLoop } from "./loop.js";
