@@ -18,7 +18,6 @@ export interface OllamaCliConfig {
   /**
    * Max time for a single completion (ms).
    * Default: OLLAMA_TIMEOUT_MS env or 600_000 (10 min).
-   * Tool loops need headroom on CPU / large local models.
    */
   timeoutMs?: number;
 }
@@ -77,21 +76,21 @@ export class OllamaCliClient implements ModelClient {
 
   private runOllama(model: string, prompt: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      const child = spawn(this.bin, ["run", model], {
-        stdio: ["pipe", "pipe", "pipe"],
+      // `ollama run <model> <prompt>` prints the reply to stdout.
+      // On Windows, shell is needed if bin is a bare name without path.
+      const child = spawn(this.bin, ["run", model, prompt], {
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+        env: process.env,
       });
 
       let stdout = "";
       let stderr = "";
-
-      child.stdout?.on("data", (chunk: Buffer) => {
-        stdout += chunk.toString("utf8");
-      });
-      child.stderr?.on("data", (chunk: Buffer) => {
-        stderr += chunk.toString("utf8");
-      });
+      let settled = false;
 
       const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
         child.kill("SIGTERM");
         reject(
           new Error(
@@ -100,26 +99,48 @@ export class OllamaCliClient implements ModelClient {
         );
       }, this.timeoutMs);
 
-      child.on("error", (err) => {
-        clearTimeout(timer);
-        reject(err);
+      child.stdout.setEncoding("utf8");
+      child.stderr.setEncoding("utf8");
+      child.stdout.on("data", (chunk: string) => {
+        stdout += chunk;
+      });
+      child.stderr.on("data", (chunk: string) => {
+        stderr += chunk;
       });
 
-      child.on("close", (code) => {
+      child.on("error", (err: NodeJS.ErrnoException) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
-        if (code !== 0 && !stdout.trim()) {
+        if (err.code === "ENOENT") {
           reject(
             new Error(
-              `Ollama CLI exited ${code} (model=${model}): ${stderr.trim() || "no output"}`
+              `Ollama CLI not found (bin="${this.bin}"). Install Ollama and ensure it is on PATH, or set OLLAMA_BIN.`
             )
           );
           return;
         }
-        resolve(stdout);
+        reject(err);
       });
 
-      child.stdin?.write(prompt);
-      child.stdin?.end();
+      child.on("close", (code) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (code !== 0) {
+          reject(
+            new Error(
+              `Ollama CLI exited with code ${code}: ${stderr.trim() || stdout.trim() || "no output"}`
+            )
+          );
+          return;
+        }
+        // Ollama may mix spinner/ansi; strip common control sequences.
+        const cleaned = stdout
+          .replace(/\u001b\[[0-9;]*[a-zA-Z]/g, "")
+          .replace(/\r/g, "");
+        resolve(cleaned);
+      });
     });
   }
 }
