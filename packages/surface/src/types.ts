@@ -1,4 +1,20 @@
-export const SESSION_ID = "surface-main";
+/** Default when URL has no ?session= */
+const DEFAULT_SESSION_ID = "surface-main";
+
+/** Logical session id for chat / knowledge; overridable via ?session= */
+export function resolveSessionId(): string {
+  if (typeof window === "undefined") return DEFAULT_SESSION_ID;
+  try {
+    const q = new URLSearchParams(window.location.search).get("session");
+    const id = q?.trim();
+    if (id && /^[\w.-]{1,64}$/.test(id)) return id;
+  } catch {
+    // ignore
+  }
+  return DEFAULT_SESSION_ID;
+}
+
+export const SESSION_ID = resolveSessionId();
 
 export interface StatusResponse {
   ok: true;
