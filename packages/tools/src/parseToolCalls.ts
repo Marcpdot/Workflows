@@ -9,6 +9,7 @@ import {
   extractJsonCandidates,
   lenientJsonRepair,
 } from "./jsonExtract.js";
+import { recoverToolCallsFromBrokenText } from "./recoverToolCalls.js";
 import type { ToolCall } from "./types.js";
 
 function asArgs(value: unknown): Record<string, unknown> {
@@ -79,6 +80,7 @@ function callsFromParsed(parsed: unknown): ToolCall[] {
 
 /**
  * Parse tool calls from assistant text. Returns [] if none found or parse fails.
+ * Falls back to regex recovery for common broken LLM JSON.
  */
 export function parseToolCalls(text: string): ToolCall[] {
   if (!text || !text.trim()) return [];
@@ -95,5 +97,5 @@ export function parseToolCalls(text: string): ToolCall[] {
     }
   }
 
-  return [];
+  return recoverToolCallsFromBrokenText(text);
 }
