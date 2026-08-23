@@ -88,7 +88,6 @@ function pushUnique(
   calls.push({ id: callId(prefix), name, args });
 }
 
-/** SCREAMING_SNAKE env-style names. */
 export function extractSymbols(text: string): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
@@ -103,7 +102,6 @@ export function extractSymbols(text: string): string[] {
   return out;
 }
 
-/** camelCase / PascalCase identifiers (e.g. runToolLoop). */
 export function extractCamelIdents(text: string): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
@@ -219,17 +217,10 @@ export function inferReadFileCallsFromUserPrompt(prompt: string): ToolCall[] {
     }
   }
 
-  // Find/where/defined + known symbol → read the owning file
-  const symbolAsk =
-    WHERE_IS_RE.test(prompt) ||
-    DEFINED_RE.test(prompt) ||
-    SEARCH_VERB_RE.test(prompt) ||
-    READ_VERB_RE.test(prompt);
-  if (symbolAsk) {
-    for (const sym of SYMBOL_READ) {
-      if (sym.re.test(prompt)) {
-        pushUnique(calls, seen, "read_file", { path: sym.path }, "seed");
-      }
+  // Known symbols: always seed the owning file when the symbol is mentioned.
+  for (const sym of SYMBOL_READ) {
+    if (sym.re.test(prompt)) {
+      pushUnique(calls, seen, "read_file", { path: sym.path }, "seed");
     }
   }
 
@@ -294,7 +285,6 @@ export function inferSearchCallsFromUserPrompt(prompt: string): ToolCall[] {
   const calls: ToolCall[] = [];
   const seen = new Set<string>();
 
-  // Prefer real identifiers over stopwords ("Find where runToolLoop" → runToolLoop)
   const idents = [
     ...extractCamelIdents(prompt),
     ...extractSymbols(prompt),
