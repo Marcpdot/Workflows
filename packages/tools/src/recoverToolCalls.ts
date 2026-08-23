@@ -10,8 +10,9 @@ import type { ToolCall } from "./types.js";
 const READ_VERB_RE =
   /\b(read|open|inspect|show|cat|les|åpne|inspiser|vis)\b/i;
 
+/** List / browse directory intent (EN + NO). */
 const LIST_VERB_RE =
-  /\b(list|ls|dir|tree|hvilke|hva finnes|what(?:'s| is) in|show (?:me )?(?:the )?(?:files|dirs|directories|packages))\b/i;
+  /\b(list|ls|dir|tree|contents?|inside|hvilke|innhold|hva finnes|what(?:'s| is) (?:in|inside)|show (?:me )?(?:the )?(?:files|dirs|directories|packages|contents?))\b/i;
 
 const EXISTS_RE =
   /\b(does|is there|finnes|exists?)\b[\s\S]{0,40}?\b(packages\/[\w./-]+|[\w.-]+\/(?:src|README))?/i;
@@ -25,10 +26,10 @@ const PATH_RE =
 
 /** Directory-like paths (packages/foo, packages/foo/src, docs, …). */
 const DIR_PATH_RE =
-  /(?:^|\s|[`"'(])((?:packages\/|apps\/|docs\/|src\/|scripts\/)[\w./-]*)(?:$|\s|[`"')?,.!])/gi;
+  /(?:^|\s|[`"'(?])((?:packages\/|apps\/|docs\/|src\/|scripts\/)[\w./-]*)(?:$|\s|[`"')?,.!])/gi;
 
 const PACKAGE_NAME_RE =
-  /\bpackages\/([a-z][\w-]*)\b/gi;
+  /\bpackages\/([a-z][\w.-]*(?:\/[\w.-]+)*)\b/gi;
 
 /** Soft aliases: spoken name → concrete path to read. */
 const READ_ALIASES: Array<{ re: RegExp; path: string }> = [
@@ -139,16 +140,15 @@ export function extractDirPaths(text: string): string[] {
   let m: RegExpExecArray | null;
   while ((m = DIR_PATH_RE.exec(text)) !== null) {
     let p = m[1]!.replace(/\/+$/, "").replace(/^[`"'(]+|[`"')]+$/g, "");
-    // Drop if it looks like a file path (has extension)
     if (/\.[a-z]{1,5}$/i.test(p)) continue;
     if (!p || seen.has(p)) continue;
     seen.add(p);
     paths.push(p);
   }
-  // packages/foo from prose without trailing slash
   PACKAGE_NAME_RE.lastIndex = 0;
   while ((m = PACKAGE_NAME_RE.exec(text)) !== null) {
-    const p = `packages/${m[1]}`;
+    const p = `packages/${m[1]}`.replace(/\/+$/, "");
+    if (/\.[a-z]{1,5}$/i.test(p)) continue;
     if (seen.has(p)) continue;
     seen.add(p);
     paths.push(p);
@@ -165,7 +165,12 @@ export function inferReadFileCallsFromUserPrompt(prompt: string): ToolCall[] {
   const seen = new Set<string>();
 
   for (const alias of READ_ALIASES) {
-    if (alias.re.test(prompt) && (READ_VERB_RE.test(prompt) || /\breadme\b/i.test(prompt) || /contract/i.test(prompt))) {
+    if (
+      alias.re.test(prompt) &&
+      (READ_VERB_RE.test(prompt) ||
+        /\breadme\b/i.test(prompt) ||
+        /contract/i.test(prompt))
+    ) {
       pushUnique(calls, seen, "read_file", { path: alias.path }, "seed");
     }
   }
@@ -180,40 +185,50 @@ export function inferReadFileCallsFromUserPrompt(prompt: string): ToolCall[] {
 }
 
 /**
- * list_dir when user asks to list / does X exist / packages under …
+ * list_dir when user asks to list / does X exist / what is inside packages/…
  */
 export function inferListDirCallsFromUserPrompt(prompt: string): ToolCall[] {
   if (!prompt || !prompt.trim()) return [];
   const calls: ToolCall[] = [];
   const seen = new Set<string>();
 
+  const dirPaths = extractDirPaths(prompt);
+
   const wantsList =
     LIST_VERB_RE.test(prompt) ||
     EXISTS_RE.test(prompt) ||
     /\btop-level packages\b/i.test(prompt) ||
-    /\bpackages\/?\s+under\b/i.test(prompt);
+    /\bpackages\/?\s+under\b/i.test(prompt) ||
+    // "What is inside packages/foo" — path present + content question
+    (dirPaths.length > 0 &&
+      /\b(what|what's|whats|hva|which|innhold)\b/i.test(prompt));
 
   if (!wantsList) return [];
 
-  // Explicit "list packages" / top-level packages
   if (
     /\b(list|show).{0,40}\bpackages\b/i.test(prompt) ||
     /\btop-level packages\b/i.test(prompt) ||
-    /\bpackages\/?\s*$/i.test(prompt.trim()) ||
     /\bunder packages\/?\b/i.test(prompt)
   ) {
     pushUnique(calls, seen, "list_dir", { path: "packages" }, "seed");
   }
 
-  for (const path of extractDirPaths(prompt)) {
+  for (const path of dirPaths) {
     pushUnique(calls, seen, "list_dir", { path }, "seed");
   }
 
-  // "does packages/voice exist" without other dir hits
   if (calls.length === 0) {
-    const voice = prompt.match(/\bpackages\/([a-z][\w-]*)\b/i);
-    if (voice) {
-      pushUnique(calls, seen, "list_dir", { path: `packages/${voice[1]}` }, "seed");
+    const nested = prompt.match(
+      /\bpackages\/([a-z][\w.-]*(?:\/[\w.-]+)*)\b/i
+    );
+    if (nested) {
+      pushUnique(
+        calls,
+        seen,
+        "list_dir",
+        { path: `packages/${nested[1]}`.replace(/\/+$/, "") },
+        "seed"
+      );
     }
   }
 
@@ -228,7 +243,6 @@ export function inferSearchCallsFromUserPrompt(prompt: string): ToolCall[] {
   const calls: ToolCall[] = [];
   const seen = new Set<string>();
 
-  // search for "foo" or search for foo
   const quoted = prompt.match(
     /\b(?:search|find|grep|søk|finn)\b[\s\S]{0,30}?["'`]([^"'`]{2,80})["'`]/i
   );
@@ -249,7 +263,6 @@ export function inferSearchCallsFromUserPrompt(prompt: string): ToolCall[] {
 
 /**
  * Unified workspace seed: read + list + search from natural user prompts.
- * Prefer specific file reads; also open list/search when intent is clear.
  */
 export function inferWorkspaceToolCallsFromUserPrompt(
   prompt: string
