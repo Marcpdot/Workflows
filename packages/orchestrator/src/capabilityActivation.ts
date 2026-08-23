@@ -193,8 +193,15 @@ const PROVENANCE_RE =
   /\b(source|sources|provenance|lineage|evidence|citation|confidence|trace|why do (?:we|you) know|kilde|kilder|opphav|proveniens|linje|bevis|evidens|sikkerhet|sporbar|hvorfor vet)\b/i;
 const LONG_TERM_RE =
   /\b(remember about me|my preference|my name|what do you know about me|long[- ]term memory|husk om meg|min preferanse|navnet mitt|hva vet du om meg|langtidsminne)\b/i;
+/**
+ * Tool-loop signal. Must catch self-read / locate-in-repo prompts, not only
+ * explicit "read file" verbs — otherwise seed never runs (e.g. "Where is X defined?").
+ */
 const TOOL_RE =
-  /\b(read|inspect|list|search|open|run|execute|command|shell|file|directory|workspace|repository|repo|les|inspiser|list|søk|åpne|kjør|kommando|fil|mappe|arbeidsområde)\b/i;
+  /\b(read|inspect|list|search|find|locate|open|run|execute|command|shell|file|directory|workspace|repository|repo|package|packages|path|source|code|defined|define|definition|implement(?:ed|ation)?|where|which package|les|inspiser|søk|finn|åpne|kjør|kommando|fil|mappe|arbeidsområde|definer(?:t|es)?)\b/i;
+/** Repo-relative paths almost always mean workspace tools. */
+const REPO_PATH_RE =
+  /\b(?:packages|apps|docs|src|scripts)\/[\w./-]+/i;
 
 const CORRECTION_RE =
   /\b(actually|correction|correct(?:ion|ing)?|instead|not .{1,80} but|faktisk|rettelse|korriger(?:ing|er|te)?|ikke .{1,80} men)\b/i;
@@ -204,7 +211,7 @@ export function detectActivationSignals(input: string): ActivationSignals {
     storedUnderstanding: STORED_UNDERSTANDING_RE.test(input),
     provenance: PROVENANCE_RE.test(input),
     longTermMemory: LONG_TERM_RE.test(input),
-    tools: TOOL_RE.test(input),
+    tools: TOOL_RE.test(input) || REPO_PATH_RE.test(input),
     correction: CORRECTION_RE.test(input),
   };
 }
