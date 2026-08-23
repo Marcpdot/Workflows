@@ -93,51 +93,42 @@ function renderPresence(status: StatusResponse | null, live: boolean): void {
   }
   const parts = [
     pill(status.degraded ? "degraded" : "system here", status.degraded ? "warn" : "ok"),
-    pill(status.busy ? "busy" : "idle", status.busy ? "warn" : "ok"),
-  ];
-  if (status.knowledge.configured) {
-    parts.push(
-      pill(
-        status.knowledge.ok
-          ? `knowledge ${status.knowledge.backend || "ok"}`
+    pill(
+      status.busy || workBusy ? "busy" : "idle",
+      status.busy || workBusy ? "warn" : "ok"
+    ),
+    pill(
+      !status.knowledge.configured
+        ? "knowledge off"
+        : status.knowledge.ok
+          ? `knowledge ${status.knowledge.backend ?? "up"}`
           : "knowledge down",
-        status.knowledge.ok ? "ok" : "down"
-      )
-    );
-  }
-  parts.push(
+      !status.knowledge.configured
+        ? "warn"
+        : status.knowledge.ok
+          ? "ok"
+          : "down"
+    ),
     pill(
       status.model.local.ok
         ? `local ${status.model.local.model}`
-        : "local down",
+        : "local model down",
       status.model.local.ok ? "ok" : "down"
-    )
-  );
-  parts.push(
+    ),
     pill(
-      status.model.frontier.configured ? "frontier on" : "frontier off",
+      status.model.frontier.configured
+        ? `frontier ${status.model.frontier.model}`
+        : "frontier off",
       status.model.frontier.configured ? "ok" : "warn"
-    )
-  );
-  parts.push(
+    ),
     pill(
-      status.voice.enabled ? `voice ${status.voice.sttProvider}` : "voice off",
+      status.voice.enabled
+        ? `voice ${status.voice.sttProvider}`
+        : "voice off",
       status.voice.enabled ? "ok" : "warn"
-    )
-  );
+    ),
+  ];
   presencePills.innerHTML = parts.join("");
-}
-
-function setWorkPhase(phase: WorkPhase, detail?: string): void {
-  const labels: Record<WorkPhase, string> = {
-    idle: "Ready when you are.",
-    accepted: "Accepted.",
-    running: "Working…",
-    complete: "Done.",
-    error: detail || "Error",
-  };
-  workStatus.textContent = labels[phase];
-  workStatus.className = phase === "error" ? "error" : "muted";
 }
 
 function currentFocus(): ChatFocus | undefined {
@@ -146,6 +137,7 @@ function currentFocus(): ChatFocus | undefined {
     knowledgeId: selected.id,
     nodeIds: [selected.id],
     labels: selected.label ? [selected.label] : undefined,
+    hops: 1,
   };
   if (selected.type === "project") {
     focus.projectId = selected.id;
@@ -219,22 +211,26 @@ function neighborLabel(nodes: KnowledgeNode[], id: string): string {
 function renderNeighborhood(
   rootId: string,
   nodes: KnowledgeNode[],
-  edges: Array<{ id: string; fromNodeId: string; relation: string; toNodeId: string }>
+  edges: Array<{ fromNodeId: string; relation: string; toNodeId: string }>
 ): void {
+  const others = nodes.filter((n) => n.id !== rootId);
+  if (others.length === 0 && edges.length === 0) {
+    neighborhood.hidden = true;
+    return;
+  }
   neighborhood.hidden = false;
   neighborhoodList.innerHTML = "";
-  const others = nodes.filter((n) => n.id !== rootId);
-  for (const e of edges) {
-    const otherId = e.fromNodeId === rootId ? e.toNodeId : e.fromNodeId;
+  for (const edge of edges) {
+    const otherId = edge.fromNodeId === rootId ? edge.toNodeId : edge.fromNodeId;
     const li = document.createElement("li");
     li.innerHTML = `<button type="button" class="object-btn" data-id="${escapeHtml(otherId)}">
-      <span class="kind">${escapeHtml(e.relation)}</span>
+      <span class="kind">${escapeHtml(edge.relation)}</span>
       <span>${escapeHtml(neighborLabel(nodes, otherId))}</span>
     </button>`;
     neighborhoodList.appendChild(li);
   }
   for (const node of others) {
-    if (edges.some((ed) => ed.fromNodeId === node.id || ed.toNodeId === node.id)) continue;
+    if (edges.some((e) => e.fromNodeId === node.id || e.toNodeId === node.id)) continue;
     const li = document.createElement("li");
     li.innerHTML = `<button type="button" class="object-btn" data-id="${escapeHtml(node.id)}">
       <span class="kind">${escapeHtml(node.type)}</span>
@@ -242,12 +238,6 @@ function renderNeighborhood(
     </button>`;
     neighborhoodList.appendChild(li);
   }
-  neighborhoodList.querySelectorAll("[data-id]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const id = (btn as HTMLElement).dataset.id;
-      if (id) void openNode(id);
-    });
-  });
 }
 
 async function openNode(id: string): Promise<void> {
@@ -256,7 +246,7 @@ async function openNode(id: string): Promise<void> {
   renderStage();
   try {
     const neigh = await getNeighborhood(id);
-    renderNeighborhood(id, neigh.nodes as KnowledgeNode[], neigh.edges);
+    renderNeighborhood(id, neigh.nodes, neigh.edges);
   } catch (err) {
     neighborhood.hidden = true;
     searchHint.textContent =
@@ -264,47 +254,73 @@ async function openNode(id: string): Promise<void> {
   }
 }
 
-function renderSearch(nodes: KnowledgeNode[], emptyMsg: string): void {
+function renderSearch(nodes: KnowledgeNode[], emptyMessage: string): void {
   searchResults.innerHTML = "";
   if (nodes.length === 0) {
     const li = document.createElement("li");
     li.className = "muted";
-    li.textContent = emptyMsg;
+    li.textContent = emptyMessage;
     searchResults.appendChild(li);
     return;
   }
-  for (const n of nodes) {
+  for (const node of nodes) {
     const li = document.createElement("li");
-    li.innerHTML = `<button type="button" class="object-btn" data-id="${escapeHtml(n.id)}">
-      <span class="kind">${escapeHtml(n.type)} · ${escapeHtml(n.status)}</span>
-      <span>${escapeHtml(n.label)}</span>
+    li.innerHTML = `<button type="button" class="object-btn" data-id="${escapeHtml(node.id)}">
+      <span class="kind">${escapeHtml(node.type)}</span>
+      <span>${escapeHtml(node.label)}</span>
     </button>`;
     searchResults.appendChild(li);
   }
-  searchResults.querySelectorAll("[data-id]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const id = (btn as HTMLElement).dataset.id;
-      if (id) void openNode(id);
-    });
-  });
 }
 
-function proposalRows(p: Record<string, unknown>): Array<[string, string]> {
+function proposalPayload(p: Record<string, unknown>): Record<string, unknown> {
+  return asRecord(p.payload) ?? {};
+}
+
+function proposalHeadline(p: Record<string, unknown>): string {
+  const payload = proposalPayload(p);
+  const kind = strField(p.kind) ?? "proposal";
+  if (kind === "edge" || payload.relation != null) {
+    const relation = strField(payload.relation) ?? "related";
+    const from =
+      strField(payload.from) ??
+      strField(payload.fromId) ??
+      strField(payload.fromNodeId) ??
+      "?";
+    const to =
+      strField(payload.to) ??
+      strField(payload.toId) ??
+      strField(payload.toNodeId) ??
+      "?";
+    return `${from} —${relation}→ ${to}`;
+  }
+  if (typeof p.label === "string" && p.label.trim()) return p.label.trim();
+  if (strField(payload.label)) return strField(payload.label)!;
+  return String(p.id ?? "proposal");
+}
+
+function proposalMetaRows(p: Record<string, unknown>): Array<[string, string]> {
+  const payload = proposalPayload(p);
   const rows: Array<[string, string]> = [];
   const kind = strField(p.kind);
   if (kind) rows.push(["kind", kind]);
-  const type = strField(p.type);
-  if (type) rows.push(["type", type]);
-  const relation = strField(p.relation);
+  const nodeType = strField(payload.type);
+  if (nodeType) rows.push(["type", nodeType]);
+  const description = strField(payload.description);
+  if (description) rows.push(["description", description]);
+  const relation = strField(payload.relation);
   if (relation) rows.push(["relation", relation]);
-  const from = strField(p.from) || strField(p.fromNodeId);
+  const from =
+    strField(payload.from) ??
+    strField(payload.fromId) ??
+    strField(payload.fromNodeId);
   if (from) rows.push(["from", from]);
-  const to = strField(p.to) || strField(p.toNodeId);
+  const to =
+    strField(payload.to) ?? strField(payload.toId) ?? strField(payload.toNodeId);
   if (to) rows.push(["to", to]);
   const eventId = strField(p.eventId);
   if (eventId) rows.push(["event", eventId]);
-  const payload = asRecord(p.payload);
-  const method = strField(asRecord(payload?.derivation)?.method);
+  const method = strField(asRecord(payload.derivation)?.method);
   if (method) rows.push(["derivation", method]);
   return rows;
 }
@@ -323,90 +339,148 @@ function renderProposals(items: Array<Record<string, unknown>>): void {
   for (const p of items) {
     const id = String(p.id ?? "");
     const kind = strField(p.kind) ?? "item";
-    const label = strField(p.label) ?? id;
-    const payload = asRecord(p.payload);
-    const rows = proposalRows(p);
+    const payload = proposalPayload(p);
+    const rows = proposalMetaRows(p);
+    const payloadJson = JSON.stringify(payload, null, 2);
     const li = document.createElement("li");
     li.className = "proposal";
     li.innerHTML = `
       <div class="kind">${escapeHtml(kind)}</div>
-      <div class="label">${escapeHtml(label)}</div>
-      <p class="id muted">${escapeHtml(id)}</p>
-      ${
-        rows.length
-          ? `<dl class="proposal-meta">${rows
-              .map(
-                ([k, v]) =>
-                  `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`
-              )
-              .join("")}</dl>`
-          : ""
-      }
-      ${
-        payload
-          ? `<details class="proposal-structure"><summary>Payload</summary><pre class="proposal-payload">${escapeHtml(
-              JSON.stringify(payload, null, 2)
-            )}</pre></details>`
-          : ""
-      }
+      <div class="label">${escapeHtml(proposalHeadline(p))}</div>
+      <dl class="proposal-meta">
+        ${
+          rows
+            .map(
+              ([k, v]) =>
+                `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`
+            )
+            .join("")
+        }
+      </dl>
+      <details class="proposal-structure">
+        <summary>Structure (payload)</summary>
+        <pre class="proposal-payload">${escapeHtml(payloadJson)}</pre>
+      </details>
+      <div class="id muted">${escapeHtml(id)}</div>
       <div class="actions">
         <button type="button" data-act="accept" data-id="${escapeHtml(id)}">Accept</button>
         <button type="button" data-act="reject" data-id="${escapeHtml(id)}">Reject</button>
-      </div>`;
+      </div>
+    `;
     proposalList.appendChild(li);
   }
-  proposalList.querySelectorAll("[data-act]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const el = btn as HTMLElement;
-      const act = el.dataset.act as "accept" | "reject";
-      const id = el.dataset.id;
-      if (!id) return;
-      try {
-        await resolveProposal(id, act);
-        await refreshProposals();
-        if (selected && act === "accept") await openNode(selected.id);
-      } catch (err) {
-        searchHint.textContent =
-          err instanceof Error ? err.message : String(err);
-      }
-    });
-  });
 }
 
 async function refreshProposals(): Promise<void> {
   try {
-    let body = await listPendingProposals();
-    if (!body.proposals?.length) {
-      body = await listProposals(namespacedSessionId);
+    const global = await listPendingProposals();
+    if ((global.proposals?.length ?? 0) > 0) {
+      renderProposals(global.proposals);
+      return;
     }
-    renderProposals(body.proposals || []);
-  } catch {
-    renderProposals([]);
+    const sessionBody = await listProposals(namespacedSessionId);
+    if ((sessionBody.proposals?.length ?? 0) > 0) {
+      renderProposals(sessionBody.proposals);
+      return;
+    }
+    const fallback = await listProposals(SESSION_ID);
+    renderProposals(fallback.proposals ?? []);
+  } catch (err) {
+    proposalList.innerHTML = `<li class="muted">${escapeHtml(
+      err instanceof Error ? err.message : "Proposals unavailable"
+    )}</li>`;
   }
 }
 
+function setWorkPhase(phase: WorkPhase, detail?: string): void {
+  const labels: Record<WorkPhase, string> = {
+    idle: "Ready when you are.",
+    accepted: "Turn accepted…",
+    running: "Working…",
+    complete: "Done.",
+    error: "Error.",
+  };
+  workStatus.textContent = detail ? `${labels[phase]} ${detail}` : labels[phase];
+  workStatus.className = phase === "error" ? "error" : "muted";
+}
+
 function renderWorkDone(done: ChatDone): void {
-  setWorkPhase(done.error ? "error" : "complete", done.error);
+  setWorkPhase("complete", done.latencyMs != null ? `${done.latencyMs} ms` : "");
   workReply.hidden = false;
-  workReply.textContent = done.reply || done.error || "(empty)";
-  workMeta.hidden = false;
-  workMeta.innerHTML = "";
+  workReply.textContent = done.reply || "(empty reply)";
   const rows: Array<[string, string]> = [];
   if (done.model) rows.push(["model", done.model]);
   if (done.provider) rows.push(["provider", done.provider]);
-  if (done.latencyMs != null) rows.push(["latency", `${done.latencyMs}ms`]);
   if (done.routing?.reason) rows.push(["route", done.routing.reason]);
-  for (const [k, v] of rows) {
-    workMeta.innerHTML += `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`;
+  if (done.sessionId) {
+    namespacedSessionId = done.sessionId;
+    rows.push(["session", done.sessionId]);
   }
+  if (rows.length === 0) {
+    workMeta.hidden = true;
+    return;
+  }
+  workMeta.hidden = false;
+  workMeta.innerHTML = rows
+    .map(
+      ([k, v]) =>
+        `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`
+    )
+    .join("");
 }
 
 searchForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (!knowledgeReadOk) return;
+  if (!knowledgeReadOk) {
+    searchHint.textContent =
+      "Knowledge read is off. Start serve with KNOWLEDGE_HTTP_READ=true.";
+    return;
+  }
+  searchHint.textContent = "Searching…";
   try {
-    const body = await searchNodes(searchLabel.value, searchType.value || undefined);
-    renderSearch(body.nodes, "No matches.");
+    const body = await searchNodes(searchLabel.value, searchType.value);
+    knowledgeReadOk = true;
+    searchHint.textContent = `${body.count} accepted object${body.count === 1 ? "" : "s"}`;
+    renderSearch(body.nodes ?? [], "No accepted objects match.");
+  } catch (err) {
+    knowledgeReadOk = false;
+    searchHint.textContent =
+      err instanceof Error
+        ? err.message
+        : "Search failed. Is KNOWLEDGE_HTTP_READ=true?";
+    renderSearch([], "");
+  }
+});
+
+searchResults.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest("button[data-id]");
+  const id = btn?.getAttribute("data-id");
+  if (id)
+    void openNode(id).catch((err) => {
+      searchHint.textContent = err instanceof Error ? err.message : String(err);
+    });
+});
+
+neighborhoodList.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest("button[data-id]");
+  const id = btn?.getAttribute("data-id");
+  if (id)
+    void openNode(id).catch((err) => {
+      searchHint.textContent = err instanceof Error ? err.message : String(err);
+    });
+});
+
+proposalList.addEventListener("click", async (e) => {
+  const btn = (e.target as HTMLElement).closest("button[data-act]");
+  if (!btn) return;
+  const id = btn.getAttribute("data-id");
+  const act = btn.getAttribute("data-act");
+  if (!id || (act !== "accept" && act !== "reject")) return;
+  btn.setAttribute("disabled", "true");
+  try {
+    await resolveProposal(id, act);
+    await refreshProposals();
+    if (selected && act === "accept") await openNode(selected.id);
   } catch (err) {
     searchHint.textContent = err instanceof Error ? err.message : String(err);
   }
@@ -414,28 +488,28 @@ searchForm.addEventListener("submit", async (e) => {
 
 workForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (workBusy) return;
   const prompt = promptEl.value.trim();
-  if (!prompt) return;
+  if (!prompt || workBusy) return;
   workBusy = true;
   workBtn.disabled = true;
-  setWorkPhase("running");
   workReply.hidden = true;
   workMeta.hidden = true;
+  setWorkPhase("accepted");
   try {
-    const done = await streamChat({
-      prompt,
-      sessionId: SESSION_ID,
-      focus: currentFocus(),
-      onEvent: (event, data) => {
-        if (event === "token" && data && typeof data === "object") {
-          const text = strField((data as { text?: unknown }).text);
-          if (text) {
-            workReply.hidden = false;
-            workReply.textContent = text;
-          }
+    const done = await streamChat(prompt, currentFocus(), (event, data) => {
+      if (event === "status" && data && typeof data === "object") {
+        const phase = (data as { phase?: string }).phase;
+        if (phase === "accepted" || phase === "running" || phase === "complete") {
+          setWorkPhase(phase);
         }
-      },
+      }
+      if (event === "token" && data && typeof data === "object") {
+        const text = (data as { text?: string }).text;
+        if (text) {
+          workReply.hidden = false;
+          workReply.textContent = text;
+        }
+      }
     });
     renderWorkDone(done);
     promptEl.value = "";
