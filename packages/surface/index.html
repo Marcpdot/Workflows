@@ -3,23 +3,32 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Workflows - work surface</title>
+    <title>Workflows</title>
   </head>
   <body>
     <div class="room">
       <header class="presence" id="presence">
         <div class="presence-brand">
-          <strong>Work surface</strong>
-          <span class="muted">one room, same brain</span>
+          <strong class="system-name">Workflows</strong>
+          <span class="muted presence-tagline">system present</span>
         </div>
         <div class="presence-pills" id="presencePills">
           <span class="pill down">system down</span>
         </div>
+        <div class="presence-actions">
+          <button type="button" class="ghost" id="toggleFind" aria-expanded="false">Find</button>
+          <button type="button" class="ghost" id="toggleProposals" aria-expanded="false">
+            Proposals <span class="badge" id="proposalBadge">0</span>
+          </button>
+        </div>
       </header>
 
-      <div class="room-body">
-        <section class="panel find" aria-label="Find objects">
-          <h2>Find</h2>
+      <div class="room-shell">
+        <aside class="drawer find" id="findDrawer" hidden aria-label="Find objects">
+          <div class="drawer-head">
+            <h2>Find</h2>
+            <button type="button" class="ghost" id="closeFind" aria-label="Close find">×</button>
+          </div>
           <form id="searchForm" class="search-row">
             <input
               id="searchLabel"
@@ -38,51 +47,51 @@
             </select>
             <button type="submit">Search</button>
           </form>
-          <p class="hint muted" id="searchHint">
-            Pull an object into the room. Knowledge read needs
-            <code>KNOWLEDGE_HTTP_READ=true</code>.
-          </p>
+          <p class="hint muted" id="searchHint">Pull into the room when needed.</p>
           <ul id="searchResults" class="object-list"></ul>
-        </section>
+        </aside>
 
-        <section class="panel stage" aria-label="Object stage">
-          <h2>On stage</h2>
-          <div id="stageEmpty" class="empty">
-            No object on stage. Search and open one — the room stays put.
+        <main class="center" aria-label="System and work">
+          <div class="focus-strip" id="focusStrip" hidden>
+            <span class="muted">Focus</span>
+            <article id="stageObject" class="stage-object"></article>
+            <button type="button" class="ghost" id="clearFocus">Clear</button>
           </div>
-          <article id="stageObject" class="stage-object" hidden></article>
-          <div id="neighborhood" class="neighborhood" hidden>
-            <h3>Neighborhood</h3>
-            <ul id="neighborhoodList" class="object-list"></ul>
-          </div>
-          <div class="work-result" id="workResult">
-            <h3>Latest work</h3>
-            <p class="muted" id="workStatus">Idle. The system is a client of handle().</p>
-            <pre id="workReply" class="reply" hidden></pre>
-            <dl id="workMeta" class="work-meta" hidden></dl>
-          </div>
-        </section>
+          <div id="stageEmpty" class="visually-hidden">No object on stage.</div>
 
-        <section class="panel proposals" aria-label="Pending proposals">
-          <div class="panel-head">
+          <div class="conversation" id="conversation">
+            <p class="system-line" id="systemLine">
+              System is here. Same brain as CLI and voice — thin client of handle().
+            </p>
+            <div class="work-result" id="workResult">
+              <p class="muted" id="workStatus">Ready when you are.</p>
+              <pre id="workReply" class="reply" hidden></pre>
+              <dl id="workMeta" class="work-meta" hidden></dl>
+            </div>
+            <div id="neighborhood" class="neighborhood" hidden>
+              <h3>Neighborhood</h3>
+              <ul id="neighborhoodList" class="object-list"></ul>
+            </div>
+          </div>
+        </main>
+
+        <aside class="drawer proposals" id="proposalsDrawer" hidden aria-label="Pending proposals">
+          <div class="drawer-head">
             <h2>Proposals</h2>
             <span class="muted" id="proposalCount">0 pending</span>
+            <button type="button" class="ghost" id="closeProposals" aria-label="Close proposals">×</button>
           </div>
-          <p class="hint muted">
-            Accept is an explicit gate. This surface does not write the graph
-            itself.
-          </p>
+          <p class="hint muted">Accept is an explicit gate. Surface does not write the graph alone.</p>
           <ul id="proposalList" class="proposal-list"></ul>
-        </section>
+        </aside>
       </div>
 
       <footer class="work">
         <form id="workForm" class="work-form">
-          <label class="work-label" for="prompt">Work</label>
           <textarea
             id="prompt"
-            rows="3"
-            placeholder="What should the system work on?"
+            rows="2"
+            placeholder="Work with the system — tools, knowledge, anything it can reach…"
             required
           ></textarea>
           <div class="work-actions">
