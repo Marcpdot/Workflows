@@ -20,6 +20,13 @@ const EXISTS_RE =
 const SEARCH_VERB_RE =
   /\b(search|find|grep|locate|søk|finn)\b/i;
 
+/** "Where is X defined/resolved" without saying search. */
+const WHERE_IS_RE =
+  /\b(where\s+is|where\s+does|hvor\s+(?:er|defineres|resolves?))\b/i;
+
+const DEFINED_RE =
+  /\b(defined|resolved|implemented|declared|defineres|resolves)\b/i;
+
 /** Workspace-relative paths that look like repo files. */
 const PATH_RE =
   /(?:^|\s|[`"'(])((?:packages\/|apps\/|docs\/|src\/|scripts\/|\.?\/?)?[\w./-]+\.(?:md|ts|tsx|js|mjs|cjs|json|yml|yaml|toml|txt|css|html))(?:$|\s|[`"')])/gi;
@@ -30,6 +37,22 @@ const DIR_PATH_RE =
 
 const PACKAGE_NAME_RE =
   /\bpackages\/([a-z][\w.-]*(?:\/[\w.-]+)*)\b/gi;
+
+/** Known symbols → file to read when asked where/how they resolve. */
+const SYMBOL_READ: Array<{ re: RegExp; path: string }> = [
+  {
+    re: /\bOLLAMA_TIMEOUT_MS\b/,
+    path: "packages/models/src/local.ts",
+  },
+  {
+    re: /\b(runToolLoop|inferWorkspaceToolCallsFromUserPrompt)\b/,
+    path: "packages/tools/src/loop.ts",
+  },
+  {
+    re: /\brecoverToolCallsFromBrokenText\b/,
+    path: "packages/tools/src/recoverToolCalls.ts",
+  },
+];
 
 /** Soft aliases: spoken name → concrete path to read. */
 const READ_ALIASES: Array<{ re: RegExp; path: string }> = [
@@ -66,6 +89,21 @@ function pushUnique(
   if (seen.has(key)) return;
   seen.add(key);
   calls.push({ id: callId(prefix), name, args });
+}
+
+/** SCREAMING_SNAKE or clear CamelCase identifiers in the prompt. */
+export function extractSymbols(text: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const re = /\b([A-Z][A-Z0-9]{2,}(?:_[A-Z0-9]+)*)\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const s = m[1]!;
+    if (seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out;
 }
 
 /**
@@ -175,6 +213,19 @@ export function inferReadFileCallsFromUserPrompt(prompt: string): ToolCall[] {
     }
   }
 
+  // Known symbols + where/read/how → concrete file
+  const symbolAsk =
+    WHERE_IS_RE.test(prompt) ||
+    DEFINED_RE.test(prompt) ||
+    READ_VERB_RE.test(prompt);
+  if (symbolAsk) {
+    for (const sym of SYMBOL_READ) {
+      if (sym.re.test(prompt)) {
+        pushUnique(calls, seen, "read_file", { path: sym.path }, "seed");
+      }
+    }
+  }
+
   if (READ_VERB_RE.test(prompt)) {
     for (const path of extractPaths(prompt)) {
       pushUnique(calls, seen, "read_file", { path }, "seed");
@@ -199,7 +250,6 @@ export function inferListDirCallsFromUserPrompt(prompt: string): ToolCall[] {
     EXISTS_RE.test(prompt) ||
     /\btop-level packages\b/i.test(prompt) ||
     /\bpackages\/?\s+under\b/i.test(prompt) ||
-    // "What is inside packages/foo" — path present + content question
     (dirPaths.length > 0 &&
       /\b(what|what's|whats|hva|which|innhold)\b/i.test(prompt));
 
@@ -236,26 +286,52 @@ export function inferListDirCallsFromUserPrompt(prompt: string): ToolCall[] {
 }
 
 /**
- * search_files when user asks to search/find a symbol or phrase in the repo.
+ * search_files when user asks to search/find, or "where is SYMBOL".
  */
 export function inferSearchCallsFromUserPrompt(prompt: string): ToolCall[] {
-  if (!prompt || !SEARCH_VERB_RE.test(prompt)) return [];
+  if (!prompt || !prompt.trim()) return [];
   const calls: ToolCall[] = [];
   const seen = new Set<string>();
 
-  const quoted = prompt.match(
-    /\b(?:search|find|grep|søk|finn)\b[\s\S]{0,30}?["'`]([^"'`]{2,80})["'`]/i
-  );
-  if (quoted?.[1]) {
-    pushUnique(calls, seen, "search_files", { query: quoted[1].trim() }, "seed");
-    return calls;
+  if (SEARCH_VERB_RE.test(prompt)) {
+    const quoted = prompt.match(
+      /\b(?:search|find|grep|søk|finn)\b[\s\S]{0,30}?["'`]([^"'`]{2,80})["'`]/i
+    );
+    if (quoted?.[1]) {
+      pushUnique(
+        calls,
+        seen,
+        "search_files",
+        { query: quoted[1].trim() },
+        "seed"
+      );
+      return calls;
+    }
+
+    const forTerm = prompt.match(
+      /\b(?:search|find|grep|søk|finn)\s+(?:the\s+repo\s+for\s+|for\s+|etter\s+)?([\w./-]{3,60})/i
+    );
+    if (forTerm?.[1] && !/^(the|repo|code|files|in)$/i.test(forTerm[1])) {
+      pushUnique(calls, seen, "search_files", { query: forTerm[1] }, "seed");
+    }
   }
 
-  const forTerm = prompt.match(
-    /\b(?:search|find|grep|søk|finn)\s+(?:the\s+repo\s+for\s+|for\s+|etter\s+)?([\w./-]{3,60})/i
-  );
-  if (forTerm?.[1] && !/^(the|repo|code|files|in)$/i.test(forTerm[1])) {
-    pushUnique(calls, seen, "search_files", { query: forTerm[1] }, "seed");
+  // "Where is OLLAMA_TIMEOUT_MS resolved?" → search when no dedicated read hit yet
+  if (WHERE_IS_RE.test(prompt) || (DEFINED_RE.test(prompt) && WHERE_IS_RE.test(prompt))) {
+    for (const sym of extractSymbols(prompt)) {
+      pushUnique(calls, seen, "search_files", { query: sym }, "seed");
+    }
+  } else if (WHERE_IS_RE.test(prompt)) {
+    for (const sym of extractSymbols(prompt)) {
+      pushUnique(calls, seen, "search_files", { query: sym }, "seed");
+    }
+  }
+
+  // Always search SCREAMING_SNAKE on where-is
+  if (WHERE_IS_RE.test(prompt)) {
+    for (const sym of extractSymbols(prompt)) {
+      pushUnique(calls, seen, "search_files", { query: sym }, "seed");
+    }
   }
 
   return calls;
