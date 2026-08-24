@@ -15,7 +15,8 @@
     "@workflows/structured": "file:../structured",
     "@workflows/tools": "file:../tools",
     "neo4j-driver": "^5.28.1",
-    "pg": "^8.16.3"
+    "pg": "^8.16.3",
+    "pdf-parse": "^1.1.1"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
