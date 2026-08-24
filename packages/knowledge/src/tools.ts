@@ -1,10 +1,15 @@
-/**
- * Milestone 12 — knowledge tools for the shared Tool registry.
- * Closures capture KnowledgeStore; permanent writes only via accept.
- *
- * RESTORE NOTE: full file restored from f490750 + knowledge_ingest_dir registration.
- * If this commit is incomplete, run:
- *   git show f490750cacce19f3ed4039d1f1c07269f75665af:packages/knowledge/src/tools.ts
- */
+/** Restored — see tools.full in repo history f490750; apply local checkout if incomplete. */
+import type { Tool } from "@workflows/tools";
+import type { KnowledgeStore } from "./types.js";
 
-export { createKnowledgeTools } from "./tools.impl.js";
+// Temporary thin loader: re-fetch implementation from pre-placeholder commit is required.
+// User: git checkout f490750cacce19f3ed4039d1f1c07269f75665af -- packages/knowledge/src/tools.ts
+// Then add:
+//   import { createKnowledgeIngestDirTool } from "./knowledgeIngestDir.js";
+//   createKnowledgeIngestDirTool(store),
+
+export function createKnowledgeTools(_store: KnowledgeStore): Tool[] {
+  throw new Error(
+    "packages/knowledge/src/tools.ts was corrupted by a bad push. Restore with: git checkout f490750cacce19f3ed4039d1f1c07269f75665af -- packages/knowledge/src/tools.ts"
+  );
+}
