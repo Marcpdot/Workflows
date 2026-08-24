@@ -45,7 +45,30 @@ function baseTier(input: PolicyInput, config: PolicyConfig): {
   const task = input.taskType ?? "general";
   const complexity = input.complexity ?? "medium";
 
+  // Router still labels many paths as local (tool/summarize/medium).
+  // When mid is configured, or default tier is mid/frontier, elevate so weak
+  // local models are not used for tool loops and real work.
   if (router === "local") {
+    const preferRemote =
+      config.defaultTier === "mid" || config.defaultTier === "frontier";
+    const toolOrMedium =
+      task === "tool" ||
+      task === "summarize" ||
+      complexity === "medium" ||
+      complexity === "high";
+
+    if (config.midModel && (preferRemote || toolOrMedium)) {
+      return {
+        tier: "mid",
+        reason: `elevate local router (${task}/${complexity}) → mid (${config.midModel})`,
+      };
+    }
+    if (preferRemote && config.defaultTier === "frontier") {
+      return {
+        tier: "frontier",
+        reason: `elevate local router (${task}/${complexity}) → frontier (POLICY_DEFAULT_TIER)`,
+      };
+    }
     return { tier: "local", reason: `router → local (${task}/${complexity})` };
   }
 
