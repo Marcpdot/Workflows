@@ -1,6 +1,6 @@
 /**
  * Extract plain text from a PDF buffer (text-layer PDFs).
- * Uses optional dependency `pdf-parse` when installed.
+ * Uses optional runtime dependency `pdf-parse` when installed locally.
  * Scanned/image PDFs return little or empty text — caller should surface that.
  */
 
@@ -21,25 +21,23 @@ export async function extractPdfText(
       ? Math.max(1, Math.floor(options.maxChars))
       : 200_000;
 
-  let pdfParse: ((b: Buffer) => Promise<{ text?: string; numpages?: number }>) | null =
-    null;
+  let pdfParse:
+    | ((b: Buffer) => Promise<{ text?: string; numpages?: number }>)
+    | null = null;
   try {
-    // Optional dep — typecheck must not require the package to be present.
-    const mod = await import(
-      /* webpackIgnore: true */ "pdf-parse" as string
-    );
+    const mod = await import("pdf-parse");
     const m = mod as {
       default?: (b: Buffer) => Promise<{ text?: string; numpages?: number }>;
     } & ((b: Buffer) => Promise<{ text?: string; numpages?: number }>);
     pdfParse = typeof m === "function" ? m : m.default ?? null;
-  } catch (err) {
+  } catch {
     return {
       text: "",
       pageCount: 0,
       chars: 0,
       empty: true,
       error:
-        "pdf-parse is not installed. Run: npm install pdf-parse --prefix packages/knowledge",
+        "pdf-parse is not installed. Run: npm install pdf-parse --prefix packages/knowledge (then commit package-lock.json)",
     };
   }
 
