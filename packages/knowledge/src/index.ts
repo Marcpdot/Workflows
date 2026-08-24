@@ -120,6 +120,7 @@ export {
 export {
   ingestText,
   ingestFile,
+  ingestDirectory,
   heuristicExtract,
   filterDuplicateNodeProposals,
   formatChatSegment,
