@@ -3,7 +3,8 @@
  */
 
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, extname } from "node:path";
+import { extractPdfText } from "./pdfText.js";
 import {
   completeStructured,
   parseStructured,
@@ -23,17 +24,10 @@ export interface IngestTextInput {
   sourceType?: KnowledgeEvent["sourceType"];
   sourceRef?: string;
   workspaceId?: string | null;
-  /** Hint only — never auto-links (M13); encoded into sourceRef */
   projectLabel?: string;
-  /** Skip when text shorter (default 0) */
   minChars?: number;
-  /** Skip node proposals already accepted as type+label (default true) */
   dedupeNodes?: boolean;
   model?: string;
-  /**
-   * Optional live model complete for structured extract.
-   * Offline / smoke omit this and use heuristic.
-   */
   complete?: (
     messages: Array<{ role: "system" | "user" | "assistant"; content: string }>
   ) => Promise<string>;
@@ -41,7 +35,6 @@ export interface IngestTextInput {
 
 export interface IngestFileInput extends Omit<IngestTextInput, "text"> {
   path: string;
-  /** When set, path must resolve under this root (tool path safety) */
   workspaceRoot?: string;
   maxBytes?: number;
 }
@@ -55,32 +48,37 @@ export interface IngestResult {
   sourceRef: string;
 }
 
-const DEFAULT_MAX_FILE_BYTES = 512 * 1024;
+const DEFAULT_MAX_FILE_BYTES = 8 * 1024 * 1024;
 
-/** Offline shell extract: words → concepts, sentences → claims. */
 export function heuristicExtract(text: string): ExtractionResult {
   const sentences = text
     .split(/[.!?\n]+/)
     .map((s) => s.trim())
-    .filter((s) => s.length > 3);
+    .filter((s) => s.length > 20);
   const words = text
     .split(/[^a-zA-ZæøåÆØÅ0-9-]+/)
     .map((w) => w.trim())
     .filter((w) => w.length > 3);
-  const unique = [...new Set(words.map((w) => w.toLowerCase()))].slice(0, 12);
-  const concepts = unique.map((label) => ({ label }));
-  const claims = sentences.slice(0, 8).map((label) => ({ label }));
+  const unique = [...new Set(words.map((w) => w.toLowerCase()))].slice(0, 16);
+  const concepts = unique.slice(0, 10).map((label) => ({
+    label,
+    description: "Term observed in source text (heuristic).",
+  }));
+  const claims = sentences.slice(0, 12).map((s) => ({
+    label: s.length > 120 ? s.slice(0, 117) + "…" : s,
+    description: s,
+    epistemicStatus: "observed" as const,
+  }));
   const relations =
     unique.length >= 2
-      ? [
-          {
-            from: unique[0]!,
-            relation: "about",
-            to: unique[1]!,
-          },
-        ]
+      ? [{ from: unique[0]!, relation: "about", to: unique[1]! }]
       : [];
-  return { concepts, claims, relations };
+  const evidence = claims.slice(0, 6).map((c) => ({
+    claimLabel: c.label,
+    excerpt: c.description.slice(0, 280),
+    stance: "supports" as const,
+  }));
+  return { concepts, claims, relations, evidence };
 }
 
 function buildSourceRef(input: {
@@ -93,21 +91,11 @@ function buildSourceRef(input: {
   return `${base}#project=${proj}`;
 }
 
-/**
- * Drop node proposals whose type+label already exists as accepted.
- * Edges and evidence always kept (attach on accept via M11 materialize).
- */
 export async function filterDuplicateNodeProposals(
   store: KnowledgeStore,
-  items: Array<{
-    kind: KnowledgeProposal["kind"];
-    payload: Record<string, unknown>;
-  }>
+  items: Array<{ kind: KnowledgeProposal["kind"]; payload: Record<string, unknown> }>
 ): Promise<{
-  items: Array<{
-    kind: KnowledgeProposal["kind"];
-    payload: Record<string, unknown>;
-  }>;
+  items: Array<{ kind: KnowledgeProposal["kind"]; payload: Record<string, unknown> }>;
   skipped: number;
 }> {
   const out: typeof items = [];
@@ -122,29 +110,25 @@ export async function filterDuplicateNodeProposals(
       skipped++;
       continue;
     }
-    // Alias or normalized identity → skip node proposal
     const canonicalId = String(item.payload.canonicalId ?? "").trim();
-    if (canonicalId && await store.getNode(canonicalId)) { skipped++; continue; }
+    if (canonicalId && (await store.getNode(canonicalId))) {
+      skipped++;
+      continue;
+    }
     out.push(item);
   }
   return { items: out, skipped };
 }
 
 function applyWorkspaceToItems(
-  items: Array<{
-    kind: KnowledgeProposal["kind"];
-    payload: Record<string, unknown>;
-  }>,
+  items: Array<{ kind: KnowledgeProposal["kind"]; payload: Record<string, unknown> }>,
   workspaceId?: string | null
 ): typeof items {
   if (workspaceId === undefined) return items;
   return items.map((item) => {
     if (item.kind !== "node") return item;
     if (item.payload.workspaceId !== undefined) return item;
-    return {
-      ...item,
-      payload: { ...item.payload, workspaceId },
-    };
+    return { ...item, payload: { ...item.payload, workspaceId } };
   });
 }
 
@@ -162,11 +146,15 @@ async function extractForIngest(
         {
           role: "system",
           content:
-            "Extract a semantic knowledge graph fragment as JSON only. " +
-            'Shape: {"concepts":[{"label","description?"}],"claims":[{"label","description?","confidence?"}],' +
+            "Extract a rich semantic knowledge graph fragment as JSON only. " +
+            'Shape: {"concepts":[{"label","description"}],"claims":[{"label","description","confidence?","epistemicStatus?"}],' +
             '"relations":[{"from","relation","to","confidence?"}],' +
-            '"evidence":[{"claimLabel","excerpt","stance"}]}. ' +
-            "Use short labels. Prefer typed relations: requires, limits, causes, increases, reduces, about.",
+            '"evidence":[{"claimLabel","excerpt","stance"}],"openQuestions":["..."]}. ' +
+            "Rules: (1) Every concept and claim MUST have a non-empty description (1-3 sentences from the source, not just the label). " +
+            "(2) Prefer concrete physics/engineering claims over generic words. " +
+            "(3) Relations: requires, part_of, about, causes, measures, used_in, supports. " +
+            "(4) Evidence excerpts must be short quotes from the source. " +
+            "(5) Cap: <=12 concepts, <=15 claims, <=20 relations, <=15 evidence.",
         },
         {
           role: "user",
@@ -185,9 +173,6 @@ async function extractForIngest(
   return { result: heuristicExtract(text), mode: "heuristic" };
 }
 
-/**
- * Ingest free text → event + **pending** proposals only. Never accepts.
- */
 export async function ingestText(
   store: KnowledgeStore,
   input: IngestTextInput
@@ -244,12 +229,16 @@ export async function ingestText(
     model: input.model ?? (mode === "model" ? "ingest-model" : "heuristic-m14"),
     inputHash: hashInput(text),
     transformation: {
-      method: mode === "model" ? "document_structured_extraction" : "document_heuristic_extraction",
+      method:
+        mode === "model"
+          ? "document_structured_extraction"
+          : "document_heuristic_extraction",
       model: input.model ?? (mode === "model" ? "ingest-model" : "heuristic-m14"),
       representationScope: "semantic graph fragment",
       informationLoss: {
         occurred: true,
-        description: "Only selected graph items are retained as derived representations; the event keeps the original source content.",
+        description:
+          "Only selected graph items are retained as derived representations; the event keeps the original source content.",
       },
     },
   });
@@ -264,9 +253,6 @@ export async function ingestText(
   };
 }
 
-/**
- * Read a text/markdown file and ingest as proposals.
- */
 export async function ingestFile(
   store: KnowledgeStore,
   input: IngestFileInput
@@ -304,7 +290,23 @@ export async function ingestFile(
         sourceRef: input.sourceRef ?? `file:${rawPath}`,
       };
     }
-    text = buf.toString("utf8");
+    const ext = extname(abs).toLowerCase();
+    if (ext === ".pdf") {
+      const extracted = await extractPdfText(buf, { maxChars: 180_000 });
+      if (extracted.empty) {
+        return {
+          eventId: "",
+          proposals: [],
+          skippedDuplicateNodes: 0,
+          mode: "skipped",
+          reason: `PDF has little/no extractable text (pages=${extracted.pageCount}) — likely scanned; OCR not enabled`,
+          sourceRef: input.sourceRef ?? `file:${rawPath}`,
+        };
+      }
+      text = extracted.text;
+    } else {
+      text = buf.toString("utf8");
+    }
   } catch (err) {
     return {
       eventId: "",
@@ -324,7 +326,102 @@ export async function ingestFile(
   });
 }
 
-/** Format recent chat messages into one ingest segment. */
+export async function ingestDirectory(
+  store: KnowledgeStore,
+  input: {
+    path: string;
+    workspaceRoot?: string;
+    recursive?: boolean;
+    maxFiles?: number;
+    extensions?: string[];
+    maxBytes?: number;
+    workspaceId?: string | null;
+    projectLabel?: string;
+    minChars?: number;
+    dedupeNodes?: boolean;
+    complete?: IngestTextInput["complete"];
+    model?: string;
+  }
+): Promise<{
+  results: IngestResult[];
+  scanned: number;
+  ingested: number;
+  skipped: number;
+}> {
+  const { readdirSync, statSync } = await import("node:fs");
+  const { join } = await import("node:path");
+
+  const rawPath = input.path?.trim() || ".";
+  let abs: string;
+  if (input.workspaceRoot?.trim()) {
+    abs = resolveSafePath(input.workspaceRoot.trim(), rawPath);
+  } else {
+    abs = resolve(rawPath);
+  }
+
+  const exts = new Set(
+    (input.extensions ?? [".md", ".txt", ".pdf"]).map((e) => e.toLowerCase())
+  );
+  const maxFiles = input.maxFiles ?? 40;
+  const recursive = input.recursive === true;
+
+  const files: string[] = [];
+  const walk = (dir: string, relBase: string) => {
+    if (files.length >= maxFiles) return;
+    let names: string[];
+    try {
+      names = readdirSync(dir);
+    } catch {
+      return;
+    }
+    for (const name of names.sort((a, b) => a.localeCompare(b))) {
+      if (files.length >= maxFiles) break;
+      if (name.startsWith(".")) continue;
+      const full = join(dir, name);
+      let st;
+      try {
+        st = statSync(full);
+      } catch {
+        continue;
+      }
+      if (st.isDirectory()) {
+        if (recursive) walk(full, relBase ? `${relBase}/${name}` : name);
+        continue;
+      }
+      if (!st.isFile()) continue;
+      const ext = extname(name).toLowerCase();
+      if (!exts.has(ext)) continue;
+      files.push(relBase ? `${relBase}/${name}` : name);
+    }
+  };
+
+  walk(abs, "");
+  const results: IngestResult[] = [];
+  let ingested = 0;
+  let skipped = 0;
+  for (const rel of files) {
+    const normalized = (rawPath.replace(/\/+$/, "") + "/" + rel).replace(/\\/g, "/");
+    const r = await ingestFile(store, {
+      path: normalized,
+      workspaceRoot: input.workspaceRoot,
+      maxBytes: input.maxBytes,
+      workspaceId: input.workspaceId,
+      projectLabel: input.projectLabel,
+      minChars: input.minChars,
+      dedupeNodes: input.dedupeNodes,
+      complete: input.complete,
+      model: input.model,
+      sourceType: "file",
+      sourceRef: `file:${normalized}`,
+    });
+    results.push(r);
+    if (r.mode === "skipped" || r.proposals.length === 0) skipped++;
+    else ingested++;
+  }
+
+  return { results, scanned: files.length, ingested, skipped };
+}
+
 export function formatChatSegment(
   messages: Array<{ role: string; content: string }>,
   maxMessages = 12
