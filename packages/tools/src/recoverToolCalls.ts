@@ -32,7 +32,7 @@ const PATH_RE =
   /(?:^|\s|[`"'(])((?:packages\/|apps\/|docs\/|src\/|scripts\/|\.?\/?)?[\w./-]+\.(?:md|ts|tsx|js|mjs|cjs|json|yml|yaml|toml|txt|css|html))(?:$|\s|[`"')])/gi;
 
 const DIR_PATH_RE =
-  /(?:^|\s|[`"'(?])((?:packages\/|apps\/|docs\/|src\/|scripts\/)[\w./-]*)(?:$|\s|[`"')?,.!])/gi;
+  /(?:^|\s|[`"'(?])((?:packages\/|apps\/|docs\/|src\/|scripts\/|work\/)[\w./-]*)(?:$|\s|[`"')?,.!])/gi;
 
 const PACKAGE_NAME_RE =
   /\bpackages\/([a-z][\w.-]*(?:\/[\w.-]+)*)\b/gi;
@@ -256,6 +256,16 @@ export function inferListDirCallsFromUserPrompt(prompt: string): ToolCall[] {
     /\bunder packages\/?\b/i.test(prompt)
   ) {
     pushUnique(calls, seen, "list_dir", { path: "packages" }, "seed");
+  }
+
+  // Study / local material under work/
+  if (
+    /\bwork\/?\b/i.test(prompt) &&
+    (LIST_VERB_RE.test(prompt) ||
+      EXISTS_RE.test(prompt) ||
+      /\b(each|subject|folder|fag|course)\b/i.test(prompt))
+  ) {
+    pushUnique(calls, seen, "list_dir", { path: "work" }, "seed");
   }
 
   for (const path of dirPaths) {
