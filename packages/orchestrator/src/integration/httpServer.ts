@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import {
   createKnowledgeReader,
   createKnowledgeStore,
+  createKnowledgeTools,
   listPendingForSession,
   renderKnowledgeBrowseHtml,
   type KnowledgeNodeType,
@@ -39,6 +40,25 @@ function knowledgeHttpReadEnabled(
   env: NodeJS.ProcessEnv = process.env
 ): boolean {
   return envFlagTrue(env.KNOWLEDGE_HTTP_READ);
+}
+
+/**
+ * createRegistryFromConfig() rebuilds built-ins only and drops tools that
+ * loadConfigFromEnv already registered (knowledge_*). Re-attach them.
+ */
+async function attachKnowledgeToolsToRegistry(
+  config: ReturnType<typeof loadConfigFromEnv>
+): Promise<void> {
+  if (!config.tools) return;
+  config.tools = await createRegistryFromConfig();
+  if (
+    config.knowledge &&
+    envFlagTrue(process.env.KNOWLEDGE_TOOLS_ENABLED)
+  ) {
+    for (const t of createKnowledgeTools(config.knowledge)) {
+      config.tools.register(t);
+    }
+  }
 }
 
 export interface HttpServerOptions {
@@ -271,7 +291,6 @@ function tryServeStatic(
   const root = resolve(staticDir);
   let rel = decodeURIComponent(urlPath.split("?")[0] ?? "/");
   if (rel === "/") rel = "/index.html";
-  // Prevent path escape
   const candidate = normalize(join(root, rel.replace(/^[/\\]+/, "")));
   if (!candidate.startsWith(root + sep) && candidate !== root) {
     return false;
@@ -289,11 +308,6 @@ function tryServeStatic(
   return true;
 }
 
-/**
- * Create an HTTP server that uses loadConfigFromEnv + Orchestrator per request
- * (workspace override applied on config copy).
- * Optional staticDir serves a minimal web UI (M6) from the same origin as /v1/chat.
- */
 export function createIntegrationServer(
   options: HttpServerOptions = {}
 ): Server {
@@ -326,7 +340,6 @@ export function createIntegrationServer(
         return;
       }
 
-      // Static UI (no auth) — same host as API for simple fetch
       if (
         staticDir &&
         req.method === "GET" &&
@@ -345,7 +358,6 @@ export function createIntegrationServer(
           return;
         }
         if (tryServeStatic(res, staticDir, path)) return;
-        // SPA-style fallback to index.html for unknown GETs under UI
         if (tryServeStatic(res, staticDir, "/index.html")) return;
       }
 
@@ -409,8 +421,6 @@ export function createIntegrationServer(
         return;
       }
 
-      // M17/M-capture: knowledge read API (same token gate as /v1/*)
-      // Full catalog behind KNOWLEDGE_HTTP_READ; session pending queue always on (UI panel).
       if (
         req.method === "GET" &&
         path.startsWith("/v1/knowledge") &&
@@ -427,7 +437,6 @@ export function createIntegrationServer(
         return;
       }
 
-      // M17: minimal knowledge browse HTML (no auth for static shell; API still gated)
       if (
         knowledgeReadEnabled &&
         req.method === "GET" &&
@@ -545,7 +554,6 @@ export function createIntegrationServer(
     }
   });
 
-  // stash for listen helpers
   (server as Server & { __integration?: { host: string; port: number } }).__integration =
     { host, port };
 
@@ -621,9 +629,7 @@ async function executeChat(
     workspaceRoot: ws.rootPath,
     sessionId: ws.logicalSessionId,
   });
-  if (config.tools) {
-    config.tools = await createRegistryFromConfig();
-  }
+  await attachKnowledgeToolsToRegistry(config);
   const sessionId = ws.sessionId;
   const useMemory = !parsed.options?.noMemory;
   const memory = useMemory
@@ -867,9 +873,6 @@ async function handleProposalAction(
   }
 }
 
-/**
- * GET /v1/knowledge/node|search|neighborhood|subgraph|project-status|contradictions|proposals
- */
 async function handleKnowledgeRead(
   _req: IncomingMessage,
   res: ServerResponse,
@@ -982,7 +985,6 @@ async function handleKnowledgeRead(
     if (path === "/v1/knowledge/proposals") {
       const sessionId = q.get("sessionId")?.trim();
       if (sessionId) {
-        // Full session-scoped pending queue (interaction capture iteration)
         const proposals = await listPendingForSession(store, sessionId);
         sendJson(res, 200, {
           ok: true,
@@ -1005,7 +1007,6 @@ async function handleKnowledgeRead(
       return;
     }
 
-    // Index of available read routes
     if (path === "/v1/knowledge" || path === "/v1/knowledge/") {
       sendJson(res, 200, {
         ok: true,
@@ -1036,7 +1037,6 @@ async function handleKnowledgeRead(
   }
 }
 
-/** Path to optional static knowledge HTML file on disk (for packaging). */
 export function knowledgeBrowseHtmlPath(): string {
   try {
     const here = dirname(fileURLToPath(import.meta.url));
