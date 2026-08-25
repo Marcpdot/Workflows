@@ -25,9 +25,9 @@ npm run knowledge:test:canonical
 
 Configuration:
 
-- `KNOWLEDGE_POSTGRES_PORT` controls the Compose host port (default `55432`)
+- `KNOWLEDGE_POSTGRES_PORT` controls the Compose host port (default `5433`)
 - `KNOWLEDGE_DATABASE_URL` defaults to
-  `postgresql://workflows:workflows@127.0.0.1:55432/workflows`
+  `postgresql://workflows:workflows@127.0.0.1:5433/workflows`
 - `KNOWLEDGE_DATABASE_SSL=true|false` (default `false`)
 - `KNOWLEDGE_DATABASE_APPLICATION_NAME` (default `workflows-knowledge`)
 - `KNOWLEDGE_MIGRATIONS_DIR` is normally auto-resolved
