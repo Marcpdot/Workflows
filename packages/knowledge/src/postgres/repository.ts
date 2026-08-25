@@ -23,9 +23,18 @@ import type {
   KnowledgeProposal,
   KnowledgeStatus,
   KnowledgeTransformation,
+  KnowledgeAsIs,
+  KnowledgeChunk,
+  ListChunksFilter,
+  ListTransformJobsFilter,
   MergeNodesResult,
   ProjectLinkRelation,
   ProjectStatus,
+  PutAsIsInput,
+  PutChunkInput,
+  PutTransformJobInput,
+  TransformJob,
+  TransformJobStatus,
 } from "../types.js";
 import type {
   CanonicalKnowledgeRepository,
@@ -148,6 +157,54 @@ function alias(row: Record<string, unknown>): KnowledgeAlias {
     id: String(row.id),
     aliasLabel: String(row.alias_label),
     canonicalNodeId: String(row.canonical_node_id),
+    createdAt: millis(row.created_at as Date),
+  };
+}
+
+function transformJob(row: Record<string, unknown>): TransformJob {
+  return {
+    id: String(row.id),
+    status: row.status as TransformJobStatus,
+    sourceKind: String(row.source_kind),
+    sourcePath: row.source_path == null ? undefined : String(row.source_path),
+    sourceRef: String(row.source_ref),
+    workspaceId: row.workspace_id == null ? null : String(row.workspace_id),
+    error: row.error == null ? undefined : String(row.error),
+    chunkCount: Number(row.chunk_count),
+    createdAt: millis(row.created_at as Date),
+    updatedAt: millis(row.updated_at as Date),
+    resolvedAt: row.resolved_at == null ? undefined : millis(row.resolved_at as Date),
+  };
+}
+
+function asIs(row: Record<string, unknown>): KnowledgeAsIs {
+  return {
+    id: String(row.id),
+    jobId: String(row.job_id),
+    path: String(row.path),
+    contentHash: String(row.content_hash),
+    mediaType: String(row.media_type),
+    text: row.text == null ? undefined : String(row.text),
+    byteLength: Number(row.byte_length),
+    workspaceId: row.workspace_id == null ? null : String(row.workspace_id),
+    createdAt: millis(row.created_at as Date),
+  };
+}
+
+function chunk(row: Record<string, unknown>): KnowledgeChunk {
+  return {
+    id: String(row.id),
+    jobId: String(row.job_id),
+    asIsId: String(row.as_is_id),
+    path: String(row.path),
+    contentHash: String(row.content_hash),
+    ordinal: Number(row.ordinal),
+    charStart: Number(row.char_start),
+    charEnd: Number(row.char_end),
+    byteStart: row.byte_start == null ? undefined : Number(row.byte_start),
+    byteEnd: row.byte_end == null ? undefined : Number(row.byte_end),
+    text: String(row.text),
+    workspaceId: row.workspace_id == null ? null : String(row.workspace_id),
     createdAt: millis(row.created_at as Date),
   };
 }
@@ -994,8 +1051,307 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     return result.rows.map(alias);
   }
 
+  async putTransformJob(input: PutTransformJobInput): Promise<TransformJob> {
+    const sourceKind = requiredString(input.sourceKind, "putTransformJob sourceKind");
+    const sourceRef = (input.sourceRef?.trim() || input.sourcePath?.trim() || sourceKind);
+    const status: TransformJobStatus = input.status ?? "awaiting_accept";
+    if (status !== "awaiting_accept" && status !== "failed") {
+      throw new Error("putTransformJob: create with awaiting_accept or failed; use accept/reject for operator transitions");
+    }
+    if (status === "failed" && !input.error?.trim()) {
+      throw new Error("putTransformJob: failed jobs require an error");
+    }
+    if (input.id && !UUID.test(input.id)) throw new Error("putTransformJob: id must be a UUID");
+    const workspaceId = input.workspaceId !== undefined ? input.workspaceId : this.defaultWorkspaceId ?? null;
+    const id = input.id ?? randomUUID();
+    const existing = await this.pool.query("SELECT * FROM knowledge_transform_jobs WHERE id = $1", [id]);
+    if (existing.rows[0]) {
+      const current = transformJob(existing.rows[0]);
+      if (current.status !== "awaiting_accept") {
+        throw new Error(`putTransformJob: job ${id} is already ${current.status}`);
+      }
+      const result = await this.pool.query(
+        `UPDATE knowledge_transform_jobs
+         SET source_kind = $2, source_path = $3, source_ref = $4, workspace_id = $5,
+             status = $6, error = $7,
+             resolved_at = CASE WHEN $6 = 'failed' THEN now() ELSE NULL END,
+             updated_at = now()
+         WHERE id = $1 AND status = 'awaiting_accept'
+         RETURNING *`,
+        [
+          id,
+          sourceKind,
+          input.sourcePath?.trim() || null,
+          sourceRef,
+          workspaceId,
+          status,
+          input.error?.trim() || null,
+        ]
+      );
+      if (!result.rows[0]) throw new Error(`putTransformJob: job ${id} is already ${current.status}`);
+      return transformJob(result.rows[0]);
+    }
+    const result = await this.pool.query(
+      `INSERT INTO knowledge_transform_jobs
+         (id, status, source_kind, source_path, source_ref, workspace_id, error, resolved_at)
+       VALUES (
+         $1, $2, $3, $4, $5, $6, $7,
+         CASE WHEN $2 IN ('accepted', 'rejected', 'failed') THEN now() ELSE NULL END
+       )
+       RETURNING *`,
+      [
+        id,
+        status,
+        sourceKind,
+        input.sourcePath?.trim() || null,
+        sourceRef,
+        workspaceId,
+        input.error?.trim() || null,
+      ]
+    );
+    return transformJob(result.rows[0]);
+  }
+
+  async getTransformJob(id: string): Promise<TransformJob | null> {
+    const result = await this.pool.query("SELECT * FROM knowledge_transform_jobs WHERE id = $1", [id]);
+    return result.rows[0] ? transformJob(result.rows[0]) : null;
+  }
+
+  async listTransformJobs(filter?: ListTransformJobsFilter): Promise<TransformJob[]> {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    if (filter?.status) { params.push(filter.status); clauses.push(`status = $${params.length}`); }
+    if (filter?.workspaceId !== undefined) {
+      if (filter.workspaceId == null) clauses.push("workspace_id IS NULL");
+      else { params.push(filter.workspaceId); clauses.push(`workspace_id = $${params.length}`); }
+    }
+    params.push(Math.min(Math.max(Math.floor(filter?.limit ?? 100), 1), 1_000));
+    const direction = filter?.newestFirst === false ? "ASC" : "DESC";
+    const result = await this.pool.query(
+      `SELECT * FROM knowledge_transform_jobs
+       ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
+       ORDER BY created_at ${direction}, id ${direction}
+       LIMIT $${params.length}`,
+      params
+    );
+    return result.rows.map(transformJob);
+  }
+
+  async putAsIs(input: PutAsIsInput): Promise<KnowledgeAsIs> {
+    if (!UUID.test(input.jobId)) throw new Error("putAsIs: jobId must be a UUID");
+    if (input.id && !UUID.test(input.id)) throw new Error("putAsIs: id must be a UUID");
+    const path = requiredString(input.path, "putAsIs path");
+    const contentHash = requiredString(input.contentHash, "putAsIs contentHash");
+    const mediaType = requiredString(input.mediaType, "putAsIs mediaType");
+    const bytes = input.bytes ? Buffer.from(input.bytes) : null;
+    const byteLength = input.byteLength != null
+      ? Math.max(0, Math.floor(input.byteLength))
+      : bytes?.byteLength ?? Buffer.byteLength(input.text ?? "", "utf8");
+    const workspaceId = input.workspaceId !== undefined ? input.workspaceId : this.defaultWorkspaceId ?? null;
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const job = await this.lockMutableJob(client, input.jobId);
+      const result = await client.query(
+        `INSERT INTO knowledge_as_is
+           (id, job_id, path, content_hash, media_type, text, bytes, byte_length, workspace_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (job_id) DO UPDATE SET
+           path = EXCLUDED.path,
+           content_hash = EXCLUDED.content_hash,
+           media_type = EXCLUDED.media_type,
+           text = EXCLUDED.text,
+           bytes = EXCLUDED.bytes,
+           byte_length = EXCLUDED.byte_length,
+           workspace_id = EXCLUDED.workspace_id
+         RETURNING *`,
+        [
+          input.id ?? randomUUID(),
+          job.id,
+          path,
+          contentHash,
+          mediaType,
+          input.text ?? null,
+          bytes,
+          byteLength,
+          workspaceId,
+        ]
+      );
+      await client.query("COMMIT");
+      return asIs(result.rows[0]);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getAsIs(id: string): Promise<KnowledgeAsIs | null> {
+    const result = await this.pool.query("SELECT id, job_id, path, content_hash, media_type, text, byte_length, workspace_id, created_at FROM knowledge_as_is WHERE id = $1", [id]);
+    return result.rows[0] ? asIs(result.rows[0]) : null;
+  }
+
+  async getAsIsForJob(jobId: string): Promise<KnowledgeAsIs | null> {
+    const result = await this.pool.query("SELECT id, job_id, path, content_hash, media_type, text, byte_length, workspace_id, created_at FROM knowledge_as_is WHERE job_id = $1", [jobId]);
+    return result.rows[0] ? asIs(result.rows[0]) : null;
+  }
+
+  async putChunks(inputs: readonly PutChunkInput[]): Promise<KnowledgeChunk[]> {
+    if (inputs.length === 0) return [];
+    const jobIds = [...new Set(inputs.map((item) => item.jobId))];
+    if (jobIds.length !== 1) throw new Error("putChunks: all chunks must belong to one job");
+    const jobId = jobIds[0]!;
+    if (!UUID.test(jobId)) throw new Error("putChunks: jobId must be a UUID");
+    const seenOrdinals = new Set<number>();
+    const prepared = inputs.map((item, index) => {
+      if (item.asIsId && !UUID.test(item.asIsId)) throw new Error("putChunks: asIsId must be a UUID");
+      if (item.id && !UUID.test(item.id)) throw new Error("putChunks: id must be a UUID");
+      const ordinal = Math.floor(item.ordinal);
+      if (!Number.isFinite(ordinal) || ordinal < 0) throw new Error(`putChunks: ordinal must be >= 0 (item ${index})`);
+      if (seenOrdinals.has(ordinal)) throw new Error(`putChunks: duplicate ordinal ${ordinal}`);
+      seenOrdinals.add(ordinal);
+      const charStart = Math.floor(item.charStart);
+      const charEnd = Math.floor(item.charEnd);
+      if (!Number.isFinite(charStart) || charStart < 0) throw new Error(`putChunks: charStart must be >= 0 (item ${index})`);
+      if (!Number.isFinite(charEnd) || charEnd < charStart) throw new Error(`putChunks: charEnd must be >= charStart (item ${index})`);
+      return {
+        id: item.id ?? randomUUID(),
+        jobId,
+        asIsId: requiredString(item.asIsId, "putChunks asIsId"),
+        path: requiredString(item.path, "putChunks path"),
+        contentHash: requiredString(item.contentHash, "putChunks contentHash"),
+        ordinal,
+        charStart,
+        charEnd,
+        byteStart: item.byteStart == null ? null : Math.floor(item.byteStart),
+        byteEnd: item.byteEnd == null ? null : Math.floor(item.byteEnd),
+        text: item.text ?? "",
+        workspaceId: item.workspaceId !== undefined ? item.workspaceId : this.defaultWorkspaceId ?? null,
+      };
+    });
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await this.lockMutableJob(client, jobId);
+      const asIsIds = [...new Set(prepared.map((item) => item.asIsId))];
+      const asIsRows = await client.query(
+        "SELECT id FROM knowledge_as_is WHERE job_id = $1 AND id = ANY($2::uuid[])",
+        [jobId, asIsIds]
+      );
+      if (asIsRows.rows.length !== asIsIds.length) {
+        throw new Error("putChunks: asIsId must belong to the same job");
+      }
+      await client.query("DELETE FROM knowledge_chunks WHERE job_id = $1", [jobId]);
+      const output: KnowledgeChunk[] = [];
+      for (const item of prepared.sort((a, b) => a.ordinal - b.ordinal)) {
+        const result = await client.query(
+          `INSERT INTO knowledge_chunks
+             (id, job_id, as_is_id, path, content_hash, ordinal, char_start, char_end, byte_start, byte_end, text, workspace_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+           RETURNING *`,
+          [
+            item.id,
+            item.jobId,
+            item.asIsId,
+            item.path,
+            item.contentHash,
+            item.ordinal,
+            item.charStart,
+            item.charEnd,
+            item.byteStart,
+            item.byteEnd,
+            item.text,
+            item.workspaceId,
+          ]
+        );
+        output.push(chunk(result.rows[0]));
+      }
+      await client.query(
+        "UPDATE knowledge_transform_jobs SET chunk_count = $2, updated_at = now() WHERE id = $1",
+        [jobId, output.length]
+      );
+      await client.query("COMMIT");
+      return output;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getChunk(id: string): Promise<KnowledgeChunk | null> {
+    const result = await this.pool.query("SELECT * FROM knowledge_chunks WHERE id = $1", [id]);
+    return result.rows[0] ? chunk(result.rows[0]) : null;
+  }
+
+  async listChunks(filter?: ListChunksFilter): Promise<KnowledgeChunk[]> {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    const canonicalOnly = filter?.canonicalOnly !== false;
+    if (canonicalOnly) clauses.push("jobs.status = 'accepted'");
+    if (filter?.jobId) { params.push(filter.jobId); clauses.push(`chunks.job_id = $${params.length}`); }
+    if (filter?.chunkId) { params.push(filter.chunkId); clauses.push(`chunks.id = $${params.length}`); }
+    if (filter?.asIsId) { params.push(filter.asIsId); clauses.push(`chunks.as_is_id = $${params.length}`); }
+    if (filter?.pathPrefix?.trim()) {
+      params.push(filter.pathPrefix.trim());
+      clauses.push(`chunks.path LIKE $${params.length} || '%'`);
+    }
+    if (filter?.workspaceId !== undefined) {
+      if (filter.workspaceId == null) clauses.push("chunks.workspace_id IS NULL");
+      else { params.push(filter.workspaceId); clauses.push(`chunks.workspace_id = $${params.length}`); }
+    }
+    params.push(Math.min(Math.max(Math.floor(filter?.limit ?? 200), 1), 2_000));
+    const result = await this.pool.query(
+      `SELECT chunks.*
+       FROM knowledge_chunks AS chunks
+       JOIN knowledge_transform_jobs AS jobs ON jobs.id = chunks.job_id
+       ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
+       ORDER BY chunks.path ASC, chunks.ordinal ASC, chunks.id ASC
+       LIMIT $${params.length}`,
+      params
+    );
+    return result.rows.map(chunk);
+  }
+
+  async acceptTransformJob(id: string): Promise<TransformJob> {
+    return this.transitionTransformJob(id, "accepted");
+  }
+
+  async rejectTransformJob(id: string): Promise<TransformJob> {
+    return this.transitionTransformJob(id, "rejected");
+  }
+
   async close(): Promise<void> {
     if (this.ownsPool) await endKnowledgePostgresPool(this.pool);
+  }
+
+  private async lockMutableJob(db: Queryable, id: string): Promise<TransformJob> {
+    const result = await db.query("SELECT * FROM knowledge_transform_jobs WHERE id = $1 FOR UPDATE", [id]);
+    if (!result.rows[0]) throw new Error(`transform job ${id} not found`);
+    const job = transformJob(result.rows[0]);
+    if (job.status !== "awaiting_accept") {
+      throw new Error(`transform job ${id} is already ${job.status}`);
+    }
+    return job;
+  }
+
+  private async transitionTransformJob(
+    id: string,
+    status: Extract<TransformJobStatus, "accepted" | "rejected">
+  ): Promise<TransformJob> {
+    const result = await this.pool.query(
+      `UPDATE knowledge_transform_jobs
+       SET status = $2, resolved_at = now(), updated_at = now()
+       WHERE id = $1 AND status = 'awaiting_accept'
+       RETURNING *`,
+      [id, status]
+    );
+    if (result.rows[0]) return transformJob(result.rows[0]);
+    const current = await this.getTransformJob(id);
+    if (!current) throw new Error(`${status === "accepted" ? "acceptTransformJob" : "rejectTransformJob"}: unknown id ${id}`);
+    throw new Error(`${status === "accepted" ? "acceptTransformJob" : "rejectTransformJob"}: job ${id} is already ${current.status}`);
   }
 
   private async getAlias(db: Queryable, normalized: string): Promise<KnowledgeAlias | null> {

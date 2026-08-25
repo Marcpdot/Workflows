@@ -9,6 +9,7 @@ export type KnowledgeNodeType =
   | "source"
   | "project"
   | "artifact"
+  | "chunk"
   | (string & {});
 
 export type KnowledgeStatus =
@@ -170,6 +171,112 @@ export interface KnowledgeProposal {
   status: "pending" | "accepted" | "rejected";
   createdAt: number;
   resolvedAt?: number;
+}
+
+/** Operator-gated ingest unit. Material is not canonical until the job is accepted. */
+export type TransformJobStatus =
+  | "awaiting_accept"
+  | "accepted"
+  | "rejected"
+  | "failed";
+
+export interface TransformJob {
+  id: string;
+  status: TransformJobStatus;
+  sourceKind: string;
+  sourcePath?: string;
+  sourceRef: string;
+  workspaceId?: string | null;
+  error?: string;
+  chunkCount: number;
+  createdAt: number;
+  updatedAt: number;
+  resolvedAt?: number;
+}
+
+/** Preserved source bytes/text for one transform job. Does not rewrite meaning. */
+export interface KnowledgeAsIs {
+  id: string;
+  jobId: string;
+  path: string;
+  contentHash: string;
+  mediaType: string;
+  text?: string;
+  byteLength: number;
+  workspaceId?: string | null;
+  createdAt: number;
+}
+
+/** Stable slice of as-is material. Index records point here rather than restating meaning. */
+export interface KnowledgeChunk {
+  id: string;
+  jobId: string;
+  asIsId: string;
+  path: string;
+  contentHash: string;
+  ordinal: number;
+  charStart: number;
+  charEnd: number;
+  byteStart?: number;
+  byteEnd?: number;
+  text: string;
+  workspaceId?: string | null;
+  createdAt: number;
+}
+
+export interface PutTransformJobInput {
+  id?: string;
+  status?: Extract<TransformJobStatus, "awaiting_accept" | "failed">;
+  sourceKind: string;
+  sourcePath?: string;
+  sourceRef?: string;
+  workspaceId?: string | null;
+  error?: string;
+}
+
+export interface PutAsIsInput {
+  id?: string;
+  jobId: string;
+  path: string;
+  contentHash: string;
+  mediaType: string;
+  text?: string;
+  bytes?: Uint8Array;
+  byteLength?: number;
+  workspaceId?: string | null;
+}
+
+export interface PutChunkInput {
+  id?: string;
+  jobId: string;
+  asIsId: string;
+  path: string;
+  contentHash: string;
+  ordinal: number;
+  charStart: number;
+  charEnd: number;
+  byteStart?: number;
+  byteEnd?: number;
+  text: string;
+  workspaceId?: string | null;
+}
+
+export interface ListTransformJobsFilter {
+  status?: TransformJobStatus;
+  workspaceId?: string | null;
+  limit?: number;
+  newestFirst?: boolean;
+}
+
+export interface ListChunksFilter {
+  jobId?: string;
+  chunkId?: string;
+  asIsId?: string;
+  pathPrefix?: string;
+  workspaceId?: string | null;
+  /** When true (default), only chunks from accepted jobs are returned. */
+  canonicalOnly?: boolean;
+  limit?: number;
 }
 
 /** Fixed knowledge-local work kinds; deliberately not a generic job model. */
@@ -461,6 +568,26 @@ export interface KnowledgeStore {
   listAliases(canonicalNodeId?: string): Promise<KnowledgeAlias[]>;
   /** Bounded alias hydration for an already bounded canonical candidate set. */
   listAliasesForCanonicalIds(canonicalNodeIds: readonly string[]): Promise<KnowledgeAlias[]>;
+
+  /** Create or update an ingest job that is still awaiting accept (or record a failed ingest). */
+  putTransformJob(input: PutTransformJobInput): Promise<TransformJob>;
+  getTransformJob(id: string): Promise<TransformJob | null>;
+  listTransformJobs(filter?: ListTransformJobsFilter): Promise<TransformJob[]>;
+  /** Preserve source bytes/text for a job. Does not rewrite meaning. */
+  putAsIs(input: PutAsIsInput): Promise<KnowledgeAsIs>;
+  getAsIs(id: string): Promise<KnowledgeAsIs | null>;
+  getAsIsForJob(jobId: string): Promise<KnowledgeAsIs | null>;
+  /** Replace the stable chunks for one job. */
+  putChunks(inputs: readonly PutChunkInput[]): Promise<KnowledgeChunk[]>;
+  getChunk(id: string): Promise<KnowledgeChunk | null>;
+  /**
+   * Retrieve chunks. `canonicalOnly` defaults to true so unaccepted jobs stay
+   * out of the canonical read path.
+   */
+  listChunks(filter?: ListChunksFilter): Promise<KnowledgeChunk[]>;
+  /** Operator gate: accepted material is visible to canonical retrieve. */
+  acceptTransformJob(id: string): Promise<TransformJob>;
+  rejectTransformJob(id: string): Promise<TransformJob>;
 
   close(): void | Promise<void>;
 }
