@@ -227,7 +227,7 @@ async function main(): Promise<void> {
         transformationLineageAuditable: true,
       },
       semanticChanges: {
-        eventIds: [sourceEvent.id, extracted.eventId, unbackedIngest.eventId],
+        eventIds: [sourceEvent.id, extracted.eventId, unbackedEvent.id],
         proposalIds: [
           assumptionProposal.id,
           claimProposal.id,
