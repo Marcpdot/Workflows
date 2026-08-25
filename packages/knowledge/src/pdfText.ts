@@ -4,6 +4,10 @@
  * Scanned/image PDFs return little or empty text — caller should surface that.
  */
 
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
 export interface PdfExtractResult {
   text: string;
   pageCount: number;
@@ -17,18 +21,28 @@ type PdfParseFn = (data: Buffer) => Promise<{
   numpages?: number;
 }>;
 
-/** Avoid static `import("pdf-parse")` so tsc does not require the package. */
+const requireFromHere = createRequire(import.meta.url);
+
+/**
+ * Load pdf-parse relative to this package so orchestrator/tsx runs still
+ * resolve packages/knowledge/node_modules/pdf-parse.
+ */
 async function loadPdfParse(): Promise<PdfParseFn | null> {
   try {
-    const dynamicImport = new Function(
-      "specifier",
-      "return import(specifier)"
-    ) as (specifier: string) => Promise<unknown>;
-    const mod = await dynamicImport("pdf-parse");
+    let resolved: string;
+    try {
+      resolved = requireFromHere.resolve("pdf-parse");
+    } catch {
+      return null;
+    }
+    const mod: unknown = await import(pathToFileURL(resolved).href);
     if (typeof mod === "function") return mod as PdfParseFn;
     if (mod && typeof mod === "object") {
       const def = (mod as { default?: unknown }).default;
       if (typeof def === "function") return def as PdfParseFn;
+      // pdf-parse v2 may export { PDFParse } or similar — prefer default/callable
+      const nested = (mod as { PDFParse?: unknown }).PDFParse;
+      if (typeof nested === "function") return nested as PdfParseFn;
     }
     return null;
   } catch {
