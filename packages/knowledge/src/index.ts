@@ -36,6 +36,8 @@ export type {
   PutTransformJobInput,
   TransformJob,
   TransformJobStatus,
+  AcceptTransformJobOptions,
+  KnowledgeGeometry,
 } from "./types.js";
 export {
   runKnowledgeBackgroundPass,
@@ -217,6 +219,12 @@ export {
   scoreProposalItem,
   type LimitKind,
 } from "./conversationExtract.js";
+export {
+  acceptJob,
+  rejectJob,
+  type AcceptJobInput,
+  type AcceptJobResult,
+} from "./transformJob.js";
 export {
   canonicalSemanticText,
   processVectorProjectionOutbox,

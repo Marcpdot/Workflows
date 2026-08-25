@@ -279,6 +279,18 @@ export interface ListChunksFilter {
   limit?: number;
 }
 
+/** Optional real-world geometry attached on accept. Never required for text/PDF ingest. */
+export interface KnowledgeGeometry {
+  type: string;
+  coordinates: unknown;
+  [key: string]: unknown;
+}
+
+export interface AcceptTransformJobOptions {
+  geometry?: KnowledgeGeometry;
+  geometryProperties?: Record<string, unknown>;
+}
+
 /** Fixed knowledge-local work kinds; deliberately not a generic job model. */
 export type KnowledgeBackgroundWorkKind =
   | "semantic_consolidation"
@@ -585,8 +597,8 @@ export interface KnowledgeStore {
    * out of the canonical read path.
    */
   listChunks(filter?: ListChunksFilter): Promise<KnowledgeChunk[]>;
-  /** Operator gate: accepted material is visible to canonical retrieve. */
-  acceptTransformJob(id: string): Promise<TransformJob>;
+  /** Operator gate: accepted material is visible to canonical retrieve and queued for projection. */
+  acceptTransformJob(id: string, options?: AcceptTransformJobOptions): Promise<TransformJob>;
   rejectTransformJob(id: string): Promise<TransformJob>;
 
   close(): void | Promise<void>;

@@ -35,6 +35,7 @@ import type {
   PutTransformJobInput,
   TransformJob,
   TransformJobStatus,
+  AcceptTransformJobOptions,
 } from "../types.js";
 import type {
   CanonicalKnowledgeRepository,
@@ -1315,8 +1316,81 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
     return result.rows.map(chunk);
   }
 
-  async acceptTransformJob(id: string): Promise<TransformJob> {
-    return this.transitionTransformJob(id, "accepted");
+  async acceptTransformJob(id: string, options?: AcceptTransformJobOptions): Promise<TransformJob> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const locked = await this.lockMutableJob(client, id);
+      const asIsResult = await client.query("SELECT * FROM knowledge_as_is WHERE job_id = $1", [id]);
+      const source = asIsResult.rows[0] ? asIs(asIsResult.rows[0]) : null;
+      const chunkRows = await client.query(
+        "SELECT * FROM knowledge_chunks WHERE job_id = $1 ORDER BY ordinal ASC, id ASC",
+        [id]
+      );
+      const chunks = chunkRows.rows.map(chunk);
+      let sourceNodeId: string | undefined;
+      if (source) {
+        const sourceNode = await this.upsertIngestCanonicalNode(client, {
+          id: source.id,
+          type: "source",
+          label: source.path,
+          description: `${source.mediaType} hash=${source.contentHash}`,
+          workspaceId: source.workspaceId,
+        });
+        sourceNodeId = sourceNode.id;
+        if (options?.geometry) {
+          await client.query(
+            `INSERT INTO knowledge_locations (canonical_node_id, geometry, properties, updated_at)
+             VALUES ($1, ST_SetSRID(ST_GeomFromGeoJSON($2), 4326), $3::jsonb, now())
+             ON CONFLICT (canonical_node_id) DO UPDATE SET
+               geometry = excluded.geometry,
+               properties = excluded.properties,
+               updated_at = excluded.updated_at`,
+            [
+              sourceNode.id,
+              JSON.stringify(options.geometry),
+              JSON.stringify(options.geometryProperties ?? {}),
+            ]
+          );
+        }
+      }
+      for (const item of chunks) {
+        const chunkNode = await this.upsertIngestCanonicalNode(client, {
+          id: item.id,
+          type: "chunk",
+          label: `${item.path}#${item.ordinal}`,
+          description: `chunk ${item.ordinal} of ${item.path}`,
+          workspaceId: item.workspaceId,
+        });
+        if (sourceNodeId) {
+          await this.insertEdge(client, {
+            id: randomUUID(),
+            fromNodeId: chunkNode.id,
+            relation: "part_of",
+            toNodeId: sourceNodeId,
+            status: "accepted",
+            createdAt: Date.now(),
+          });
+        }
+      }
+      const result = await client.query(
+        `UPDATE knowledge_transform_jobs
+         SET status = 'accepted', resolved_at = now(), updated_at = now()
+         WHERE id = $1 AND status = 'awaiting_accept'
+         RETURNING *`,
+        [id]
+      );
+      if (!result.rows[0]) {
+        throw new Error(`acceptTransformJob: job ${id} is already ${locked.status}`);
+      }
+      await client.query("COMMIT");
+      return transformJob(result.rows[0]);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async rejectTransformJob(id: string): Promise<TransformJob> {
@@ -1335,6 +1409,63 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
       throw new Error(`transform job ${id} is already ${job.status}`);
     }
     return job;
+  }
+
+  private async upsertIngestCanonicalNode(
+    db: Queryable,
+    input: {
+      id: string;
+      type: "source" | "chunk";
+      label: string;
+      description?: string;
+      workspaceId?: string | null;
+    }
+  ): Promise<KnowledgeNode> {
+    const existing = await this.getNodeWith(db, input.id);
+    if (existing) {
+      if (existing.status !== "accepted") {
+        const revived = await db.query(
+          `UPDATE knowledge_nodes
+           SET type = $2, label = $3, normalized_label = $4, description = $5,
+               status = 'accepted', workspace_id = $6, updated_at = now(), revision = revision + 1
+           WHERE id = $1
+           RETURNING *`,
+          [
+            input.id,
+            input.type,
+            input.label,
+            normalizeLabel(input.label),
+            input.description ?? existing.description ?? null,
+            input.workspaceId ?? existing.workspaceId ?? null,
+          ]
+        );
+        const nodeRow = node(revived.rows[0]);
+        await this.queueProjection(db, nodeRow.id, "graph", "upsert");
+        await this.queueProjection(db, nodeRow.id, "vector", "upsert");
+        return nodeRow;
+      }
+      await this.queueProjection(db, existing.id, "graph", "upsert");
+      await this.queueProjection(db, existing.id, "vector", "upsert");
+      return existing;
+    }
+    const result = await db.query(
+      `INSERT INTO knowledge_nodes
+         (id, type, label, normalized_label, description, status, epistemic_status, workspace_id)
+       VALUES ($1, $2, $3, $4, $5, 'accepted', 'observed', $6)
+       RETURNING *`,
+      [
+        input.id,
+        input.type,
+        input.label,
+        normalizeLabel(input.label),
+        input.description ?? null,
+        input.workspaceId ?? null,
+      ]
+    );
+    const created = node(result.rows[0]);
+    await this.queueProjection(db, created.id, "graph", "upsert");
+    await this.queueProjection(db, created.id, "vector", "upsert");
+    return created;
   }
 
   private async transitionTransformJob(
