@@ -904,14 +904,13 @@ async function runKnowledgeAction(
         console.log(JSON.stringify(result, null, 2));
       } else {
         console.log(
-          `[knowledge] ingest mode=${result.mode} event=${result.eventId || "none"} proposals=${result.proposals.length} skippedDupNodes=${result.skippedDuplicateNodes}${result.reason ? ` reason=${result.reason}` : ""}`
+          `[knowledge] ingest status=${result.status} job=${result.jobId || "none"} chunks=${result.chunkCount}${result.reason ? ` reason=${result.reason}` : ""}`
         );
-        for (const p of result.proposals) {
-          console.log(`  ${p.id}  ${p.kind}  pending`);
+        if (result.status === "awaiting_accept" || result.status === "accepted") {
+          console.log(
+            "[knowledge] as-is/chunks stored — not canonical until the transform job is accepted"
+          );
         }
-        console.log(
-          "[knowledge] proposals only — use --knowledge accept <id> to commit"
-        );
       }
       return;
     }

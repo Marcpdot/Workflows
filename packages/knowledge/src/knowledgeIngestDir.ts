@@ -19,7 +19,7 @@ export function createKnowledgeIngestDirTool(store: KnowledgeStore): Tool {
   return {
     name: "knowledge_ingest_dir",
     description:
-      "Ingest all .md/.txt/.pdf files in a workspace directory into pending knowledge proposals (one event per file). Never auto-accepts.",
+      "Ingest all .md/.txt/.pdf files in a workspace directory as transform jobs (as-is + chunks). Does not accept.",
     parameters: [
       {
         name: "path",
@@ -72,24 +72,28 @@ export function createKnowledgeIngestDirTool(store: KnowledgeStore): Tool {
           minChars: 40,
         });
         const lines = batch.results.map((r, i) => {
-          if (r.mode === "skipped") {
+          if (r.status === "skipped") {
             return `${i + 1}. SKIP ${r.sourceRef} — ${r.reason ?? "skipped"}`;
           }
-          return `${i + 1}. OK ${r.sourceRef} — ${r.proposals.length} proposals (${r.mode})`;
+          if (r.status === "failed") {
+            return `${i + 1}. FAIL ${r.sourceRef} job=${r.jobId || "none"} — ${r.reason ?? "failed"}`;
+          }
+          return `${i + 1}. OK ${r.sourceRef} job=${r.jobId} chunks=${r.chunkCount} status=${r.status}`;
         });
         return {
           ok: true,
-          output: `Ingest dir ${path}: scanned=${batch.scanned} ingested=${batch.ingested} skipped=${batch.skipped}\n${lines.join("\n")}\nCall knowledge_list_proposals then knowledge_accept to commit.`,
+          output: `Ingest dir ${path}: scanned=${batch.scanned} ingested=${batch.ingested} failed=${batch.failed} skipped=${batch.skipped}\n${lines.join("\n")}\nJobs await accept before they are canonical.`,
           data: {
             scanned: batch.scanned,
             ingested: batch.ingested,
+            failed: batch.failed,
             skipped: batch.skipped,
             results: batch.results.map((r) => ({
               sourceRef: r.sourceRef,
-              mode: r.mode,
+              status: r.status,
               reason: r.reason,
-              proposalCount: r.proposals.length,
-              proposalIds: r.proposals.map((p) => p.id),
+              jobId: r.jobId,
+              chunkCount: r.chunkCount,
             })),
           },
         };

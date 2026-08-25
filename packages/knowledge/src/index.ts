@@ -133,10 +133,22 @@ export {
   heuristicExtract,
   filterDuplicateNodeProposals,
   formatChatSegment,
-  type IngestTextInput,
+  type IngestDirectoryInput,
+  type IngestDirectoryResult,
   type IngestFileInput,
   type IngestResult,
+  type IngestResultStatus,
+  type IngestTextInput,
 } from "./ingest.js";
+export {
+  chunkText,
+  contentHash,
+  DEFAULT_CHUNK_OVERLAP,
+  DEFAULT_CHUNK_SIZE,
+  normalizeIngestText,
+  type ChunkOptions,
+  type ChunkWindow,
+} from "./chunk.js";
 export { normalizeLabel, labelsMatch } from "./identity.js";
 export {
   acquireRepresentation,

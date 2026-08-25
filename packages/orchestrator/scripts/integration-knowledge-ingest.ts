@@ -1,13 +1,19 @@
 import {
+  chunkText,
   createKnowledgePostgresPool,
   createKnowledgeStore,
   disposeIsolatedKnowledgeDatabase,
   endKnowledgePostgresPool,
+  ingestFile,
+  ingestText,
   loadKnowledgeMigrations,
   resolvePostgresKnowledgeConfig,
   runKnowledgeMigrations,
 } from "@workflows/knowledge";
 import { createHash, randomUUID } from "node:crypto";
+import { rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`ASSERT: ${message}`);
@@ -24,6 +30,23 @@ function hash(text: string): string {
 }
 
 async function main(): Promise<void> {
+  const sample = "Alpha paragraph one.\n\nBeta paragraph continues with extra words so windows overlap.";
+  const firstWindows = chunkText(sample, { size: 28, overlap: 8 });
+  const secondWindows = chunkText(sample, { size: 28, overlap: 8 });
+  assert(firstWindows.length >= 2, "chunker splits long text");
+  assert(
+    JSON.stringify(firstWindows) === JSON.stringify(secondWindows),
+    "chunker is deterministic"
+  );
+  assert(
+    firstWindows[0]!.charStart === 0 && firstWindows[0]!.text === sample.slice(0, firstWindows[0]!.charEnd),
+    "first chunk is a stable prefix"
+  );
+  assert(
+    firstWindows.some((item, index) => index > 0 && item.charStart < firstWindows[index - 1]!.charEnd),
+    "configured overlap is retained"
+  );
+
   const base = resolvePostgresKnowledgeConfig();
   const database = `workflows_ingest_${randomUUID().replaceAll("-", "")}`;
   assert(/^workflows_ingest_[a-f0-9]+$/.test(database), "safe database name");
@@ -174,7 +197,37 @@ async function main(): Promise<void> {
     const listed = await repository.listTransformJobs({ status: "accepted" });
     assert(listed.some((item) => item.id === job.id), "jobs can be listed by status");
 
-    console.log("Transform job persistence and canonical-only retrieve checks passed.");
+    const pipelineText = "Copper losses produce heat. Heat limits continuous torque under load.";
+    const ingested = await ingestText(repository, {
+      text: pipelineText,
+      sourcePath: "work/notes.md",
+      sourceRef: "file:work/notes.md",
+      workspaceId: "ws-ingest",
+    });
+    assert(ingested.status === "awaiting_accept", "text ingest awaits accept");
+    assert(ingested.chunkCount >= 1 && ingested.asIsId, "text ingest writes as-is and chunks");
+    assert((await repository.listChunks()).every((item) => item.jobId !== ingested.jobId), "unaccepted ingest is hidden from canonical retrieve");
+    await repository.acceptTransformJob(ingested.jobId);
+    assert(
+      (await repository.listChunks({ pathPrefix: "work/notes.md" })).some((item) => item.jobId === ingested.jobId),
+      "accepted ingest is visible to canonical retrieve"
+    );
+
+    const emptyPdfPath = join(tmpdir(), `workflows-empty-${randomUUID()}.pdf`);
+    writeFileSync(
+      emptyPdfPath,
+      "%PDF-1.1\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Count 0/Kids[]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n"
+    );
+    try {
+      const emptyPdf = await ingestFile(repository, { path: emptyPdfPath, sourceRef: `file:${emptyPdfPath}` });
+      assert(emptyPdf.status === "failed", "empty PDF becomes a failed job");
+      assert(!!emptyPdf.reason, "empty PDF records an explicit error");
+      assert((await repository.listChunks()).every((item) => item.jobId !== emptyPdf.jobId), "failed PDF is excluded from canonical retrieve");
+    } finally {
+      try { rmSync(emptyPdfPath); } catch { /* ignore */ }
+    }
+
+    console.log("Transform job persistence, ingest pipeline, and canonical-only retrieve checks passed.");
   } finally {
     if (pool) await endKnowledgePostgresPool(pool);
     await disposeIsolatedKnowledgeDatabase(admin, database);

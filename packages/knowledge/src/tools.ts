@@ -596,7 +596,7 @@ export function createKnowledgeTools(store: KnowledgeStore): Tool[] {
   const knowledge_ingest: Tool = {
     name: "knowledge_ingest",
     description:
-      "Batch-ingest text or a workspace file into **pending** knowledge proposals only (never auto-accept). Dedupes node labels already accepted. Call knowledge_accept to commit.",
+      "Ingest text or a workspace file as a transform job (as-is + chunks). Does not accept; material is not canonical until the job is accepted.",
     parameters: [
       {
         name: "text",
@@ -649,22 +649,23 @@ export function createKnowledgeTools(store: KnowledgeStore): Tool[] {
               sourceType: "manual",
             });
 
-        if (result.mode === "skipped" && result.proposals.length === 0) {
+        if (result.status === "skipped" || result.status === "failed") {
           return fail(
-            `knowledge_ingest: ${result.reason ?? "skipped"}`,
-            result.reason ?? "skipped"
+            `knowledge_ingest: ${result.reason ?? result.status}`,
+            result.reason ?? result.status
           );
         }
-        const ids = result.proposals.map((p) => p.id);
         return ok(
-          `Ingested (${result.mode}) event=${result.eventId || "none"} proposals=${result.proposals.length} skippedDuplicateNodes=${result.skippedDuplicateNodes}. Pending only — call knowledge_accept to commit.${ids.length ? ` ids: ${ids.join(", ")}` : ""}`,
+          `Ingested job=${result.jobId} status=${result.status} chunks=${result.chunkCount} source=${result.sourceRef}. Not canonical until the transform job is accepted.`,
           {
-            eventId: result.eventId,
-            proposalIds: ids,
-            proposals: result.proposals,
-            skippedDuplicateNodes: result.skippedDuplicateNodes,
-            mode: result.mode,
+            jobId: result.jobId,
+            status: result.status,
+            chunkCount: result.chunkCount,
+            asIsId: result.asIsId,
             sourceRef: result.sourceRef,
+            sourceKind: result.sourceKind,
+            sourcePath: result.sourcePath,
+            reason: result.reason,
           }
         );
       } catch (err) {
