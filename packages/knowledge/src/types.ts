@@ -273,6 +273,8 @@ export interface ListChunksFilter {
   chunkId?: string;
   asIsId?: string;
   pathPrefix?: string;
+  /** Case-insensitive substring match over chunk text. */
+  query?: string;
   workspaceId?: string | null;
   /** When true (default), only chunks from accepted jobs are returned. */
   canonicalOnly?: boolean;

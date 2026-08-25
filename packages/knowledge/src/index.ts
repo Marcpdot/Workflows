@@ -151,6 +151,13 @@ export {
   type ChunkOptions,
   type ChunkWindow,
 } from "./chunk.js";
+export {
+  retrieveChunks,
+  type ChunkRetrieveHit,
+  type ChunkRetrieveOrigin,
+  type RetrieveChunksRequest,
+  type RetrieveChunksResult,
+} from "./chunkRetrieve.js";
 export { normalizeLabel, labelsMatch } from "./identity.js";
 export {
   acquireRepresentation,

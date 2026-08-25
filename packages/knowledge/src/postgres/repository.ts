@@ -1299,6 +1299,10 @@ export class PostgresCanonicalKnowledgeRepository implements CanonicalKnowledgeR
       params.push(filter.pathPrefix.trim());
       clauses.push(`chunks.path LIKE $${params.length} || '%'`);
     }
+    if (filter?.query?.trim()) {
+      params.push(filter.query.trim());
+      clauses.push(`position(lower($${params.length}) in lower(chunks.text)) > 0`);
+    }
     if (filter?.workspaceId !== undefined) {
       if (filter.workspaceId == null) clauses.push("chunks.workspace_id IS NULL");
       else { params.push(filter.workspaceId); clauses.push(`chunks.workspace_id = $${params.length}`); }

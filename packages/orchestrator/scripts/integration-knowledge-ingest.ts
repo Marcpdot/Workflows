@@ -1,6 +1,7 @@
 import {
   acceptJob,
   chunkText,
+  createHybridKnowledgeRetrievalService,
   createKnowledgePostgresPool,
   createKnowledgeStore,
   createPostgresVectorRepository,
@@ -11,6 +12,7 @@ import {
   KNOWLEDGE_VECTOR_DIMENSION,
   loadKnowledgeMigrations,
   rejectJob,
+  retrieveChunks,
   resolvePostgresKnowledgeConfig,
   runKnowledgeMigrations,
   semanticVectorRecordId,
@@ -308,6 +310,58 @@ async function main(): Promise<void> {
     assert(
       (await repository.listChunks()).every((item) => item.jobId !== rejectable.jobId),
       "rejected jobs stay out of canonical retrieve"
+    );
+
+    const byId = await repository.listChunks({ chunkId: pipelineChunks[0]!.id });
+    assert(byId.length === 1 && byId[0]!.id === pipelineChunks[0]!.id, "chunks are retrievable by id");
+    const keyword = await repository.listChunks({ query: "copper losses" });
+    assert(keyword.some((item) => item.jobId === ingested.jobId), "substring search hits accepted chunk text");
+    assert(keyword.every((item) => item.jobId !== rejectable.jobId), "substring search excludes rejected jobs");
+    const retrieved = await retrieveChunks({
+      store: repository,
+      vector: vectors,
+      request: {
+        query: "continuous torque",
+        queryVector: query,
+        embeddingModel: embedder.model,
+        embeddingModelVersion: embedder.modelVersion,
+        limit: 10,
+      },
+    });
+    assert(retrieved.semantic === "ran", "chunk retrieve runs vector search over embedded chunks");
+    assert(retrieved.hits.some((hit) => hit.chunk.jobId === ingested.jobId), "chunk retrieve hydrates accepted material");
+    const refused = await retrieveChunks({
+      store: repository,
+      vector: vectors,
+      request: {
+        jobId: rejectable.jobId,
+        queryVector: query,
+        embeddingModel: embedder.model,
+        embeddingModelVersion: embedder.modelVersion,
+      },
+    });
+    assert(refused.semantic === "skipped" && refused.hits.length === 0, "empty accepted chunk scope does not widen semantic retrieve");
+
+    const hybrid = createHybridKnowledgeRetrievalService({ canonical: repository, vector: vectors });
+    const hybridKeyword = await hybrid.retrieve({
+      queryText: "copper losses",
+      overallLimit: 10,
+    });
+    assert(
+      hybridKeyword.items.some((item) => item.node.id === pipelineChunks[0]!.id && item.node.status === "accepted"),
+      "hybrid keyword retrieve hydrates accepted chunk identities"
+    );
+    const hybridScoped = await hybrid.retrieve({
+      chunkJobId: rejectable.jobId,
+      queryVector: query,
+      embeddingModel: embedder.model,
+      embeddingModelVersion: embedder.modelVersion,
+      overallLimit: 10,
+    });
+    assert(
+      hybridScoped.strategies.semantic.state === "skipped" &&
+        !hybridScoped.items.some((item) => item.origins.includes("semantic")),
+      "hybrid chunk-job scope does not silently widen semantic retrieve"
     );
 
     const emptyPdfPath = join(tmpdir(), `workflows-empty-${randomUUID()}.pdf`);
