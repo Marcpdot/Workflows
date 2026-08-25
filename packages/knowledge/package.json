@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Semantic knowledge model — concepts, claims, relations, proposals (M11)",
+  "description": "Semantic knowledge model — canonical PostgreSQL, ingest jobs, retrieval",
   "exports": {
     ".": {
       "types": "./src/index.ts",
@@ -15,6 +15,7 @@
     "@workflows/structured": "file:../structured",
     "@workflows/tools": "file:../tools",
     "neo4j-driver": "^5.28.1",
+    "pdf-parse": "^2.4.5",
     "pg": "^8.16.3"
   },
   "devDependencies": {

@@ -7,6 +7,7 @@ import type { Tool, ToolContext, ToolResult } from "@workflows/tools";
 import { applyExtractionResult } from "./extract.js";
 import { runFirstPrinciplesAnalysis } from "./firstPrinciples.js";
 import { formatNeighborhood } from "./formatNeighborhood.js";
+import { retrieveChunks } from "./chunkRetrieve.js";
 import { ingestFile, ingestText } from "./ingest.js";
 import { createKnowledgeIngestDirTool } from "./knowledgeIngestDir.js";
 import type {
@@ -14,6 +15,7 @@ import type {
   KnowledgeNodeType,
   KnowledgeStatus,
   KnowledgeStore,
+  TransformJobStatus,
 } from "./types.js";
 
 const OUTPUT_CAP = 12_000;
@@ -56,11 +58,29 @@ function parseJsonArray(raw: unknown): unknown[] | undefined {
   return undefined;
 }
 
+export interface KnowledgeToolsOptions {
+  /**
+   * When true, register tools that write pending graph proposals from text
+   * extract. Default off — ingest jobs are the operator write path.
+   */
+  proposalWrites?: boolean;
+}
+
+export function resolveKnowledgeToolsOptions(
+  env: NodeJS.ProcessEnv = process.env
+): KnowledgeToolsOptions {
+  const raw = env.KNOWLEDGE_PROPOSAL_TOOLS?.trim().toLowerCase();
+  return { proposalWrites: raw === "1" || raw === "true" || raw === "yes" };
+}
+
 /**
  * Create knowledge tools bound to a store.
- * Propose never auto-accepts.
+ * Ingest jobs never auto-accept. Proposal-extract write tools are opt-in.
  */
-export function createKnowledgeTools(store: KnowledgeStore): Tool[] {
+export function createKnowledgeTools(
+  store: KnowledgeStore,
+  options: KnowledgeToolsOptions = {}
+): Tool[] {
   const knowledge_find: Tool = {
     name: "knowledge_find",
     description:
@@ -596,7 +616,7 @@ export function createKnowledgeTools(store: KnowledgeStore): Tool[] {
   const knowledge_ingest: Tool = {
     name: "knowledge_ingest",
     description:
-      "Batch-ingest text or a workspace file into **pending** knowledge proposals only (never auto-accept). Dedupes node labels already accepted. Call knowledge_accept to commit.",
+      "Ingest text or a workspace file as a transform job (as-is + chunks). Does not accept; material is not canonical until the job is accepted.",
     parameters: [
       {
         name: "text",
@@ -621,7 +641,7 @@ export function createKnowledgeTools(store: KnowledgeStore): Tool[] {
       {
         name: "workspaceId",
         type: "string",
-        description: "Optional workspaceId stamped on proposed nodes",
+        description: "Optional workspaceId stamped on the transform job",
       },
     ],
     async execute(args, ctx: ToolContext): Promise<ToolResult> {
@@ -649,23 +669,225 @@ export function createKnowledgeTools(store: KnowledgeStore): Tool[] {
               sourceType: "manual",
             });
 
-        if (result.mode === "skipped" && result.proposals.length === 0) {
+        if (result.status === "skipped" || result.status === "failed") {
           return fail(
-            `knowledge_ingest: ${result.reason ?? "skipped"}`,
-            result.reason ?? "skipped"
+            `knowledge_ingest: ${result.reason ?? result.status}`,
+            result.reason ?? result.status
           );
         }
-        const ids = result.proposals.map((p) => p.id);
         return ok(
-          `Ingested (${result.mode}) event=${result.eventId || "none"} proposals=${result.proposals.length} skippedDuplicateNodes=${result.skippedDuplicateNodes}. Pending only — call knowledge_accept to commit.${ids.length ? ` ids: ${ids.join(", ")}` : ""}`,
+          `Ingested job=${result.jobId} status=${result.status} chunks=${result.chunkCount} source=${result.sourceRef}. Not canonical until the transform job is accepted.`,
           {
-            eventId: result.eventId,
-            proposalIds: ids,
-            proposals: result.proposals,
-            skippedDuplicateNodes: result.skippedDuplicateNodes,
-            mode: result.mode,
+            jobId: result.jobId,
+            status: result.status,
+            chunkCount: result.chunkCount,
+            asIsId: result.asIsId,
             sourceRef: result.sourceRef,
+            sourceKind: result.sourceKind,
+            sourcePath: result.sourcePath,
+            reason: result.reason,
           }
+        );
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    },
+  };
+
+  const knowledge_list_jobs: Tool = {
+    name: "knowledge_list_jobs",
+    description:
+      "List transform jobs (default status=awaiting_accept). This is the operator accept gate.",
+    parameters: [
+      {
+        name: "status",
+        type: "string",
+        description: "awaiting_accept|accepted|rejected|failed",
+      },
+      {
+        name: "limit",
+        type: "number",
+        description: "Max jobs to return (default 50)",
+      },
+    ],
+    async execute(args): Promise<ToolResult> {
+      const status = (str(args.status) as TransformJobStatus | undefined) ?? "awaiting_accept";
+      if (!["awaiting_accept", "accepted", "rejected", "failed"].includes(status)) {
+        return fail("knowledge_list_jobs: status must be awaiting_accept|accepted|rejected|failed");
+      }
+      try {
+        const jobs = await store.listTransformJobs({
+          status,
+          newestFirst: true,
+          limit: num(args.limit) ?? 50,
+        });
+        if (jobs.length === 0) {
+          return ok(`No transform jobs with status=${status}`, { jobs: [] });
+        }
+        const lines = jobs.map(
+          (job) =>
+            `${job.id}  ${job.status}  chunks=${job.chunkCount}  ${job.sourceRef}`
+        );
+        return ok(
+          `${jobs.length} job(s) status=${status}:\n${lines.join("\n")}`,
+          { jobs }
+        );
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    },
+  };
+
+  const knowledge_get_job: Tool = {
+    name: "knowledge_get_job",
+    description: "Inspect one transform job plus its as-is record and chunks.",
+    parameters: [
+      {
+        name: "jobId",
+        type: "string",
+        description: "Transform job UUID",
+        required: true,
+      },
+    ],
+    async execute(args): Promise<ToolResult> {
+      const jobId = str(args.jobId);
+      if (!jobId) return fail("knowledge_get_job: jobId is required");
+      try {
+        const job = await store.getTransformJob(jobId);
+        if (!job) return fail(`knowledge_get_job: unknown job ${jobId}`);
+        const asIs = await store.getAsIsForJob(jobId);
+        const chunks = await store.listChunks({ jobId, canonicalOnly: false });
+        return ok(
+          `job ${job.id} status=${job.status} kind=${job.sourceKind} chunks=${job.chunkCount} ref=${job.sourceRef}${job.error ? ` error=${job.error}` : ""}`,
+          { job, asIs, chunks }
+        );
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    },
+  };
+
+  const knowledge_accept_job: Tool = {
+    name: "knowledge_accept_job",
+    description:
+      "Accept a transform job. As-is/chunks become canonical; embeddings run via the projection outbox.",
+    parameters: [
+      {
+        name: "jobId",
+        type: "string",
+        description: "Transform job UUID",
+        required: true,
+      },
+    ],
+    async execute(args): Promise<ToolResult> {
+      const jobId = str(args.jobId);
+      if (!jobId) return fail("knowledge_accept_job: jobId is required");
+      try {
+        const job = await store.acceptTransformJob(jobId);
+        return ok(`Accepted transform job ${job.id} chunks=${job.chunkCount}`, { job });
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    },
+  };
+
+  const knowledge_reject_job: Tool = {
+    name: "knowledge_reject_job",
+    description: "Reject a transform job. Its chunks stay out of canonical retrieve.",
+    parameters: [
+      {
+        name: "jobId",
+        type: "string",
+        description: "Transform job UUID",
+        required: true,
+      },
+    ],
+    async execute(args): Promise<ToolResult> {
+      const jobId = str(args.jobId);
+      if (!jobId) return fail("knowledge_reject_job: jobId is required");
+      try {
+        const job = await store.rejectTransformJob(jobId);
+        return ok(`Rejected transform job ${job.id}`, { job });
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    },
+  };
+
+  const knowledge_chunks: Tool = {
+    name: "knowledge_chunks",
+    description:
+      "List or inspect ingest chunks. Defaults to accepted jobs; pass jobId to inspect a specific job including awaiting accept.",
+    parameters: [
+      { name: "jobId", type: "string", description: "Transform job UUID" },
+      { name: "chunkId", type: "string", description: "Chunk UUID" },
+      { name: "pathPrefix", type: "string", description: "Stable source path prefix" },
+      { name: "query", type: "string", description: "Substring over chunk text" },
+      { name: "limit", type: "number", description: "Max chunks (default 50)" },
+    ],
+    async execute(args): Promise<ToolResult> {
+      try {
+        const jobId = str(args.jobId);
+        const chunks = await store.listChunks({
+          jobId,
+          chunkId: str(args.chunkId),
+          pathPrefix: str(args.pathPrefix),
+          query: str(args.query),
+          canonicalOnly: !jobId,
+          limit: num(args.limit) ?? 50,
+        });
+        if (chunks.length === 0) {
+          return ok("No chunks matched", { chunks: [] });
+        }
+        const lines = chunks.map(
+          (chunk) =>
+            `${chunk.id}  ${chunk.path}#${chunk.ordinal}  chars=${chunk.charStart}-${chunk.charEnd}`
+        );
+        return ok(`${chunks.length} chunk(s):\n${lines.join("\n")}`, { chunks });
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    },
+  };
+
+  const knowledge_search_chunks: Tool = {
+    name: "knowledge_search_chunks",
+    description:
+      "Search accepted ingest chunks by substring. Does not call a model.",
+    parameters: [
+      {
+        name: "query",
+        type: "string",
+        description: "Substring to find in chunk text",
+        required: true,
+      },
+      { name: "pathPrefix", type: "string", description: "Optional path prefix" },
+      { name: "jobId", type: "string", description: "Optional job UUID" },
+      { name: "limit", type: "number", description: "Max hits (default 20)" },
+    ],
+    async execute(args): Promise<ToolResult> {
+      const query = str(args.query);
+      if (!query) return fail("knowledge_search_chunks: query is required");
+      try {
+        const result = await retrieveChunks({
+          store,
+          request: {
+            query,
+            pathPrefix: str(args.pathPrefix),
+            jobId: str(args.jobId),
+            limit: num(args.limit) ?? 20,
+          },
+        });
+        if (result.hits.length === 0) {
+          return ok(`No accepted chunks matched ${JSON.stringify(query)}`, result);
+        }
+        const lines = result.hits.map(
+          (hit) =>
+            `${hit.chunk.id}  ${hit.origin}  ${hit.chunk.path}#${hit.chunk.ordinal}`
+        );
+        return ok(
+          `${result.hits.length} chunk hit(s) for ${JSON.stringify(query)}:\n${lines.join("\n")}`,
+          result
         );
       } catch (err) {
         return fail(err instanceof Error ? err.message : String(err));
@@ -919,25 +1141,36 @@ export function createKnowledgeTools(store: KnowledgeStore): Tool[] {
     },
   };
 
-  return [
+  const tools: Tool[] = [
     knowledge_find,
     knowledge_get,
     knowledge_neighborhood,
-    knowledge_list_proposals,
-    knowledge_propose,
+    knowledge_list_jobs,
+    knowledge_get_job,
+    knowledge_ingest,
+    createKnowledgeIngestDirTool(store),
+    knowledge_accept_job,
+    knowledge_reject_job,
+    knowledge_chunks,
+    knowledge_search_chunks,
     knowledge_accept,
     knowledge_reject,
     knowledge_ensure_project,
     knowledge_link_project,
     knowledge_unlink_project,
     knowledge_project_status,
-    knowledge_ingest,
-    createKnowledgeIngestDirTool(store),
     knowledge_add_alias,
     knowledge_merge,
     knowledge_find_contradictions,
     knowledge_mark_contradiction,
     knowledge_supersede,
-    knowledge_first_principles,
   ];
+  if (options.proposalWrites) {
+    tools.push(
+      knowledge_list_proposals,
+      knowledge_propose,
+      knowledge_first_principles
+    );
+  }
+  return tools;
 }

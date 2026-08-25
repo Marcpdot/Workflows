@@ -152,7 +152,7 @@ export interface OrchestratorConfig {
   /**
    * Milestone 12–14 knowledge store (optional).
    * Tools when KNOWLEDGE_TOOLS_ENABLED; inject when KNOWLEDGE_INJECT_ENABLED;
-   * auto chat ingest (proposals only) when ingestAutoOnChat.
+   * auto chat ingest (transform jobs) when ingestAutoOnChat.
    * Store opened with defaultWorkspaceId from workspace / KNOWLEDGE_DEFAULT_WORKSPACE_ID.
    */
   knowledge?: KnowledgeStore;
@@ -161,13 +161,13 @@ export interface OrchestratorConfig {
     injectEnabled: boolean;
     injectMaxChars: number;
     injectHops: 1 | 2;
-    /** M14: after each handle, ingest recent segment as proposals (default false) */
+    /** After each handle, ingest the recent segment as a transform job (default false). */
     ingestAutoOnChat: boolean;
     ingestMinChars: number;
     ingestMaxMessages: number;
     /**
-     * Continuous capture when session mode is active (design: interaction mode).
-     * Default true unless KNOWLEDGE_CAPTURE_DISABLED.
+     * Conversation extract → pending proposals. Opt-in via
+     * KNOWLEDGE_CAPTURE_ENABLED; still off when KNOWLEDGE_CAPTURE_DISABLED.
      */
     captureEnabled: boolean;
     /** Min ms between auto-extracts in a session (force /capture ignores). */

@@ -4,6 +4,9 @@
  * Scanned/image PDFs return little or empty text — caller should surface that.
  */
 
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
+
 export interface PdfExtractResult {
   text: string;
   pageCount: number;
@@ -17,18 +20,77 @@ type PdfParseFn = (data: Buffer) => Promise<{
   numpages?: number;
 }>;
 
-/** Avoid static `import("pdf-parse")` so tsc does not require the package. */
+const requireFromHere = createRequire(import.meta.url);
+
+function asParseFn(candidate: unknown): PdfParseFn | null {
+  if (typeof candidate !== "function") return null;
+
+  // pdf-parse v1: callable (buffer) => Promise
+  // pdf-parse v2: class PDFParse — must use `new`
+  const fn = candidate as PdfParseFn & { prototype?: { constructor?: unknown } };
+  const looksLikeClass =
+    typeof fn.prototype === "object" &&
+    fn.prototype !== null &&
+    fn.prototype.constructor === fn;
+
+  if (looksLikeClass) {
+    return async (data: Buffer) => {
+      const Ctor = candidate as new (opts?: { data?: Buffer }) => {
+        getText?: () => Promise<{ text?: string }>;
+        getInfo?: () => Promise<{ numPages?: number; pages?: number }>;
+        text?: string;
+        numpages?: number;
+        destroy?: () => Promise<void> | void;
+      };
+      const instance = new Ctor({ data });
+      try {
+        if (typeof instance.getText === "function") {
+          const result = await instance.getText();
+          let pageCount = 0;
+          if (typeof instance.getInfo === "function") {
+            const info = await instance.getInfo();
+            pageCount = info.numPages ?? info.pages ?? 0;
+          }
+          return { text: result?.text ?? "", numpages: pageCount };
+        }
+        // Fallback if API differs
+        const legacy = candidate as PdfParseFn;
+        return await legacy(data);
+      } finally {
+        try {
+          await instance.destroy?.();
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+  }
+
+  return fn;
+}
+
+/**
+ * Load pdf-parse relative to this package so orchestrator/tsx runs still
+ * resolve packages/knowledge/node_modules/pdf-parse.
+ */
 async function loadPdfParse(): Promise<PdfParseFn | null> {
   try {
-    const dynamicImport = new Function(
-      "specifier",
-      "return import(specifier)"
-    ) as (specifier: string) => Promise<unknown>;
-    const mod = await dynamicImport("pdf-parse");
-    if (typeof mod === "function") return mod as PdfParseFn;
+    let resolved: string;
+    try {
+      resolved = requireFromHere.resolve("pdf-parse");
+    } catch {
+      return null;
+    }
+    const mod: unknown = await import(pathToFileURL(resolved).href);
+    if (typeof mod === "function") {
+      return asParseFn(mod);
+    }
     if (mod && typeof mod === "object") {
-      const def = (mod as { default?: unknown }).default;
-      if (typeof def === "function") return def as PdfParseFn;
+      const record = mod as Record<string, unknown>;
+      for (const key of ["default", "PDFParse", "pdfParse", "PDF"]) {
+        const wrapped = asParseFn(record[key]);
+        if (wrapped) return wrapped;
+      }
     }
     return null;
   } catch {

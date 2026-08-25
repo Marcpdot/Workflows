@@ -80,6 +80,9 @@ jobs:
       - name: Run canonical integration test
         run: npm run knowledge:test:canonical
 
+      - name: Run ingest integration test
+        run: npm run knowledge:test:ingest
+
       - name: Run vector integration test
         run: npm run knowledge:test:vector
 

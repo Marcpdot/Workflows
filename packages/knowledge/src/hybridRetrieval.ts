@@ -20,6 +20,11 @@ export interface HybridRetrievalRequest {
   queryVector?: readonly number[];
   embeddingModel?: string;
   embeddingModelVersion?: string;
+  /** Case-insensitive substring over accepted ingest chunks. */
+  queryText?: string;
+  /** Narrow semantic/keyword retrieve to one accepted transform job's chunks. */
+  chunkJobId?: string;
+  chunkPathPrefix?: string;
   semanticLimit?: number;
   overallLimit?: number;
   contextBudget?: number;
@@ -76,11 +81,30 @@ export class HybridKnowledgeRetrievalService {
     const mark = (id: string, origin: RetrievalOrigin) => { const set = origins.get(id) ?? new Set<RetrievalOrigin>(); set.add(origin); origins.set(id, set); };
     const canonical = this.repositories.canonical;
 
+    let chunkScopeIds: string[] | undefined;
     try {
       const exactIds = unique([...(request.canonicalIds ?? []), ...(request.candidateCanonicalIds ?? []), ...(request.projectId ? [request.projectId] : [])]);
       for (const id of exactIds) { const node = await canonical.getNode(id); if (node) { canonicalNodes.set(id, node); mark(id, request.projectId === id ? "project" : request.candidateCanonicalIds?.includes(id) ? "structured_candidate" : "exact"); } }
       for (const query of request.identityQueries ?? []) { const node = await canonical.resolveCanonical(query); if (node) { canonicalNodes.set(node.id, node); mark(node.id, "exact"); } }
-      if (exactIds.length || request.identityQueries?.length) strategies.exact = { state: "ran", candidates: canonicalNodes.size };
+      if (request.queryText?.trim() || request.chunkJobId || request.chunkPathPrefix) {
+        const chunks = await canonical.listChunks({
+          query: request.queryText?.trim() || undefined,
+          jobId: request.chunkJobId,
+          pathPrefix: request.chunkPathPrefix,
+          workspaceId: request.workspaceId,
+          canonicalOnly: true,
+          limit: Math.max(overallLimit, semanticLimit),
+        });
+        if (request.chunkJobId || request.chunkPathPrefix) chunkScopeIds = chunks.map((item) => item.id);
+        for (const chunk of chunks) {
+          const node = await canonical.getNode(chunk.id);
+          if (node?.status === "accepted") {
+            canonicalNodes.set(node.id, node);
+            mark(node.id, request.queryText?.trim() ? "exact" : "structured_candidate");
+          }
+        }
+      }
+      if (exactIds.length || request.identityQueries?.length || request.queryText?.trim()) strategies.exact = { state: "ran", candidates: canonicalNodes.size };
     } catch (error) { throw new CanonicalRetrievalUnavailableError("canonical PostgreSQL retrieval failed", { cause: error }); }
 
     const roots = unique([...(request.graphRootIds ?? []), ...(request.projectId ? [request.projectId] : [])]);
@@ -110,13 +134,14 @@ export class HybridKnowledgeRetrievalService {
     const semanticRequested = request.queryVector != null;
     if (semanticRequested && this.repositories.vector) {
       const graphScopeRequired = roots.length > 0; const spatialScopeRequired = request.spatial != null;
-      if (((graphScopeRequired && !graphSucceeded) || (spatialScopeRequired && !spatialSucceeded)) && !(request.candidateCanonicalIds?.length)) strategies.semantic = { state: "skipped", detail: "required narrowing scope unavailable; refusing unscoped semantic widening" };
+      if (((graphScopeRequired && !graphSucceeded) || (spatialScopeRequired && !spatialSucceeded) || (chunkScopeIds != null && chunkScopeIds.length === 0)) && !(request.candidateCanonicalIds?.length)) strategies.semantic = { state: "skipped", detail: "required narrowing scope unavailable; refusing unscoped semantic widening" };
       else {
         let candidateIds: string[] | undefined;
         const explicitCandidates = request.candidateCanonicalIds?.length ? new Set(request.candidateCanonicalIds) : null;
         const graphCandidates = graphSucceeded ? new Set([...origins].filter(([, value]) => value.has("graph")).map(([id]) => id)) : null;
         const spatialCandidates = spatialSucceeded ? new Set(spatialHits.keys()) : null;
-        const scopes = [explicitCandidates, graphCandidates, spatialCandidates].filter((scope): scope is Set<string> => scope != null);
+        const chunkCandidates = chunkScopeIds != null ? new Set(chunkScopeIds) : null;
+        const scopes = [explicitCandidates, graphCandidates, spatialCandidates, chunkCandidates].filter((scope): scope is Set<string> => scope != null);
         if (scopes.length) candidateIds = [...scopes[0]!].filter((id) => scopes.slice(1).every((scope) => scope.has(id)));
         if (candidateIds && candidateIds.length === 0) strategies.semantic = { state: "ran", detail: "empty narrowed candidate scope", candidates: 0 };
         else try {

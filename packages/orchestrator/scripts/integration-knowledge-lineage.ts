@@ -6,7 +6,6 @@ import {
   disposeIsolatedKnowledgeDatabase,
   endKnowledgePostgresPool,
   extractionToProposalItems,
-  ingestText,
   loadKnowledgeMigrations,
   normalizeStructuredCapture,
   resolvePostgresKnowledgeConfig,
@@ -97,15 +96,12 @@ async function main(): Promise<void> {
     assert(extractedEvent?.sourceContent === undefined && extractedEvent.sourceExperienceIds.join(",") === experienceIds[0], "experience-backed extraction retains IDs without copying raw content");
 
     const unbackedText = "Calibration logs show that offset increases with measured temperature.";
-    const unbackedIngest = await ingestText(store, {
-      text: unbackedText,
+    const unbackedEvent = await store.createEvent({
       sourceType: "file",
       sourceRef: "file:calibration-log.txt",
-      dedupeNodes: false,
+      sourceContent: unbackedText,
     });
-    assert(!!unbackedIngest.eventId, "non-experience-backed ingestion creates a source event");
-    const unbackedEvent = await store.getEvent(unbackedIngest.eventId);
-    assert(unbackedEvent?.sourceExperienceIds.length === 0 && unbackedEvent.sourceContent === unbackedText, "non-experience-backed ingestion retains fallback source content");
+    assert(unbackedEvent.sourceExperienceIds.length === 0 && unbackedEvent.sourceContent === unbackedText, "non-experience-backed events retain fallback source content");
 
     const assumptionProposal = (await store.addProposals(sourceEvent.id, [{
       kind: "node",
@@ -231,7 +227,7 @@ async function main(): Promise<void> {
         transformationLineageAuditable: true,
       },
       semanticChanges: {
-        eventIds: [sourceEvent.id, extracted.eventId, unbackedIngest.eventId],
+        eventIds: [sourceEvent.id, extracted.eventId, unbackedEvent.id],
         proposalIds: [
           assumptionProposal.id,
           claimProposal.id,

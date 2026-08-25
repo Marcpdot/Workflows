@@ -40,12 +40,14 @@ function withTimeout<T>(
 async function probeKnowledge(): Promise<
   IntegrationStatusResponse["knowledge"]
 > {
-  const captureDisabled = envFlagTrue(process.env.KNOWLEDGE_CAPTURE_DISABLED);
+  const captureEnabled =
+    envFlagTrue(process.env.KNOWLEDGE_CAPTURE_ENABLED) &&
+    !envFlagTrue(process.env.KNOWLEDGE_CAPTURE_DISABLED);
   const configured =
     envFlagTrue(process.env.KNOWLEDGE_TOOLS_ENABLED) ||
     envFlagTrue(process.env.KNOWLEDGE_INJECT_ENABLED) ||
     envFlagTrue(process.env.KNOWLEDGE_INGEST_AUTO_ON_CHAT) ||
-    !captureDisabled;
+    captureEnabled;
   if (!configured) {
     return { configured: false, ok: true, detail: "knowledge store not opened" };
   }

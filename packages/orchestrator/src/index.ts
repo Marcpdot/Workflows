@@ -23,8 +23,10 @@ import {
   applyExtractionResult,
   createKnowledgeReader,
   createKnowledgeStore,
+  ingestDirectory,
   ingestFile,
   ingestText,
+  resolveKnowledgeToolsOptions,
   renderContradictionsRead,
   renderNeighborhoodRead,
   renderNodeTable,
@@ -86,17 +88,22 @@ Options:
   --ltm recall [key=...|text=...] [limit=N]
   --ltm list [limit=N]
   --ltm forget <idOrKey>
+  --knowledge ingest --text "..." | --file path | --dir path [projectLabel=...] [workspaceId=...]
+  --knowledge jobs [awaiting_accept|accepted|rejected|failed]
+  --knowledge job <jobId>
+  --knowledge accept-job <jobId>
+  --knowledge reject-job <jobId>
+  --knowledge chunks [jobId=...] [path=...] [id=...] [query=...]
   --knowledge proposals [pending|accepted|rejected]
   --knowledge accept <proposalId>
   --knowledge reject <proposalId>
   --knowledge find [label=...] [type=concept|claim|...] [workspaceId=...] [--table]
   --knowledge neighborhood <nodeId> [hops=1|2]
-  --knowledge search [label=...] [type=...]   # M17 read alias for find
-  --knowledge extract --text "..."   # fixture-free extract via local model if available
+  --knowledge search [label=...] [type=...]   # accepted nodes (chunks: --knowledge chunks query=...)
+  --knowledge extract --text "..."   # opt-in proposal extract (KNOWLEDGE_PROPOSAL_TOOLS)
   --knowledge ensure-project label=NAME [description=...] [workspaceId=...]
   --knowledge link nodeId=... projectId=... [relation=used_in|about|part_of]
   --knowledge project-status [label=NAME|projectId=...] [hops=1|2]
-  --knowledge ingest --text "..." | --file path [projectLabel=...] [workspaceId=...]
   --knowledge add-alias aliasLabel=... canonicalNodeId=...
   --knowledge merge fromId=... intoId=...
   --knowledge contradictions [nodeId=...]
@@ -149,9 +156,11 @@ Env (see .env.example):
   KNOWLEDGE_DATABASE_URL (canonical PostgreSQL knowledge store)
   KNOWLEDGE_DEFAULT_WORKSPACE_ID (else from --workspace / WORKSPACE_ROOT id)
   KNOWLEDGE_TOOLS_ENABLED, KNOWLEDGE_INJECT_ENABLED
-  KNOWLEDGE_INGEST_AUTO_ON_CHAT (default false; proposals only), KNOWLEDGE_INGEST_MIN_CHARS
+  KNOWLEDGE_PROPOSAL_TOOLS (default false; proposal-extract write tools)
+  KNOWLEDGE_INGEST_AUTO_ON_CHAT (default false), KNOWLEDGE_INGEST_MIN_CHARS
   KNOWLEDGE_HTTP_READ (integration GET /v1/knowledge/* + /knowledge HTML)
-  KNOWLEDGE_CAPTURE_DISABLED (default false — continuous capture in active mode)
+  KNOWLEDGE_CAPTURE_ENABLED (default false — conversation extract is opt-in)
+  KNOWLEDGE_CAPTURE_DISABLED (forces capture off even if enabled)
   VOICE_ENABLED, VOICE_STT_PROVIDER, VOICE_TTS_PROVIDER, VOICE_LANGUAGE
   VOICE_STT_COMMAND, VOICE_TTS_COMMAND, VOICE_ALLOW_REMOTE_AUDIO
   PROACTIVE_ENABLED, PROACTIVE_MAX, PROACTIVE_USE_MODEL
@@ -174,6 +183,11 @@ interface KnowledgeCliAction {
     | "link"
     | "project-status"
     | "ingest"
+    | "jobs"
+    | "job"
+    | "chunks"
+    | "accept-job"
+    | "reject-job"
     | "add-alias"
     | "merge"
     | "contradictions"
@@ -185,6 +199,7 @@ interface KnowledgeCliAction {
   args: Record<string, unknown>;
   text?: string;
   file?: string;
+  dir?: string;
   topic?: string;
 }
 
@@ -410,6 +425,11 @@ function parseArgs(argv: string[]): CliArgs {
             "link",
             "project-status",
             "ingest",
+            "jobs",
+            "job",
+            "chunks",
+            "accept-job",
+            "reject-job",
             "add-alias",
             "merge",
             "contradictions",
@@ -419,11 +439,18 @@ function parseArgs(argv: string[]): CliArgs {
           ].includes(sub)
         ) {
           console.error(
-            "--knowledge requires proposals|accept|reject|find|search|neighborhood|extract|ensure-project|link|project-status|ingest|add-alias|merge|contradictions|mark-contradiction|supersede|fp"
+            "--knowledge requires ingest|jobs|job|accept-job|reject-job|chunks|proposals|accept|reject|find|search|neighborhood|extract|ensure-project|link|project-status|add-alias|merge|contradictions|mark-contradiction|supersede|fp"
           );
           process.exit(1);
         }
-        if (sub === "accept" || sub === "reject" || sub === "neighborhood") {
+        if (
+          sub === "accept" ||
+          sub === "reject" ||
+          sub === "neighborhood" ||
+          sub === "job" ||
+          sub === "accept-job" ||
+          sub === "reject-job"
+        ) {
           const id = argv[++i];
           if (!id || id.startsWith("-")) {
             console.error(`--knowledge ${sub} requires an id`);
@@ -438,18 +465,19 @@ function parseArgs(argv: string[]): CliArgs {
             id,
             args: parseKvArgs(kv),
           };
-        } else if (sub === "proposals") {
+        } else if (sub === "proposals" || sub === "jobs") {
           const filter = argv[i + 1] && !argv[i + 1]!.startsWith("-")
             ? argv[++i]
             : undefined;
           knowledgeAction = {
-            kind: "proposals",
+            kind: sub,
             filter,
             args: {},
           };
         } else if (
           sub === "find" ||
           sub === "search" ||
+          sub === "chunks" ||
           sub === "ensure-project" ||
           sub === "link" ||
           sub === "project-status" ||
@@ -508,6 +536,7 @@ function parseArgs(argv: string[]): CliArgs {
         } else if (sub === "extract" || sub === "ingest") {
           let text: string | undefined;
           let file: string | undefined;
+          let dir: string | undefined;
           const kv: string[] = [];
           while (i + 1 < argv.length) {
             const next = argv[i + 1]!;
@@ -517,6 +546,9 @@ function parseArgs(argv: string[]): CliArgs {
             } else if (next === "--file") {
               i++;
               file = argv[++i];
+            } else if (next === "--dir") {
+              i++;
+              dir = argv[++i];
             } else if (next.includes("=")) {
               kv.push(argv[++i]!);
             } else if (!next.startsWith("-")) {
@@ -538,10 +570,14 @@ function parseArgs(argv: string[]): CliArgs {
           if (!file && typeof argsMap.file === "string") {
             file = String(argsMap.file);
           }
+          if (!dir && typeof argsMap.dir === "string") {
+            dir = String(argsMap.dir);
+          }
           knowledgeAction = {
             kind: sub,
             text,
             file,
+            dir,
             args: argsMap,
           };
         }
@@ -808,6 +844,12 @@ async function runKnowledgeAction(
       return;
     }
     if (action.kind === "extract") {
+      if (!resolveKnowledgeToolsOptions().proposalWrites) {
+        console.error(
+          "legacy --knowledge extract is off; use --knowledge ingest. Set KNOWLEDGE_PROPOSAL_TOOLS=true to enable proposal extract."
+        );
+        process.exit(1);
+      }
       const text = action.text?.trim();
       if (!text) {
         console.error(
@@ -866,12 +908,98 @@ async function runKnowledgeAction(
       }
       return;
     }
+    if (action.kind === "jobs") {
+      const status =
+        action.filter === "accepted" ||
+        action.filter === "rejected" ||
+        action.filter === "failed" ||
+        action.filter === "awaiting_accept"
+          ? action.filter
+          : "awaiting_accept";
+      const jobs = await store.listTransformJobs({ status, newestFirst: true, limit: 100 });
+      if (asJson) {
+        console.log(JSON.stringify({ status, count: jobs.length, jobs }, null, 2));
+      } else {
+        console.log(`[knowledge] jobs status=${status} count=${jobs.length}`);
+        for (const job of jobs) {
+          console.log(
+            `  ${job.id}  ${job.status}  chunks=${job.chunkCount}  ${job.sourceRef}`
+          );
+        }
+      }
+      return;
+    }
+    if (action.kind === "job") {
+      const job = await store.getTransformJob(action.id!);
+      if (!job) {
+        console.error(`[knowledge] unknown job ${action.id}`);
+        process.exit(1);
+      }
+      const asIs = await store.getAsIsForJob(job.id);
+      const chunks = await store.listChunks({ jobId: job.id, canonicalOnly: false });
+      if (asJson) {
+        console.log(JSON.stringify({ job, asIs, chunks }, null, 2));
+      } else {
+        console.log(
+          `[knowledge] job ${job.id} status=${job.status} kind=${job.sourceKind} chunks=${job.chunkCount} ref=${job.sourceRef}`
+        );
+        if (job.error) console.log(`  error=${job.error}`);
+        if (asIs) console.log(`  as-is ${asIs.id} ${asIs.path} hash=${asIs.contentHash.slice(0, 12)}`);
+        for (const chunk of chunks) {
+          console.log(`  chunk ${chunk.id} ${chunk.path}#${chunk.ordinal}`);
+        }
+      }
+      return;
+    }
+    if (action.kind === "accept-job") {
+      const job = await store.acceptTransformJob(action.id!);
+      if (asJson) console.log(JSON.stringify({ accepted: job }, null, 2));
+      else console.log(`[knowledge] accepted job ${job.id} chunks=${job.chunkCount}`);
+      return;
+    }
+    if (action.kind === "reject-job") {
+      const job = await store.rejectTransformJob(action.id!);
+      if (asJson) console.log(JSON.stringify({ rejected: job }, null, 2));
+      else console.log(`[knowledge] rejected job ${job.id}`);
+      return;
+    }
+    if (action.kind === "chunks") {
+      const jobId = action.args.jobId ? String(action.args.jobId) : undefined;
+      const chunks = await store.listChunks({
+        jobId,
+        chunkId: action.args.id
+          ? String(action.args.id)
+          : action.args.chunkId
+            ? String(action.args.chunkId)
+            : undefined,
+        pathPrefix: action.args.path
+          ? String(action.args.path)
+          : action.args.pathPrefix
+            ? String(action.args.pathPrefix)
+            : undefined,
+        query: action.args.query ? String(action.args.query) : undefined,
+        canonicalOnly: !jobId,
+        limit: action.args.limit ? Number(action.args.limit) : 50,
+      });
+      if (asJson) {
+        console.log(JSON.stringify({ count: chunks.length, chunks }, null, 2));
+      } else {
+        console.log(`[knowledge] chunks count=${chunks.length}`);
+        for (const chunk of chunks) {
+          console.log(
+            `  ${chunk.id}  ${chunk.path}#${chunk.ordinal}  chars=${chunk.charStart}-${chunk.charEnd}`
+          );
+        }
+      }
+      return;
+    }
     if (action.kind === "ingest") {
       const text = action.text?.trim();
       const file = action.file?.trim();
-      if (!text && !file) {
+      const dir = action.dir?.trim();
+      if (!text && !file && !dir) {
         console.error(
-          '--knowledge ingest requires --text "..." or --file path'
+          '--knowledge ingest requires --text "..." or --file path or --dir path'
         );
         process.exit(1);
       }
@@ -881,6 +1009,28 @@ async function runKnowledgeAction(
       const workspaceId = action.args.workspaceId
         ? String(action.args.workspaceId)
         : undefined;
+      if (dir) {
+        const batch = await ingestDirectory(store, {
+          path: dir,
+          workspaceRoot: options?.workspaceRoot,
+          recursive: action.args.recursive === "1" || action.args.recursive === "true",
+          projectLabel,
+          workspaceId,
+        });
+        if (asJson) {
+          console.log(JSON.stringify(batch, null, 2));
+        } else {
+          console.log(
+            `[knowledge] ingest dir scanned=${batch.scanned} ingested=${batch.ingested} failed=${batch.failed} skipped=${batch.skipped}`
+          );
+          for (const result of batch.results) {
+            console.log(
+              `  ${result.status} job=${result.jobId || "none"} chunks=${result.chunkCount} ${result.sourceRef}${result.reason ? ` ${result.reason}` : ""}`
+            );
+          }
+        }
+        return;
+      }
       const result = file
         ? await ingestFile(store, {
             path: file,
@@ -904,14 +1054,13 @@ async function runKnowledgeAction(
         console.log(JSON.stringify(result, null, 2));
       } else {
         console.log(
-          `[knowledge] ingest mode=${result.mode} event=${result.eventId || "none"} proposals=${result.proposals.length} skippedDupNodes=${result.skippedDuplicateNodes}${result.reason ? ` reason=${result.reason}` : ""}`
+          `[knowledge] ingest status=${result.status} job=${result.jobId || "none"} chunks=${result.chunkCount}${result.reason ? ` reason=${result.reason}` : ""}`
         );
-        for (const p of result.proposals) {
-          console.log(`  ${p.id}  ${p.kind}  pending`);
+        if (result.status === "awaiting_accept" || result.status === "accepted") {
+          console.log(
+            "[knowledge] as-is/chunks stored — not canonical until the transform job is accepted"
+          );
         }
-        console.log(
-          "[knowledge] proposals only — use --knowledge accept <id> to commit"
-        );
       }
       return;
     }
@@ -1016,6 +1165,12 @@ async function runKnowledgeAction(
       return;
     }
     if (action.kind === "fp") {
+      if (!resolveKnowledgeToolsOptions().proposalWrites) {
+        console.error(
+          "legacy --knowledge fp is off; ingest files with --knowledge ingest. Set KNOWLEDGE_PROPOSAL_TOOLS=true to enable proposal extract."
+        );
+        process.exit(1);
+      }
       const topic =
         action.topic?.trim() ||
         (action.args.topic ? String(action.args.topic).trim() : "");

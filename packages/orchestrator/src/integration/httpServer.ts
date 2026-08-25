@@ -10,6 +10,7 @@ import {
   createKnowledgeReader,
   createKnowledgeStore,
   createKnowledgeTools,
+  resolveKnowledgeToolsOptions,
   listPendingForSession,
   renderKnowledgeBrowseHtml,
   type KnowledgeNodeType,
@@ -55,7 +56,7 @@ async function attachKnowledgeToolsToRegistry(
     config.knowledge &&
     envFlagTrue(process.env.KNOWLEDGE_TOOLS_ENABLED)
   ) {
-    for (const t of createKnowledgeTools(config.knowledge)) {
+    for (const t of createKnowledgeTools(config.knowledge, resolveKnowledgeToolsOptions())) {
       config.tools.register(t);
     }
   }

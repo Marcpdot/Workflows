@@ -5,7 +5,15 @@ contracts. PostgreSQL/PostGIS is the sole canonical knowledge runtime.
 
 ## Invariants
 
-- Models and extraction produce proposals; permanent truth requires acceptance.
+- Knowledge enters through system-owned ingest: as-is source material, stable
+  chunks, and a transform job. Operator accept of the job is the canonical gate.
+  Unaccepted and rejected jobs are not canonical retrieve.
+- Chat and conversation extract are not the default write path. Proposal-extract
+  tools and CLI stay opt-in for migration, Curator graph edits, and explicit
+  `/capture`. Models may consume retrieve; they are never ingest storage
+  authority.
+- Permanent graph edits still require acceptance. Curator may create pending
+  proposals but cannot accept, merge, supersede, or arbitrate truth.
 - Preserve provenance, evidence, workspace/context, temporal state,
   contradiction and supersession history.
 - Durable experience records are authoritative for raw experienced content.
@@ -65,6 +73,8 @@ contracts. PostgreSQL/PostGIS is the sole canonical knowledge runtime.
 - Schema changes use ordered files under `packages/knowledge/migrations`.
 - `createKnowledgeStore()` always creates the PostgreSQL canonical repository.
 - Knowledge integration/smoke tests use isolated PostgreSQL databases.
+  Ingest coverage is `npm run knowledge:test:ingest` from `packages/orchestrator`
+  (text/PDF jobs, accept/reject, fake embedding provider). CI stays hardware-free.
 - Every `createKnowledgePostgresPool` attaches a non-fatal idle `error`
   listener. Close work pools with `endKnowledgePostgresPool` before
   `DROP DATABASE` / `pg_terminate_backend`. Expected admin-shutdown codes

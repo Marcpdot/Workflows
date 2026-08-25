@@ -4,9 +4,11 @@ export type {
   DependentClaim,
   ExtractionResult,
   KnowledgeAlias,
+  KnowledgeAsIs,
   KnowledgeBackgroundWork,
   KnowledgeBackgroundWorkKind,
   KnowledgeBackgroundWorkStatus,
+  KnowledgeChunk,
   KnowledgeDerivation,
   KnowledgeDiagnosticRecord,
   KnowledgeDiagnosticSink,
@@ -24,9 +26,18 @@ export type {
   KnowledgeStatus,
   KnowledgeStore,
   KnowledgeTransformation,
+  ListChunksFilter,
+  ListTransformJobsFilter,
   MergeNodesResult,
   ProjectLinkRelation,
   ProjectStatus,
+  PutAsIsInput,
+  PutChunkInput,
+  PutTransformJobInput,
+  TransformJob,
+  TransformJobStatus,
+  AcceptTransformJobOptions,
+  KnowledgeGeometry,
 } from "./types.js";
 export {
   runKnowledgeBackgroundPass,
@@ -108,7 +119,11 @@ export {
   formatNeighborhood,
   simpleQueryTokens,
 } from "./formatNeighborhood.js";
-export { createKnowledgeTools } from "./tools.js";
+export {
+  createKnowledgeTools,
+  resolveKnowledgeToolsOptions,
+  type KnowledgeToolsOptions,
+} from "./tools.js";
 export {
   buildKnowledgeInjectBlock,
   hydrateKnowledgeLineageContext,
@@ -124,10 +139,29 @@ export {
   heuristicExtract,
   filterDuplicateNodeProposals,
   formatChatSegment,
-  type IngestTextInput,
+  type IngestDirectoryInput,
+  type IngestDirectoryResult,
   type IngestFileInput,
   type IngestResult,
+  type IngestResultStatus,
+  type IngestTextInput,
 } from "./ingest.js";
+export {
+  chunkText,
+  contentHash,
+  DEFAULT_CHUNK_OVERLAP,
+  DEFAULT_CHUNK_SIZE,
+  normalizeIngestText,
+  type ChunkOptions,
+  type ChunkWindow,
+} from "./chunk.js";
+export {
+  retrieveChunks,
+  type ChunkRetrieveHit,
+  type ChunkRetrieveOrigin,
+  type RetrieveChunksRequest,
+  type RetrieveChunksResult,
+} from "./chunkRetrieve.js";
 export { normalizeLabel, labelsMatch } from "./identity.js";
 export {
   acquireRepresentation,
@@ -196,6 +230,12 @@ export {
   scoreProposalItem,
   type LimitKind,
 } from "./conversationExtract.js";
+export {
+  acceptJob,
+  rejectJob,
+  type AcceptJobInput,
+  type AcceptJobResult,
+} from "./transformJob.js";
 export {
   canonicalSemanticText,
   processVectorProjectionOutbox,

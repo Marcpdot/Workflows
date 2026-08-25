@@ -407,7 +407,7 @@ knowledge event's source experience IDs before proposals are created.
 | **M11** | Semantic knowledge shell | Store, proposals, neighborhood | **shell delivered** |
 | **M12** | Knowledge tools + wire | Models use graph via tools | **shell delivered** |
 | **M13** | Project & workspace binding | Project nodes, links, `getProjectStatus`, workspaceId defaults | **shell delivered** |
-| **M14** | Continuous / batch ingest | `ingestText`/`ingestFile`, light dedupe, tool+CLI, auto-chat opt-in (proposals only) | **shell delivered** |
+| **M14** | Continuous / batch ingest | `ingestText`/`ingestFile` as transform jobs (as-is + chunks); auto-chat opt-in default off | **shell delivered** |
 | **M15** | Identity, merge & contradiction | Aliases, merge rewire, contradicts list, supersede (no silent delete) | **shell delivered** |
 | **M16** | First-principles workflow | Template analysis → structured proposals (not sole purpose of knowledge) | **shell delivered** |
 | **M17** | Read surface | Reader helpers, renderers, CLI `--json`, optional HTTP + minimal HTML | **shell delivered** |
@@ -423,7 +423,7 @@ knowledge event's source experience IDs before proposals are created.
 
 ## Interaction mode + continuous knowledge capture (post-M18)
 
-**Status:** active  
+**Status:** superseded for default write path (conversation extract is opt-in via `KNOWLEDGE_CAPTURE_ENABLED`; ingest jobs are the storage path)  
 **Evidence:** confirmed  
 **Source:** design [`docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md`](../docs/INTERACTION_MODE_AND_KNOWLEDGE_CAPTURE.md); structured capture [`docs/STRUCTURED_CAPTURE_AND_NETWORK_VIZ.md`](../docs/STRUCTURED_CAPTURE_AND_NETWORK_VIZ.md); foundation `04415a5`; iteration `7d474bb`  
 **Revisit when:** daily multi-hour sessions show extract quality, queue noise, or sparring tone still wrong
@@ -494,7 +494,22 @@ Default min interval between auto captures (`KNOWLEDGE_CAPTURE_MIN_INTERVAL_MS`,
 
 Cross-cutting choices that apply across the whole track:
 
+### System-owned ingest is the primary write path
+
+**Status:** active  
+**Evidence:** confirmed  
+**Source:** ingest-core implementation; operator-gated transform jobs  
+**Revisit when:** conversation extract is deliberately restored as a default write path
+
+**Decision:** Source material enters knowledge through **system-owned ingest**: as-is bytes/text, stable chunks, and a transform job. The operator **accepts or rejects the job**. Unaccepted material is not canonical retrieve. Embeddings and graph/vector projections run after accept behind the existing outbox. Chat and LLM extract are not how knowledge is stored by default.
+
+**Reason:** Proposal-as-meaning from chat floods the graph with rewritten claims and makes the LLM the storage authority. Preserving as-is plus chunks keeps provenance, and the job is a single operator gate.
+
+**Rejected:** Chat/conversation extract as the default write path; storing meaning only as pending concept/claim proposals; inventing embedding vectors; requiring geometry on every ingest.
+
 ### Propose → accept is the only permanent write path
+
+> Superseded for source ingest (see **System-owned ingest is the primary write path**). Still active for Curator graph edits, representation gaps, merge/supersede, and opt-in `/capture`.
 
 **Decision:** Extraction, tools, ingest, FP workflow, and chat auto-ingest create **pending proposals** only. Permanent graph nodes/edges require explicit `accept` (CLI/tool). Rejected alternatives stay out of the accepted graph.
 
@@ -512,7 +527,7 @@ Cross-cutting choices that apply across the whole track:
 
 ### Defaults-off for costly / side-effecting knowledge paths
 
-**Decision:** Tools, inject, auto-chat-ingest, knowledge HTTP read, and voice are **off** until env flags are set. Chat + routing remain usable without them.
+**Decision:** Tools, inject, auto-chat-ingest, conversation extract, knowledge HTTP read, and voice are **off** until env flags are set. Chat + routing remain usable without them.
 
 **Reason:** Personal stack must not burn tokens, open a mic, or inject graph noise by surprise.
 
@@ -571,6 +586,8 @@ Cross-cutting choices that apply across the whole track:
 **Rejected:** Separate project membership table; multi-DB per project; auto-bind every node in a workspace to a git repo project without an explicit project node.
 
 ### M14 — grow the graph from work without silent commit
+
+> Superseded: ingest writes transform jobs (as-is + chunks) and waits for operator job accept. Auto chat ingest is still default off; when enabled it creates a job, not proposal nodes.
 
 **Decision:** `ingestText` / `ingestFile` / `knowledge_ingest` → proposals; light dedupe skips node proposals that already exist accepted (type+label / resolve). Auto chat segment only if `KNOWLEDGE_INGEST_AUTO_ON_CHAT` (still proposals only).
 

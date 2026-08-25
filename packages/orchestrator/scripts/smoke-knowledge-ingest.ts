@@ -1,6 +1,6 @@
 /**
- * Offline smoke for Milestone 14 continuous/batch ingest (no live model).
- * Guarantees proposals only — never auto-accept.
+ * Offline smoke for deterministic ingest (no live model).
+ * Jobs stay awaiting accept — never silently canonical.
  */
 
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -46,97 +46,73 @@ async function main(): Promise<void> {
   });
 
   try {
-    // 1. ingest text → pending only
     const first = await ingestText(store, {
       text: sample,
-      sourceType: "manual",
       sourceRef: "smoke-ingest-1",
       workspaceId: "ws-ingest",
       projectLabel: "aktuator-v2",
     });
-    assert(first.mode === "heuristic", `mode heuristic got ${first.mode}`);
-    assert(!!first.eventId, "eventId");
-    assert(first.proposals.length >= 2, `proposals >= 2 got ${first.proposals.length}`);
-    assert(
-      first.proposals.every((p) => p.status === "pending"),
-      "all pending"
-    );
+    assert(first.status === "awaiting_accept", `status awaiting_accept got ${first.status}`);
+    assert(!!first.jobId, "jobId");
+    assert(first.chunkCount >= 1, `chunks >= 1 got ${first.chunkCount}`);
     assert(
       first.sourceRef.includes("project=aktuator-v2"),
       "project hint in sourceRef"
+    );
+    assert(
+      (await store.listChunks()).length === 0,
+      "canonical retrieve hides unaccepted jobs"
+    );
+    assert(
+      (await store.listChunks({ jobId: first.jobId, canonicalOnly: false })).length === first.chunkCount,
+      "operator inspect sees unaccepted chunks"
     );
     const acceptedBefore = await store.findNodes({
       status: "accepted",
       limit: 50,
     });
-    assert(acceptedBefore.length === 0, "no silent accept after ingest");
-    console.log(
-      `OK: ingestText proposals=${first.proposals.length} skipped=${first.skippedDuplicateNodes}`
-    );
+    assert(acceptedBefore.length === 0, "no silent node accept after ingest");
+    console.log(`OK: ingestText job=${first.jobId} chunks=${first.chunkCount}`);
 
-    // 2. accept nodes once
-    for (const p of first.proposals.filter((x) => x.kind === "node")) {
-      await store.acceptProposal(p.id);
-    }
-    for (const p of first.proposals.filter((x) => x.kind === "edge")) {
-      await store.acceptProposal(p.id);
-    }
-    const afterAccept = await store.findNodes({
-      status: "accepted",
-      limit: 50,
-    });
-    assert(afterAccept.length >= 1, "accepted after explicit accept");
-    console.log("OK: explicit accept only");
+    await store.acceptTransformJob(first.jobId);
+    assert((await store.listChunks()).length === first.chunkCount, "accept makes chunks canonical");
+    console.log("OK: explicit job accept only");
 
-    // 3. second ingest same content → fewer node proposals (dedupe)
     const second = await ingestText(store, {
       text: sample,
-      sourceType: "manual",
       sourceRef: "smoke-ingest-2",
     });
-    const nodeProps2 = second.proposals.filter((p) => p.kind === "node");
-    assert(
-      second.skippedDuplicateNodes === 0,
-      "labels alone do not dedupe canonical identities"
-    );
-    assert(
-      nodeProps2.length === first.proposals.filter((p) => p.kind === "node").length,
-      "ambiguous repeated referents stay reviewable"
-    );
-    console.log(
-      `OK: identity-safe second pass skipped=${second.skippedDuplicateNodes} nodeProposals=${nodeProps2.length}`
-    );
+    assert(second.status === "awaiting_accept", "repeat ingest is a new job");
+    assert(second.jobId !== first.jobId, "repeat ingest does not reuse the job");
+    console.log(`OK: second ingest job=${second.jobId}`);
 
-    // 4. file ingest
     const fileRes = await ingestFile(store, {
       path: fixturePath,
       sourceRef: "smoke-file",
     });
-    // file path absolute outside workspaceRoot is allowed for CLI-style (no root)
     assert(
-      fileRes.mode === "heuristic" || fileRes.mode === "skipped",
+      fileRes.status === "awaiting_accept" || fileRes.status === "failed",
       "file mode"
     );
-    if (fileRes.mode === "heuristic") {
+    if (fileRes.status === "awaiting_accept") {
+      assert(fileRes.chunkCount >= 1, "file chunks");
       assert(
-        fileRes.proposals.every((p) => p.status === "pending"),
-        "file proposals pending"
+        (await store.getTransformJob(fileRes.jobId))?.status === "awaiting_accept",
+        "file job awaits accept"
       );
     }
     console.log(
-      `OK: ingestFile mode=${fileRes.mode} proposals=${fileRes.proposals.length}`
+      `OK: ingestFile status=${fileRes.status} chunks=${fileRes.chunkCount}`
     );
 
-    // 5. minChars skip
     const short = await ingestText(store, {
       text: "hi",
       minChars: 80,
     });
-    assert(short.mode === "skipped", "short skipped");
-    assert(short.proposals.length === 0, "no proposals when skipped");
+    assert(short.status === "skipped", "short skipped");
+    assert(!short.jobId, "no job when skipped");
     console.log("OK: minChars gate");
 
-    // 6. tool knowledge_ingest
     const registry = new MapToolRegistry();
     for (const t of createKnowledgeTools(store)) {
       registry.register(t);
@@ -154,11 +130,11 @@ async function main(): Promise<void> {
       { workspaceRoot: process.cwd() }
     );
     assert(toolRes.ok, toolRes.error ?? "tool ingest");
-    const data = toolRes.data as { proposalIds?: string[] };
-    assert((data.proposalIds?.length ?? 0) >= 1, "tool proposals");
+    const data = toolRes.data as { jobId?: string; chunkCount?: number };
+    assert(!!data.jobId, "tool jobId");
+    assert((data.chunkCount ?? 0) >= 1, "tool chunks");
     console.log("OK: knowledge_ingest tool");
 
-    // 7. chat segment helper
     const segment = formatChatSegment(
       [
         { role: "user", content: "What limits continuous torque?" },
@@ -169,15 +145,11 @@ async function main(): Promise<void> {
     assert(segment.includes("user:"), "segment format");
     const chatIngest = await ingestText(store, {
       text: segment,
-      sourceType: "conversation",
       sourceRef: "chat-auto:test",
       minChars: 20,
     });
-    assert(
-      chatIngest.proposals.every((p) => p.status === "pending"),
-      "chat segment pending only"
-    );
-    console.log("OK: chat segment ingest proposals-only");
+    assert(chatIngest.status === "awaiting_accept", "chat segment awaits accept");
+    console.log("OK: chat segment ingest is a transform job");
   } finally {
     await store.close();
     await postgres.dispose();
@@ -197,7 +169,7 @@ async function main(): Promise<void> {
     }
   }
 
-  console.log("All knowledge-ingest (M14) smoke checks passed.");
+  console.log("All knowledge-ingest smoke checks passed.");
 }
 
 main().catch((err) => {

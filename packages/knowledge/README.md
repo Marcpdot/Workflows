@@ -10,6 +10,11 @@ PostgreSQL/PostGIS is the sole authoritative knowledge backend.
 storage-independent `CanonicalKnowledgeRepository`; orchestrator callers do not
 select a database implementation.
 
+Ingest is system-owned: `ingestText` / `ingestFile` / `ingestDirectory` write
+as-is source, stable chunks, and a transform job. Nothing is canonical until
+the operator accepts the job. Conversation extract is opt-in, not the default
+write path.
+
 ```bash
 docker compose -f compose.knowledge.yml up -d
 cd packages/orchestrator
@@ -20,9 +25,9 @@ npm run knowledge:test:canonical
 
 Configuration:
 
-- `KNOWLEDGE_POSTGRES_PORT` controls the Compose host port (default `55432`)
+- `KNOWLEDGE_POSTGRES_PORT` controls the Compose host port (default `5433`)
 - `KNOWLEDGE_DATABASE_URL` defaults to
-  `postgresql://workflows:workflows@127.0.0.1:55432/workflows`
+  `postgresql://workflows:workflows@127.0.0.1:5433/workflows`
 - `KNOWLEDGE_DATABASE_SSL=true|false` (default `false`)
 - `KNOWLEDGE_DATABASE_APPLICATION_NAME` (default `workflows-knowledge`)
 - `KNOWLEDGE_MIGRATIONS_DIR` is normally auto-resolved
@@ -175,6 +180,7 @@ From `packages/orchestrator`:
 npm run typecheck
 npm run knowledge:test:postgres
 npm run knowledge:test:canonical
+npm run knowledge:test:ingest
 npm run knowledge:test:vector
 npm run knowledge:test:graph
 npm run knowledge:test:hybrid

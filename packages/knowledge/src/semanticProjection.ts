@@ -41,17 +41,50 @@ function assertProvider(provider: SemanticEmbeddingProvider): void {
   if (provider.dimension !== KNOWLEDGE_VECTOR_DIMENSION) throw new Error(`embedding provider dimension ${provider.dimension} is incompatible; expected ${KNOWLEDGE_VECTOR_DIMENSION}`);
 }
 
-async function embedNodes(nodes: readonly KnowledgeNode[], provider: SemanticEmbeddingProvider): Promise<SemanticVectorRecord[]> {
+async function embeddingText(
+  node: KnowledgeNode,
+  canonical: CanonicalKnowledgeRepository
+): Promise<{ text: string; sourceId?: string; chunkId?: string; contentHash?: string }> {
+  if (node.type === "chunk") {
+    const chunk = await canonical.getChunk(node.id);
+    if (chunk?.text) {
+      return {
+        text: chunk.text,
+        sourceId: chunk.asIsId,
+        chunkId: chunk.id,
+        contentHash: chunk.contentHash,
+      };
+    }
+  }
+  return { text: canonicalSemanticText(node), sourceId: node.type === "source" ? node.id : undefined };
+}
+
+async function embedNodes(
+  nodes: readonly KnowledgeNode[],
+  provider: SemanticEmbeddingProvider,
+  canonical: CanonicalKnowledgeRepository
+): Promise<SemanticVectorRecord[]> {
   assertProvider(provider);
-  const texts = nodes.map(canonicalSemanticText);
+  const resolved: Array<{ text: string; sourceId?: string; chunkId?: string; contentHash?: string }> = [];
+  for (const node of nodes) resolved.push(await embeddingText(node, canonical));
+  const texts = resolved.map((item) => item.text);
   const vectors = await provider.embed(texts);
   if (vectors.length !== nodes.length) throw new Error(`embedding provider returned ${vectors.length} vectors for ${nodes.length} inputs`);
   return nodes.map((node, index) => ({
     id: semanticVectorRecordId(node.id, provider.model, provider.modelVersion),
-    canonicalId: node.id, workspaceId: node.workspaceId, entityType: node.type,
-    model: provider.model, modelVersion: provider.modelVersion,
-    dimension: provider.dimension, vector: vectors[index]!, contentHash: hash(texts[index]!),
-    metadata: {}, createdAt: node.createdAt, updatedAt: node.updatedAt,
+    canonicalId: node.id,
+    sourceId: resolved[index]!.sourceId,
+    chunkId: resolved[index]!.chunkId,
+    workspaceId: node.workspaceId,
+    entityType: node.type,
+    model: provider.model,
+    modelVersion: provider.modelVersion,
+    dimension: provider.dimension,
+    vector: vectors[index]!,
+    contentHash: resolved[index]!.contentHash ?? hash(texts[index]!),
+    metadata: {},
+    createdAt: node.createdAt,
+    updatedAt: node.updatedAt,
   }));
 }
 
@@ -64,7 +97,7 @@ export async function rebuildSemanticVectorProjection(input: {
 }): Promise<VectorProjectionResult> {
   const records: SemanticVectorRecord[] = [];
   for await (const page of input.canonical.scanAcceptedNodes({ pageSize: input.pageSize })) {
-    records.push(...await embedNodes(page, input.embedder));
+    records.push(...await embedNodes(page, input.embedder, input.canonical));
   }
   await input.vector.replaceProjection({ model: input.embedder.model, modelVersion: input.embedder.modelVersion, records });
   return { projected: records.length, model: input.embedder.model, modelVersion: input.embedder.modelVersion };
@@ -102,7 +135,7 @@ export async function processVectorProjectionOutbox(input: {
           const node = await input.canonical.getNode(job.canonical_id);
           if (!node || node.status !== "accepted") await input.vector.deleteByCanonicalId(job.canonical_id);
           else {
-            const [item] = await embedNodes([node], input.embedder);
+            const [item] = await embedNodes([node], input.embedder, input.canonical);
             await input.vector.upsert(item!);
           }
         }

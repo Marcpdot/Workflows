@@ -49,6 +49,10 @@ npx tsx src/index.ts --knowledge link nodeId=... projectId=...
 npx tsx src/index.ts --knowledge project-status label=aktuator-v2
 npx tsx src/index.ts --knowledge ingest --text "Copper losses produce heat..."
 npx tsx src/index.ts --knowledge ingest --file notes.md
+npx tsx src/index.ts --knowledge ingest --dir work
+npx tsx src/index.ts --knowledge jobs
+npx tsx src/index.ts --knowledge accept-job <jobId>
+npx tsx src/index.ts --knowledge chunks query="copper"
 npx tsx scripts/smoke-knowledge-projects.ts
 npx tsx scripts/smoke-knowledge-ingest.ts
 npx tsx scripts/smoke-knowledge-identity.ts
@@ -87,14 +91,17 @@ npx tsx src/index.ts --json --knowledge find label=heat
 # Optional context inject (default off; prefers project status when label matches):
 # KNOWLEDGE_INJECT_ENABLED=true
 # KNOWLEDGE_DEFAULT_WORKSPACE_ID=  # else active workspace id from --workspace
-# Optional auto chat→proposals only (never accept):
+# Optional auto chat → transform job (never accept):
 # KNOWLEDGE_INGEST_AUTO_ON_CHAT=true
+# Optional conversation extract (not the default write path):
+# KNOWLEDGE_CAPTURE_ENABLED=true
 ```
 
-## Interaction mode + continuous capture
+## Interaction mode + capture
 
-Default session mode is **active**: after each substantial turn the orchestrator
-extracts pending knowledge proposals (never auto-accept). Commands:
+Conversation extract is **off by default**. Ingest files with `--knowledge ingest`
+and accept transform jobs. Explicit `/capture` still works when capture is enabled.
+Commands:
 
 ```bash
 /mode active|neutral

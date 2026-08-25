@@ -46,7 +46,7 @@ async function main(): Promise<void> {
   assert(config.ssl, "database SSL config");
   assert(config.migrationsDir === resolveKnowledgeMigrationsDir(), "migration path");
   assert(
-    resolvePostgresKnowledgeConfig({}).connectionString.includes(":55432/"),
+    resolvePostgresKnowledgeConfig({}).connectionString.includes(":5433/"),
     "conflict-safe local database port"
   );
 
