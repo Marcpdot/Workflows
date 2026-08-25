@@ -24,11 +24,16 @@ export function contentHash(data: string | Uint8Array): string {
 }
 
 /**
- * Normalize newlines so the same document is stable across platforms.
+ * Normalize newlines and strip NUL bytes so the same document is stable
+ * across platforms and safe for PostgreSQL `text` columns.
  * Does not rewrite wording.
  */
 export function normalizeIngestText(text: string): string {
-  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/[ \t]+\n/g, "\n");
+  return text
+    .replace(/\u0000/g, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/[ \t]+\n/g, "\n");
 }
 
 /**
