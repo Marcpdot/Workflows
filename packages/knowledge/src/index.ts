@@ -119,7 +119,11 @@ export {
   formatNeighborhood,
   simpleQueryTokens,
 } from "./formatNeighborhood.js";
-export { createKnowledgeTools } from "./tools.js";
+export {
+  createKnowledgeTools,
+  resolveKnowledgeToolsOptions,
+  type KnowledgeToolsOptions,
+} from "./tools.js";
 export {
   buildKnowledgeInjectBlock,
   hydrateKnowledgeLineageContext,

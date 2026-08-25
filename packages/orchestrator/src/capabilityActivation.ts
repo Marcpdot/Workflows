@@ -438,7 +438,7 @@ export function createRuntimeCapabilities(
           "semantic knowledge capture is unavailable"
         ),
         cost: { unit: "calls", maximum: 1 },
-        produces: ["pending knowledge proposals with experience lineage"],
+        produces: ["pending proposals or ingest jobs with experience lineage"],
       },
       () => ({
         applicable: state.knowledgeCaptureRequested === true,

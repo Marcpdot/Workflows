@@ -109,7 +109,7 @@ export async function tryHandleSessionCommand(
     if (!ctx.knowledge) {
       return {
         kind: "handled",
-        message: "Knowledge store not open (check KNOWLEDGE_CAPTURE_DISABLED).",
+        message: "Knowledge store not open (enable KNOWLEDGE_TOOLS_ENABLED or KNOWLEDGE_CAPTURE_ENABLED).",
       };
     }
     if (!arg) {

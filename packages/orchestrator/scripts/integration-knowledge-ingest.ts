@@ -37,12 +37,16 @@ function hash(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
-function fixtureEmbedder(fail = false): SemanticEmbeddingProvider {
+function fixtureEmbedder(
+  fail = false,
+  onEmbed?: (texts: readonly string[]) => void
+): SemanticEmbeddingProvider {
   return {
     model: "fixture-ingest",
     modelVersion: "v1",
     dimension: KNOWLEDGE_VECTOR_DIMENSION,
     async embed(texts) {
+      onEmbed?.(texts);
       if (fail) throw new Error("fixture embedding failure");
       return texts.map((text) => {
         const vector = Array<number>(KNOWLEDGE_VECTOR_DIMENSION).fill(0);
@@ -235,7 +239,10 @@ async function main(): Promise<void> {
     assert(ingested.chunkCount >= 1 && ingested.asIsId, "text ingest writes as-is and chunks");
     assert((await repository.listChunks()).every((item) => item.jobId !== ingested.jobId), "unaccepted ingest is hidden from canonical retrieve");
     const vectors = createPostgresVectorRepository({ ...config, pool });
-    const embedder = fixtureEmbedder();
+    const embeddedTexts: string[] = [];
+    const embedder = fixtureEmbedder(false, (texts) => {
+      embeddedTexts.push(...texts);
+    });
     const acceptedIngest = await acceptJob({
       store: repository,
       jobId: ingested.jobId,
@@ -244,6 +251,11 @@ async function main(): Promise<void> {
       pool,
     });
     assert(acceptedIngest.job.status === "accepted", "acceptJob accepts the transform job");
+    assert(embeddedTexts.length > 0, "accept invokes the embedding provider");
+    assert(
+      embeddedTexts.some((text) => /copper losses/i.test(text)),
+      "provider embeds accepted chunk text, not invented vectors"
+    );
     assert((acceptedIngest.vector?.processed ?? 0) > 0, "acceptJob drains vector outbox with the embedding provider");
     assert(
       (await repository.listChunks({ pathPrefix: "work/notes.md" })).some((item) => item.jobId === ingested.jobId),

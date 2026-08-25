@@ -170,7 +170,7 @@ async function main(): Promise<void> {
 
     // 5. tool
     const registry = new MapToolRegistry();
-    for (const t of createKnowledgeTools(store)) {
+    for (const t of createKnowledgeTools(store, { proposalWrites: true })) {
       registry.register(t);
     }
     assert(

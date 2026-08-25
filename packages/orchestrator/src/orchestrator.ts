@@ -38,6 +38,9 @@ import {
   captureConversationSegment,
   createKnowledgeStore,
   createKnowledgeTools,
+  formatChatSegment,
+  ingestText,
+  resolveKnowledgeToolsOptions,
   findPendingRepresentationGap,
   hasRepresentationAcquisitionSignal,
   listPendingForSession,
@@ -1187,12 +1190,13 @@ export class Orchestrator {
     }
 
     const force = options?.forceCapture === true;
-    const shouldCapture =
+    const extractCapture =
       force ||
       (kSettings.captureEnabled &&
         interactionMode === "active" &&
-        proposalsEnabled) ||
-      kSettings.ingestAutoOnChat;
+        proposalsEnabled);
+    const ingestJob = !extractCapture && kSettings.ingestAutoOnChat;
+    const shouldCapture = extractCapture || ingestJob;
 
     const reportPending = async () => {
       try {
@@ -1232,12 +1236,36 @@ export class Orchestrator {
       return cognition;
     }
 
+    const messages = [
+      ...history,
+      { role: "user", content: prompt },
+      { role: "assistant", content: reply },
+    ];
+
+    if (ingestJob) {
+      try {
+        const ingested = await ingestText(this.knowledge, {
+          text: formatChatSegment(messages, kSettings.ingestMaxMessages),
+          sourceType: "conversation",
+          sourceRef: `conversation:${sid}`,
+          minChars: options?.minUserMessageLength ?? kSettings.ingestMinChars,
+        });
+        result.capture = {
+          ran: ingested.status !== "skipped",
+          reason: ingested.reason ?? ingested.status,
+          mode: "job",
+        };
+      } catch (err) {
+        result.capture = {
+          ran: false,
+          reason: err instanceof Error ? err.message : String(err),
+        };
+      }
+      await reportPending();
+      return cognition;
+    }
+
     try {
-      const messages = [
-        ...history,
-        { role: "user", content: prompt },
-        { role: "assistant", content: reply },
-      ];
       const captureTier = kSettings.captureModelTier;
       const captureTarget =
         captureTier === "heuristic"
@@ -1596,7 +1624,7 @@ export function loadConfigFromEnv(
           : undefined,
       });
 
-  // M12–M14 + continuous capture: open knowledge unless capture explicitly disabled
+  // Open knowledge when a write/read path is actually enabled (tools, inject, ingest, capture).
   const knowledgeToolsEnabled = envFlagTrue(env.KNOWLEDGE_TOOLS_ENABLED);
   const knowledgeInjectEnabled = envFlagTrue(env.KNOWLEDGE_INJECT_ENABLED);
   const knowledgeIngestAutoOnChat = envFlagTrue(
@@ -1605,7 +1633,8 @@ export function loadConfigFromEnv(
   const knowledgeCaptureDisabled = envFlagTrue(
     env.KNOWLEDGE_CAPTURE_DISABLED
   );
-  const knowledgeCaptureEnabled = !knowledgeCaptureDisabled;
+  const knowledgeCaptureEnabled =
+    envFlagTrue(env.KNOWLEDGE_CAPTURE_ENABLED) && !knowledgeCaptureDisabled;
   const captureTierRaw = env.KNOWLEDGE_CAPTURE_TIER?.trim().toLowerCase();
   const captureModelTier: "local" | "heuristic" =
     captureTierRaw === "heuristic" ? "heuristic" : "local";
@@ -1626,7 +1655,7 @@ export function loadConfigFromEnv(
 
   let tools = toolsDisabled ? undefined : createBuiltinRegistry();
   if (tools && knowledge && knowledgeToolsEnabled) {
-    for (const t of createKnowledgeTools(knowledge)) {
+    for (const t of createKnowledgeTools(knowledge, resolveKnowledgeToolsOptions(env))) {
       tools.register(t);
     }
   }

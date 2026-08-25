@@ -10,6 +10,11 @@ PostgreSQL/PostGIS is the sole authoritative knowledge backend.
 storage-independent `CanonicalKnowledgeRepository`; orchestrator callers do not
 select a database implementation.
 
+Ingest is system-owned: `ingestText` / `ingestFile` / `ingestDirectory` write
+as-is source, stable chunks, and a transform job. Nothing is canonical until
+the operator accepts the job. Conversation extract is opt-in, not the default
+write path.
+
 ```bash
 docker compose -f compose.knowledge.yml up -d
 cd packages/orchestrator
@@ -175,6 +180,7 @@ From `packages/orchestrator`:
 npm run typecheck
 npm run knowledge:test:postgres
 npm run knowledge:test:canonical
+npm run knowledge:test:ingest
 npm run knowledge:test:vector
 npm run knowledge:test:graph
 npm run knowledge:test:hybrid
