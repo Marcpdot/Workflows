@@ -6,16 +6,18 @@
 
 import { assertRegistered } from "./axes.js";
 import {
-  createHashEmbedder,
+  encodeId,
   encodeQuery,
   encodeText,
   readChunks,
+  rowsFromText,
   type CatalogEntry,
   type EncodeEmbedder,
   type EncodedSource,
   type EncodeRow,
   type Factor,
 } from "./encode.js";
+import { createTfidfEmbedder } from "./tfidf.js";
 
 export interface CatalogRowRef {
   sourceId: string;
@@ -37,12 +39,12 @@ export interface TensorCore {
   rows: CatalogRowRef[];
 }
 
-function emptyFactor(encodeId: string): Factor {
+function emptyFactor(): Factor {
   return { name: "S", axes: ["k", "d"], shape: [0, 0], values: [] };
 }
 
-export function createCore(encodeId: string): TensorCore {
-  return { encodeId, S: emptyFactor(encodeId), rows: [] };
+export function createCore(encodeIdValue: string): TensorCore {
+  return { encodeId: encodeIdValue, S: emptyFactor(), rows: [] };
 }
 
 export function ingest(core: TensorCore, encoded: EncodedSource): TensorCore {
@@ -127,31 +129,34 @@ export async function ask(
   return read(core, q.vector, options);
 }
 
-/** Smoke: two notes in, one question out. Hash embedder, no files. */
-export async function demoTensorRead(): Promise<ReadHit[]> {
-  const embedder = createHashEmbedder(32);
-  let core = createCore(encodeIdOf(embedder));
-  core = await ingestTextSource(core, {
-    embedder,
+const DEMO_NOTES = [
+  {
     sourcePath: "note-tensor.md",
     text:
       "Tensorer er multi-lineære maps.\n\n" +
       "Einsum er syntaksen for kontraksjon på navngitte akser.\n\n" +
       "Faktorer eier den store logiske tensoren.",
-  });
-  core = await ingestTextSource(core, {
-    embedder,
+  },
+  {
     sourcePath: "note-encode.md",
     text:
       "Encode gjør rå tekst om til tall på k og d.\n\n" +
       "Catalog husker sourceId og radtekst.\n\n" +
       "Uten catalog kan du ikke hente kunnskap tilbake til filen.",
-  });
+  },
+];
+
+/** Smoke: two notes in, one question out. TF-IDF basis, no generative model. */
+export async function demoTensorRead(): Promise<ReadHit[]> {
+  const embedder = createTfidfEmbedder();
+  embedder.fit(
+    DEMO_NOTES.flatMap((note) => rowsFromText(note.text).map((row) => row.text))
+  );
+  let core = createCore(encodeId(embedder.model, embedder.modelVersion, embedder.dimension));
+  for (const note of DEMO_NOTES) {
+    core = await ingestTextSource(core, { embedder, ...note });
+  }
   return ask(core, "hvordan henter jeg kunnskap fra en fil", embedder, {
     limit: 3,
   });
-}
-
-function encodeIdOf(embedder: EncodeEmbedder): string {
-  return `axes-1:${embedder.model}:${embedder.modelVersion}:d${embedder.dimension}`;
 }
