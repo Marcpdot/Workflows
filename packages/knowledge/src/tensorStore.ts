@@ -1,15 +1,17 @@
-/** Filesystem snapshot of S, O, catalog rows. Not canonical knowledge. */
+/** Filesystem snapshot of S, O, catalog rows, and the embedder. */
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { TensorCore } from "./core.js";
 import type { Factor } from "./encode.js";
+import type { LsaSnapshot } from "./lsa.js";
 
 export interface TensorSnapshot {
   encodeId: string;
   S: Factor;
   O?: Factor;
   V?: number[][];
+  lsa?: LsaSnapshot;
   rows: TensorCore["rows"];
 }
 
