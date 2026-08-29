@@ -329,6 +329,16 @@ export {
   TfidfEmbedder,
 } from "./tfidf.js";
 export {
+  truncatedSvd,
+  projectVector,
+  jacobiEigen,
+  type ThinSvd,
+} from "./svd.js";
+export {
+  createLsaEmbedder,
+  LsaEmbedder,
+} from "./lsa.js";
+export {
   createCore,
   ingest,
   read,
