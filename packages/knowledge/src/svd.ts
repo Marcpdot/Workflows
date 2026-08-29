@@ -1,10 +1,8 @@
 /** Thin SVD for small dense matrices. No external numeric library. */
 
 export interface ThinSvd {
-  /** Left vectors, k × r, column-major blocks in row-major storage of U. */
   U: number[][];
   singularValues: number[];
-  /** Right vectors, d × r. Columns are V_r. */
   V: number[][];
 }
 
@@ -43,11 +41,7 @@ function multiply(A: number[][], B: number[][]): number[][] {
   return C;
 }
 
-function gram(X: number[][]): number[][] {
-  return multiply(transpose(X), X);
-}
-
-/** Jacobi eigen-decomposition of a symmetric matrix. Returns eigenvalues descending + V. */
+/** Jacobi eigen-decomposition of a symmetric matrix. Eigenvalues descending. */
 export function jacobiEigen(Ainput: number[][], maxSweeps = 64): { values: number[]; vectors: number[][] } {
   const n = Ainput.length;
   const A = Ainput.map((row) => row.slice());
@@ -105,7 +99,29 @@ export function truncatedSvd(X: number[][], rank: number): ThinSvd {
   const k = X.length;
   const d = X[0].length;
   const r = Math.max(1, Math.min(rank, k, d));
-  const { values, vectors } = jacobiEigen(gram(X));
+  const Xt = transpose(X);
+
+  if (k <= d) {
+    const { values, vectors } = jacobiEigen(multiply(X, Xt));
+    const singularValues = values.slice(0, r).map((value) => Math.sqrt(Math.max(value, 0)));
+    const U = zeros(k, r);
+    for (let i = 0; i < k; i++) {
+      for (let j = 0; j < r; j++) U[i]![j] = vectors[i]![j]!;
+    }
+    const V = zeros(d, r);
+    for (let j = 0; j < r; j++) {
+      const sigma = singularValues[j]!;
+      if (sigma < 1e-12) continue;
+      for (let i = 0; i < d; i++) {
+        let sum = 0;
+        for (let row = 0; row < k; row++) sum += Xt[i]![row]! * U[row]![j]!;
+        V[i]![j] = sum / sigma;
+      }
+    }
+    return { U, singularValues, V };
+  }
+
+  const { values, vectors } = jacobiEigen(multiply(Xt, X));
   const singularValues = values.slice(0, r).map((value) => Math.sqrt(Math.max(value, 0)));
   const V = zeros(d, r);
   for (let i = 0; i < d; i++) {
@@ -114,9 +130,11 @@ export function truncatedSvd(X: number[][], rank: number): ThinSvd {
   const U = zeros(k, r);
   for (let row = 0; row < k; row++) {
     for (let j = 0; j < r; j++) {
+      const sigma = singularValues[j]!;
+      if (sigma < 1e-12) continue;
       let sum = 0;
       for (let col = 0; col < d; col++) sum += X[row]![col]! * V[col]![j]!;
-      U[row]![j] = singularValues[j]! > 1e-12 ? sum / singularValues[j]! : 0;
+      U[row]![j] = sum / sigma;
     }
   }
   return { U, singularValues, V };
