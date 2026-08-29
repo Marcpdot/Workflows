@@ -150,7 +150,7 @@ const DEMO_NOTES = [
 export async function demoTensorRead(): Promise<ReadHit[]> {
   const rows = DEMO_NOTES.flatMap((note) => rowsFromText(note.text).map((row) => row.text));
   const embedder = createLsaEmbedder();
-  embedder.fit(rows, 3);
+  embedder.fit(rows, rows.length);
   let core = createCore(encodeId(embedder.model, embedder.modelVersion, embedder.dimension));
   for (const note of DEMO_NOTES) {
     core = await ingestTextSource(core, { embedder, ...note });
