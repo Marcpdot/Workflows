@@ -1,11 +1,12 @@
 /**
- * Extract plain text from a PDF buffer (text-layer PDFs).
- * Optional runtime dependency `pdf-parse` — not required for typecheck/CI.
- * Scanned/image PDFs return little or empty text — caller should surface that.
+ * Extract plain text from a PDF buffer.
+ * Text layer first (pdf-parse, pdfjs). OCR if the layer is empty or garbled.
  */
 
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
+import { recoverPdfText } from "./pdfOcr.js";
+import { looksGarbled } from "./pdfQuality.js";
 
 export interface PdfExtractResult {
   text: string;
@@ -25,8 +26,6 @@ const requireFromHere = createRequire(import.meta.url);
 function asParseFn(candidate: unknown): PdfParseFn | null {
   if (typeof candidate !== "function") return null;
 
-  // pdf-parse v1: callable (buffer) => Promise
-  // pdf-parse v2: class PDFParse — must use `new`
   const fn = candidate as PdfParseFn & { prototype?: { constructor?: unknown } };
   const looksLikeClass =
     typeof fn.prototype === "object" &&
@@ -38,8 +37,6 @@ function asParseFn(candidate: unknown): PdfParseFn | null {
       const Ctor = candidate as new (opts?: { data?: Buffer }) => {
         getText?: () => Promise<{ text?: string }>;
         getInfo?: () => Promise<{ numPages?: number; pages?: number }>;
-        text?: string;
-        numpages?: number;
         destroy?: () => Promise<void> | void;
       };
       const instance = new Ctor({ data });
@@ -53,9 +50,7 @@ function asParseFn(candidate: unknown): PdfParseFn | null {
           }
           return { text: result?.text ?? "", numpages: pageCount };
         }
-        // Fallback if API differs
-        const legacy = candidate as PdfParseFn;
-        return await legacy(data);
+        return await (candidate as PdfParseFn)(data);
       } finally {
         try {
           await instance.destroy?.();
@@ -69,10 +64,6 @@ function asParseFn(candidate: unknown): PdfParseFn | null {
   return fn;
 }
 
-/**
- * Load pdf-parse relative to this package so orchestrator/tsx runs still
- * resolve packages/knowledge/node_modules/pdf-parse.
- */
 async function loadPdfParse(): Promise<PdfParseFn | null> {
   try {
     let resolved: string;
@@ -82,9 +73,7 @@ async function loadPdfParse(): Promise<PdfParseFn | null> {
       return null;
     }
     const mod: unknown = await import(pathToFileURL(resolved).href);
-    if (typeof mod === "function") {
-      return asParseFn(mod);
-    }
+    if (typeof mod === "function") return asParseFn(mod);
     if (mod && typeof mod === "object") {
       const record = mod as Record<string, unknown>;
       for (const key of ["default", "PDFParse", "pdfParse", "PDF"]) {
@@ -108,38 +97,35 @@ export async function extractPdfText(
       : 200_000;
 
   const pdfParse = await loadPdfParse();
+  let first = "";
+  let pageCount = 0;
+  let error: string | undefined;
+
   if (!pdfParse) {
-    return {
-      text: "",
-      pageCount: 0,
-      chars: 0,
-      empty: true,
-      error:
-        "pdf-parse is not installed. Run: npm install pdf-parse --prefix packages/knowledge (commit package-lock.json for CI)",
-    };
+    error =
+      "pdf-parse is not installed. Run: npm install pdf-parse --prefix packages/knowledge";
+  } else {
+    try {
+      const parsed = await pdfParse(data);
+      first = (parsed.text ?? "").replace(/\r/g, "").trim();
+      first = first.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n");
+      pageCount = parsed.numpages ?? 0;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
   }
 
-  try {
-    const parsed = await pdfParse(data);
-    let text = (parsed.text ?? "").replace(/\r/g, "").trim();
-    text = text.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n");
-    if (text.length > maxChars) {
-      text = text.slice(0, maxChars) + "\n\n[truncated]";
-    }
-    const pageCount = parsed.numpages ?? 0;
-    return {
-      text,
-      pageCount,
-      chars: text.length,
-      empty: text.length < 40,
-    };
-  } catch (err) {
-    return {
-      text: "",
-      pageCount: 0,
-      chars: 0,
-      empty: true,
-      error: err instanceof Error ? err.message : String(err),
-    };
+  let text = first;
+  if (!text || looksGarbled(text)) {
+    text = await recoverPdfText(data, first);
   }
+  if (text.length > maxChars) text = text.slice(0, maxChars) + "\n\n[truncated]";
+
+  return {
+    text,
+    pageCount,
+    chars: text.length,
+    empty: text.length < 40,
+    error: text.length >= 40 ? undefined : error,
+  };
 }
