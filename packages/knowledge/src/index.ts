@@ -256,7 +256,6 @@ export {
   createHybridKnowledgeRetrievalService,
   HybridKnowledgeRetrievalService,
   type HybridRetrievalDependencies,
-  type HybridRetrievalItem,
   type HybridRetrievalRequest,
   type HybridRetrievalResult,
   type RetrievalOrigin,
@@ -288,3 +287,19 @@ export {
   normalizeStructuredCapture,
   type NormalizedCapture,
 } from "./structuredCapture.js";
+export {
+  AXES_VERSION,
+  AXES,
+  AXIS_META,
+  ALIASES,
+  EQUATIONS,
+  AxisError,
+  resolveAxis,
+  assertRegistered,
+  parseExpr,
+  lettersIn,
+  listAxes,
+  type AxisName,
+  type Equation,
+  type EquationKind,
+} from "./axes.js";
