@@ -1,25 +1,8 @@
-/** Optional OCR. Skips if tesseract.js / canvas are not installed. */
+/** Optional OCR. Off unless TENSOR_OCR=1. */
 
 import { looksGarbled } from "./pdfQuality.js";
 
 const DEFAULT_PAGES = 8;
-
-async function loadPdfjs(): Promise<{
-  getDocument: (opts: { data: Uint8Array; useSystemFonts?: boolean }) => { promise: Promise<PdfDoc> };
-} | null> {
-  try {
-    const mod = (await import("pdfjs-dist/legacy/build/pdf.mjs")) as {
-      getDocument?: unknown;
-      default?: { getDocument?: unknown };
-    };
-    const getDocument = (mod.getDocument ?? mod.default?.getDocument) as
-      | ((opts: { data: Uint8Array; useSystemFonts?: boolean }) => { promise: Promise<PdfDoc> })
-      | undefined;
-    return getDocument ? { getDocument } : null;
-  } catch {
-    return null;
-  }
-}
 
 interface PdfDoc {
   numPages: number;
@@ -32,10 +15,51 @@ interface PdfPage {
   getTextContent(): Promise<{ items: Array<{ str?: string }> }>;
 }
 
+type GetDocument = (opts: Record<string, unknown>) => { promise: Promise<PdfDoc> };
+
+async function loadPdfjs(): Promise<{ getDocument: GetDocument } | null> {
+  const paths = [
+    "pdfjs-dist/legacy/build/pdf.mjs",
+    "pdfjs-dist/build/pdf.mjs",
+    "pdfjs-dist",
+  ];
+  for (const path of paths) {
+    try {
+      const mod = (await import(path)) as {
+        getDocument?: GetDocument;
+        default?: { getDocument?: GetDocument };
+        VerbosityLevel?: { ERRORS?: number };
+        setVerbosityLevel?: (n: number) => void;
+      };
+      const getDocument = mod.getDocument ?? mod.default?.getDocument;
+      if (!getDocument) continue;
+      try {
+        mod.setVerbosityLevel?.(mod.VerbosityLevel?.ERRORS ?? 0);
+      } catch {
+        /* ignore */
+      }
+      return { getDocument };
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+function openPdf(getDocument: GetDocument, data: Buffer) {
+  return getDocument({
+    data: new Uint8Array(data),
+    useSystemFonts: false,
+    disableFontFace: true,
+    isEvalSupported: false,
+    verbosity: 0,
+  }).promise;
+}
+
 export async function extractPdfJsText(data: Buffer): Promise<string> {
   const pdfjs = await loadPdfjs();
   if (!pdfjs) return "";
-  const doc = await pdfjs.getDocument({ data: new Uint8Array(data), useSystemFonts: true }).promise;
+  const doc = await openPdf(pdfjs.getDocument, data);
   const pages: string[] = [];
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i);
@@ -55,8 +79,8 @@ export async function extractPdfOcr(
   data: Buffer,
   options?: { maxPages?: number }
 ): Promise<{ text: string; pages: number; used: boolean; error?: string }> {
-  if (process.env.TENSOR_OCR === "0") {
-    return { text: "", pages: 0, used: false, error: "TENSOR_OCR=0" };
+  if (process.env.TENSOR_OCR !== "1") {
+    return { text: "", pages: 0, used: false, error: "TENSOR_OCR not enabled" };
   }
 
   try {
@@ -68,11 +92,11 @@ export async function extractPdfOcr(
         text: "",
         pages: 0,
         used: false,
-        error: "OCR deps missing (pdfjs-dist, @napi-rs/canvas, tesseract.js)",
+        error: "OCR deps missing",
       };
     }
 
-    const doc = await pdfjs.getDocument({ data: new Uint8Array(data), useSystemFonts: true }).promise;
+    const doc = await openPdf(pdfjs.getDocument, data);
     const maxPages = Math.min(
       doc.numPages,
       options?.maxPages ?? Number(process.env.TENSOR_OCR_PAGES ?? DEFAULT_PAGES)
@@ -107,11 +131,17 @@ export async function extractPdfOcr(
 }
 
 export async function recoverPdfText(data: Buffer, firstPass: string): Promise<string> {
-  const jsText = await extractPdfJsText(data).catch(() => "");
+  let jsText = "";
+  try {
+    jsText = await extractPdfJsText(data);
+  } catch {
+    jsText = "";
+  }
   const candidates = [firstPass, jsText].filter((text) => text.trim().length > 0);
   candidates.sort((a, b) => Number(looksGarbled(a)) - Number(looksGarbled(b)) || b.length - a.length);
   const best = candidates[0] ?? "";
   if (best && !looksGarbled(best)) return best;
+  if (process.env.TENSOR_OCR !== "1") return best;
 
   const ocr = await extractPdfOcr(data);
   if (ocr.used && ocr.text && (!best || looksGarbled(best))) {
