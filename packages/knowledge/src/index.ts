@@ -323,3 +323,14 @@ export {
   type CatalogEntry,
   type EncodedSource,
 } from "./encode.js";
+export {
+  createCore,
+  ingest,
+  read,
+  ingestTextSource,
+  ask,
+  demoTensorRead,
+  type CatalogRowRef,
+  type ReadHit,
+  type TensorCore,
+} from "./core.js";
