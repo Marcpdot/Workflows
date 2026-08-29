@@ -243,15 +243,15 @@ export function createHashEmbedder(dimension = 32): EncodeEmbedder {
   };
 }
 
-/** Row-major X[k, channel] · q[channel] → scores[k]. */
+/** Row-major X[k, channel] times q[channel] -> scores[k]. */
 export function readChunks(X: Factor, query: readonly number[]): number[] {
   const axis = X.axes.join("");
   if ((axis !== "kd" && axis !== "kr") || X.shape.length !== 2) {
-    throw new Error(`readChunks expects factor axes [k,d] or [k,r], got [${X.axes.join(",")}]");
+    throw new Error("readChunks expects factor axes [k,d] or [k,r], got [" + X.axes.join(",") + "]");
   }
   const [rowCount, dim] = X.shape;
   if (query.length !== dim) {
-    throw new Error(`query length ${query.length} != channel ${dim}`);
+    throw new Error("query length " + query.length + " != channel " + dim);
   }
   const scores = Array.from({ length: rowCount }, () => 0);
   for (let k = 0; k < rowCount; k++) {
