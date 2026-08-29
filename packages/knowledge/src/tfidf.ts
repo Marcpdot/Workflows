@@ -18,7 +18,7 @@ export function tokenize(text: string): string[] {
     .toLowerCase()
     .normalize("NFKC")
     .match(/[\p{L}\p{N}]+/gu)
-    ?.filter((token) => token.length > 1 && !STOP.has(token)) ?? [];
+    ?.filter((token) => {\n      if (STOP.has(token)) return false;\n      if (/^\d+$/.test(token)) return true;\n      return token.length > 1;\n    }) ?? [];
 }
 
 export interface TfidfSnapshot {
