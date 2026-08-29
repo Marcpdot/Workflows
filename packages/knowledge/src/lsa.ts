@@ -40,7 +40,7 @@ export class LsaEmbedder implements EncodeEmbedder {
   fit(texts: readonly string[], rank = 8): this {
     this.tfidf.fit(texts);
     const matrix = texts.map((text) => this.tfidf.vectorize(text));
-    const r = Math.max(1, Math.min(rank, Math.max(1, matrix.length - 1), this.tfidf.dimension));
+    const r = Math.max(1, Math.min(rank, matrix.length, this.tfidf.dimension));
     this.svd = truncatedSvd(matrix, r);
     this.dimension = this.svd.V[0]?.length ?? 0;
     this.singularValues = this.svd.singularValues;
