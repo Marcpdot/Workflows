@@ -316,6 +316,8 @@ export {
   encodeQuery,
   createHashEmbedder,
   readChunks,
+  channelOf,
+  EmptyQueryError,
   type EvidenceType,
   type EncodeEmbedder,
   type EncodeRow,
@@ -349,3 +351,15 @@ export {
   type ReadHit,
   type TensorCore,
 } from "./core.js";
+export {
+  identityOperator,
+  applyOperator,
+} from "./operator.js";
+export {
+  writeSnapshot,
+  readSnapshot,
+  coreFromSnapshot,
+  type TensorSnapshot,
+} from "./tensorStore.js";
+export { minimalPdf } from "./minimalPdf.js";
+export { runTensorSmoke } from "./tensor.smoke.js";
