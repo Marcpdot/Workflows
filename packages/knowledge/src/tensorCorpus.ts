@@ -9,6 +9,7 @@ import {
   encodeId,
   loadSourceText,
   rowsFromText,
+  withSourceTitle,
   type EncodeEmbedder,
 } from "./encode.js";
 import { createLsaEmbedder, LsaEmbedder, type LsaSnapshot } from "./lsa.js";
@@ -61,7 +62,7 @@ export async function buildTensorFromDir(input: {
         continue;
       }
       loaded.push({ path });
-      for (const row of rows) rowTexts.push(row.text);
+      for (const row of rows) rowTexts.push(withSourceTitle(row.text, path));
     } catch (error) {
       skipped.push(path);
       console.warn("skip", basename(path), error instanceof Error ? error.message : error);
