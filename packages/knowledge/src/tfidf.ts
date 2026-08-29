@@ -21,6 +21,12 @@ export function tokenize(text: string): string[] {
     ?.filter((token) => token.length > 1 && !STOP.has(token)) ?? [];
 }
 
+export interface TfidfSnapshot {
+  vocab: string[];
+  idf: number[];
+  modelVersion: string;
+}
+
 export class TfidfEmbedder implements EncodeEmbedder {
   readonly model = "tfidf";
   readonly channel: AxisName = "d";
@@ -52,6 +58,21 @@ export class TfidfEmbedder implements EncodeEmbedder {
 
   terms(): readonly string[] {
     return this.vocab;
+  }
+
+  toJSON(): TfidfSnapshot {
+    if (this.dimension === 0) throw new Error("cannot snapshot unfitted tfidf");
+    return { vocab: this.vocab, idf: this.idf, modelVersion: this.modelVersion };
+  }
+
+  static fromJSON(snap: TfidfSnapshot): TfidfEmbedder {
+    const embedder = new TfidfEmbedder();
+    embedder.vocab = snap.vocab;
+    embedder.index = new Map(snap.vocab.map((token, i) => [token, i]));
+    embedder.idf = snap.idf;
+    embedder.dimension = snap.vocab.length;
+    embedder.modelVersion = snap.modelVersion;
+    return embedder;
   }
 
   vectorize(text: string): number[] {

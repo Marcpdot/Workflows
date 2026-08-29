@@ -5,7 +5,7 @@
 
 import type { AxisName } from "./axes.js";
 import type { EncodeEmbedder } from "./encode.js";
-import { createTfidfEmbedder } from "./tfidf.js";
+import { createTfidfEmbedder, TfidfEmbedder, type TfidfSnapshot } from "./tfidf.js";
 import { projectVector, truncatedSvd, type ThinSvd } from "./svd.js";
 
 function l2(vector: number[]): number[] {
@@ -14,6 +14,13 @@ function l2(vector: number[]): number[] {
   const n = Math.sqrt(sum);
   if (!(n > 0)) return vector.map(() => 0);
   return vector.map((value) => value / n);
+}
+
+export interface LsaSnapshot {
+  tfidf: TfidfSnapshot;
+  V: number[][];
+  singularValues: number[];
+  modelVersion: string;
 }
 
 export class LsaEmbedder implements EncodeEmbedder {
@@ -47,6 +54,26 @@ export class LsaEmbedder implements EncodeEmbedder {
     this.singularValues = this.svd.singularValues;
     this.modelVersion = `${this.tfidf.modelVersion}:r${this.dimension}`;
     return this;
+  }
+
+  toJSON(): LsaSnapshot {
+    if (!this.svd) throw new Error("cannot snapshot unfitted lsa");
+    return {
+      tfidf: this.tfidf.toJSON(),
+      V: this.svd.V,
+      singularValues: this.singularValues,
+      modelVersion: this.modelVersion,
+    };
+  }
+
+  static fromJSON(snap: LsaSnapshot): LsaEmbedder {
+    const embedder = new LsaEmbedder();
+    embedder.tfidf = TfidfEmbedder.fromJSON(snap.tfidf);
+    embedder.svd = { U: [], singularValues: snap.singularValues, V: snap.V };
+    embedder.dimension = snap.V[0]?.length ?? 0;
+    embedder.singularValues = snap.singularValues;
+    embedder.modelVersion = snap.modelVersion;
+    return embedder;
   }
 
   async embed(texts: readonly string[]): Promise<number[][]> {
