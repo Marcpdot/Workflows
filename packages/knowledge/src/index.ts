@@ -288,3 +288,85 @@ export {
   normalizeStructuredCapture,
   type NormalizedCapture,
 } from "./structuredCapture.js";
+export {
+  AXES_VERSION,
+  AXES,
+  AXIS_META,
+  ALIASES,
+  EQUATIONS,
+  AxisError,
+  resolveAxis,
+  assertRegistered,
+  parseExpr,
+  lettersIn,
+  listAxes,
+  type AxisName,
+  type Equation,
+  type EquationKind,
+} from "./axes.js";
+export {
+  EVIDENCE_TYPES,
+  encodeId,
+  sourceIdFromPath,
+  rowsFromText,
+  evidenceFromPath,
+  loadSourceText,
+  encodeText,
+  encodeFile,
+  encodeQuery,
+  createHashEmbedder,
+  readChunks,
+  channelOf,
+  EmptyQueryError,
+  type EvidenceType,
+  type EncodeEmbedder,
+  type EncodeRow,
+  type Factor,
+  type CatalogEntry,
+  type EncodedSource,
+} from "./encode.js";
+export {
+  createTfidfEmbedder,
+  tokenize,
+  TfidfEmbedder,
+} from "./tfidf.js";
+export {
+  truncatedSvd,
+  projectVector,
+  jacobiEigen,
+  type ThinSvd,
+} from "./svd.js";
+export {
+  createLsaEmbedder,
+  LsaEmbedder,
+} from "./lsa.js";
+export {
+  createCore,
+  ingest,
+  read,
+  ingestTextSource,
+  ask,
+  demoTensorRead,
+  type CatalogRowRef,
+  type ReadHit,
+  type TensorCore,
+} from "./core.js";
+export {
+  identityOperator,
+  applyOperator,
+} from "./operator.js";
+export {
+  writeSnapshot,
+  readSnapshot,
+  coreFromSnapshot,
+  type TensorSnapshot,
+} from "./tensorStore.js";
+export { minimalPdf } from "./minimalPdf.js";
+export { runTensorSmoke } from "./tensor.smoke.js";
+export {
+  listSourceFiles,
+  buildTensorFromDir,
+  openTensorStore,
+  askStore,
+} from "./tensorCorpus.js";
+export { createTensorTools } from "./tensorTools.js";
