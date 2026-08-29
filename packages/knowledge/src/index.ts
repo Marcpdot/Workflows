@@ -304,3 +304,22 @@ export {
   type Equation,
   type EquationKind,
 } from "./axes.js";
+export {
+  EVIDENCE_TYPES,
+  encodeId,
+  sourceIdFromPath,
+  rowsFromText,
+  evidenceFromPath,
+  loadSourceText,
+  encodeText,
+  encodeFile,
+  encodeQuery,
+  createHashEmbedder,
+  readChunks,
+  type EvidenceType,
+  type EncodeEmbedder,
+  type EncodeRow,
+  type Factor,
+  type CatalogEntry,
+  type EncodedSource,
+} from "./encode.js";
