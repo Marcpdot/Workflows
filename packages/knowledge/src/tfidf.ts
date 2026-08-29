@@ -14,11 +14,17 @@ const STOP = new Set([
 ]);
 
 export function tokenize(text: string): string[] {
-  return text
-    .toLowerCase()
-    .normalize("NFKC")
-    .match(/[\p{L}\p{N}]+/gu)
-    ?.filter((token) => {\n      if (STOP.has(token)) return false;\n      if (/^\d+$/.test(token)) return true;\n      return token.length > 1;\n    }) ?? [];
+  return (
+    text
+      .toLowerCase()
+      .normalize("NFKC")
+      .match(/[\p{L}\p{N}]+/gu)
+      ?.filter((token) => {
+        if (STOP.has(token)) return false;
+        if (/^\d+$/.test(token)) return true;
+        return token.length > 1;
+      }) ?? []
+  );
 }
 
 export interface TfidfSnapshot {
