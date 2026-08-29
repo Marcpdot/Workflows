@@ -256,6 +256,7 @@ export {
   createHybridKnowledgeRetrievalService,
   HybridKnowledgeRetrievalService,
   type HybridRetrievalDependencies,
+  type HybridRetrievalItem,
   type HybridRetrievalRequest,
   type HybridRetrievalResult,
   type RetrievalOrigin,
