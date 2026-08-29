@@ -12,11 +12,14 @@
     }
   },
   "dependencies": {
+    "@napi-rs/canvas": "^0.1.80",
     "@workflows/structured": "file:../structured",
     "@workflows/tools": "file:../tools",
     "neo4j-driver": "^5.28.1",
     "pdf-parse": "^2.4.5",
-    "pg": "^8.16.3"
+    "pdfjs-dist": "^5.4.149",
+    "pg": "^8.16.3",
+    "tesseract.js": "^6.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
