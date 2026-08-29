@@ -324,6 +324,11 @@ export {
   type EncodedSource,
 } from "./encode.js";
 export {
+  createTfidfEmbedder,
+  tokenize,
+  TfidfEmbedder,
+} from "./tfidf.js";
+export {
   createCore,
   ingest,
   read,
