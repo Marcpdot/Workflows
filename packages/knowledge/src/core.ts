@@ -6,6 +6,7 @@
 
 import { assertRegistered } from "./axes.js";
 import {
+  channelOf,
   encodeId,
   encodeQuery,
   encodeText,
@@ -34,7 +35,6 @@ export interface ReadHit {
 
 export interface TensorCore {
   encodeId: string;
-  /** S[k, channel] — stacked source rows. Channel is d or r after LSA. */
   S: Factor;
   rows: CatalogRowRef[];
 }
@@ -55,7 +55,7 @@ export function ingest(core: TensorCore, encoded: EncodedSource): TensorCore {
   }
   const dim = encoded.X.shape[1] ?? 0;
   if (core.S.shape[1] !== 0 && core.S.shape[1] !== dim) {
-    throw new Error(`d mismatch: core ${core.S.shape[1]} vs source ${dim}`);
+    throw new Error(`channel mismatch: core ${core.S.shape[1]} vs source ${dim}`);
   }
 
   const nextValues = core.S.values.concat(encoded.X.values);
@@ -73,7 +73,7 @@ export function ingest(core: TensorCore, encoded: EncodedSource): TensorCore {
     encodeId: core.encodeId,
     S: {
       name: "S",
-      axes: ["k", "d"],
+      axes: encoded.X.axes,
       shape: [nextRows.length, dim],
       values: nextValues,
     },
@@ -86,7 +86,8 @@ export function read(
   query: readonly number[],
   options?: { limit?: number }
 ): ReadHit[] {
-  assertRegistered("d,kd->k");
+  const channel = core.S.axes[1] ?? "d";
+  assertRegistered(`${channel},k${channel}->k`);
   if (core.rows.length === 0) return [];
   const scores = readChunks(core.S, query);
   const ranked = scores
@@ -146,12 +147,13 @@ const DEMO_NOTES = [
   },
 ];
 
-/** Smoke: two notes in, one question out. LSA channel, no generative model. */
 export async function demoTensorRead(): Promise<ReadHit[]> {
   const rows = DEMO_NOTES.flatMap((note) => rowsFromText(note.text).map((row) => row.text));
   const embedder = createLsaEmbedder();
   embedder.fit(rows, rows.length);
-  let core = createCore(encodeId(embedder.model, embedder.modelVersion, embedder.dimension));
+  let core = createCore(
+    encodeId(embedder.model, embedder.modelVersion, embedder.dimension, channelOf(embedder))
+  );
   for (const note of DEMO_NOTES) {
     core = await ingestTextSource(core, { embedder, ...note });
   }
