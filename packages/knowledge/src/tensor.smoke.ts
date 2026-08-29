@@ -1,6 +1,6 @@
 /** Exit 1 if the tensor loop regresses. Run: npx tsx src/tensor.smoke.ts */
 
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { assertRegistered } from "./axes.js";
@@ -17,6 +17,7 @@ import { truncatedSvd } from "./svd.js";
 import { ask, createCore, ingest, ingestTextSource, read } from "./core.js";
 import { applyOperator, identityOperator } from "./operator.js";
 import { coreFromSnapshot, readSnapshot, writeSnapshot } from "./tensorStore.js";
+import { askStore, buildTensorFromDir } from "./tensorCorpus.js";
 import { minimalPdf } from "./minimalPdf.js";
 
 function expect(cond: unknown, message: string): void {
@@ -78,6 +79,7 @@ export async function runTensorSmoke(): Promise<void> {
     O,
     V: lsa.V ?? undefined,
     rows: core.rows,
+    lsa: lsa.toJSON(),
   });
   const loaded = coreFromSnapshot(await readSnapshot(dir));
   expect(loaded.encodeId === core.encodeId, "snapshot encodeId drifted");
@@ -93,6 +95,16 @@ export async function runTensorSmoke(): Promise<void> {
   expect(encodedPdf.X.shape[0]! >= 1, "pdf encode produced no rows");
   const withPdf = ingest(core, encodedPdf);
   expect(withPdf.rows.some((row) => row.evidence === "pdf"), "pdf row never reached S");
+
+  const sourceDir = await mkdtemp(join(tmpdir(), "tensor-src-"));
+  const storeDir = join(sourceDir, "store");
+  await mkdir(storeDir);
+  await writeFile(join(sourceDir, "catalog.md"), notes[0]!.text);
+  await writeFile(join(sourceDir, "ultron.md"), notes[1]!.text);
+  const built = await buildTensorFromDir({ sourceDir, storeDir, rank: 2 });
+  expect(built.files.length === 2, "corpus missed files");
+  const reopened = await askStore(storeDir, "hente kunnskap fra catalog");
+  expect(reopened[0]?.ref.sourcePath?.endsWith("catalog.md"), "reopened store lost catalog file");
 
   console.log("tensor.smoke ok");
 }
