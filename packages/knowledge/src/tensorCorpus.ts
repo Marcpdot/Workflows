@@ -1,7 +1,7 @@
 /** Build S from a directory of sources and reopen it from snapshot. */
 
 import { readdir } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { basename, extname, join } from "node:path";
 import { ask, createCore, ingest, type TensorCore } from "./core.js";
 import {
   channelOf,
@@ -37,6 +37,7 @@ export interface BuiltTensorStore {
   core: TensorCore;
   embedder: LsaEmbedder;
   files: string[];
+  skipped: string[];
   rows: number;
 }
 
@@ -48,14 +49,23 @@ export async function buildTensorFromDir(input: {
   const files = await listSourceFiles(input.sourceDir);
   if (files.length === 0) throw new Error("no .md/.txt/.pdf under " + input.sourceDir);
 
-  const loaded = [];
+  const loaded: { path: string }[] = [];
+  const skipped: string[] = [];
   const rowTexts: string[] = [];
   for (const path of files) {
-    const source = await loadSourceText(path);
-    const rows = rowsFromText(source.text);
-    if (rows.length === 0) continue;
-    loaded.push({ path, evidence: source.evidence });
-    for (const row of rows) rowTexts.push(row.text);
+    try {
+      const source = await loadSourceText(path);
+      const rows = rowsFromText(source.text);
+      if (rows.length === 0) {
+        skipped.push(path);
+        continue;
+      }
+      loaded.push({ path });
+      for (const row of rows) rowTexts.push(row.text);
+    } catch (error) {
+      skipped.push(path);
+      console.warn("skip", basename(path), error instanceof Error ? error.message : error);
+    }
   }
   if (rowTexts.length === 0) throw new Error("sources produced no rows");
 
@@ -83,6 +93,7 @@ export async function buildTensorFromDir(input: {
     core,
     embedder,
     files: loaded.map((file) => file.path),
+    skipped,
     rows: core.rows.length,
   };
 }

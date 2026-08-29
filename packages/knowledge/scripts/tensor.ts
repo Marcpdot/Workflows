@@ -1,6 +1,6 @@
 /**
- * npx tsx scripts/tensor.ts build src .tensor-store 8
- * npx tsx scripts/tensor.ts ask .tensor-store "hva er akseregister"
+ * npx tsx scripts/tensor.ts build ..\\..\\work .tensor-store 8
+ * npx tsx scripts/tensor.ts ask .tensor-store "spørsmål"
  */
 
 import { mkdir } from "node:fs/promises";
@@ -15,6 +15,7 @@ async function main(): Promise<void> {
     await mkdir(storeDir, { recursive: true });
     const built = await buildTensorFromDir({ sourceDir, storeDir, rank });
     console.log(`built ${built.rows} rows from ${built.files.length} files`);
+    if (built.skipped.length) console.log(`skipped ${built.skipped.length} empty/unreadable files`);
     console.log(built.core.encodeId);
     return;
   }

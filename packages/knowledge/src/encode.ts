@@ -5,7 +5,7 @@
 
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { basename, extname } from "node:path";
+import { extname } from "node:path";
 import { AXES_VERSION, type AxisName } from "./axes.js";
 import { extractPdfText } from "./pdfText.js";
 
@@ -129,7 +129,6 @@ export async function loadSourceText(path: string): Promise<{ text: string; evid
   if (evidence === "pdf") {
     const extracted = await extractPdfText(raw);
     if (extracted.error) throw new Error(`encode pdf failed: ${extracted.error}`);
-    if (extracted.empty) throw new Error(`encode pdf produced no text: ${basename(path)}`);
     return { text: extracted.text, evidence };
   }
   return { text: raw.toString("utf8"), evidence };
