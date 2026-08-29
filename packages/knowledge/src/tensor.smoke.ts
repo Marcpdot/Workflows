@@ -88,7 +88,7 @@ export async function runTensorSmoke(): Promise<void> {
   const pdfDir = await mkdtemp(join(tmpdir(), "tensor-pdf-"));
   const pdfPath = join(pdfDir, "note.pdf");
   await writeFile(pdfPath, minimalPdf("Catalog knowledge can be fetched from the file."));
-  const encodedPdf = await encodeFile(pdfPath, tfidf);
+  const encodedPdf = await encodeFile(pdfPath, lsa);
   expect(encodedPdf.catalog.evidence === "pdf", "pdf evidence type missing");
   expect(encodedPdf.X.shape[0]! >= 1, "pdf encode produced no rows");
   const withPdf = ingest(core, encodedPdf);
