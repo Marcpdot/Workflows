@@ -5,7 +5,7 @@
 
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { extname } from "node:path";
+import { basename, extname } from "node:path";
 import { AXES_VERSION, type AxisName } from "./axes.js";
 import { extractPdfText } from "./pdfText.js";
 
@@ -88,6 +88,16 @@ function hashText(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
+export function titleFromPath(path?: string): string {
+  if (!path) return "";
+  return basename(path).replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
+}
+
+export function withSourceTitle(text: string, path?: string): string {
+  const title = titleFromPath(path);
+  return title ? `${title}\n${text}` : text;
+}
+
 export function l2norm(vector: readonly number[]): number {
   let sum = 0;
   for (const value of vector) sum += value * value;
@@ -142,7 +152,10 @@ export async function encodeText(input: {
   sourcePath?: string;
   minChars?: number;
 }): Promise<EncodedSource> {
-  const rows = rowsFromText(input.text, { minChars: input.minChars });
+  const rows = rowsFromText(input.text, { minChars: input.minChars }).map((row) => ({
+    ...row,
+    text: withSourceTitle(row.text, input.sourcePath),
+  }));
   if (rows.length === 0) throw new Error("encode produced no rows");
 
   const vectors = await input.embedder.embed(rows.map((row) => row.text));
