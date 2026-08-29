@@ -363,3 +363,9 @@ export {
 } from "./tensorStore.js";
 export { minimalPdf } from "./minimalPdf.js";
 export { runTensorSmoke } from "./tensor.smoke.js";
+export {
+  listSourceFiles,
+  buildTensorFromDir,
+  openTensorStore,
+  askStore,
+} from "./tensorCorpus.js";
