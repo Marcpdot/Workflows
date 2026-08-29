@@ -1,4 +1,4 @@
-import { runTensorSmoke } from "@workflows/knowledge";
+import { runTensorSmoke } from "../../knowledge/src/tensor.smoke.ts";
 
 runTensorSmoke().catch((error) => {
   console.error(error);
