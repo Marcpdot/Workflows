@@ -17,7 +17,7 @@ import {
   type EncodeRow,
   type Factor,
 } from "./encode.js";
-import { createTfidfEmbedder } from "./tfidf.js";
+import { createLsaEmbedder } from "./lsa.js";
 
 export interface CatalogRowRef {
   sourceId: string;
@@ -34,7 +34,7 @@ export interface ReadHit {
 
 export interface TensorCore {
   encodeId: string;
-  /** S[k, d] — stacked source rows. */
+  /** S[k, channel] — stacked source rows. Channel is d or r after LSA. */
   S: Factor;
   rows: CatalogRowRef[];
 }
@@ -146,12 +146,11 @@ const DEMO_NOTES = [
   },
 ];
 
-/** Smoke: two notes in, one question out. TF-IDF basis, no generative model. */
+/** Smoke: two notes in, one question out. LSA channel, no generative model. */
 export async function demoTensorRead(): Promise<ReadHit[]> {
-  const embedder = createTfidfEmbedder();
-  embedder.fit(
-    DEMO_NOTES.flatMap((note) => rowsFromText(note.text).map((row) => row.text))
-  );
+  const rows = DEMO_NOTES.flatMap((note) => rowsFromText(note.text).map((row) => row.text));
+  const embedder = createLsaEmbedder();
+  embedder.fit(rows, 3);
   let core = createCore(encodeId(embedder.model, embedder.modelVersion, embedder.dimension));
   for (const note of DEMO_NOTES) {
     core = await ingestTextSource(core, { embedder, ...note });
