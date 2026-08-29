@@ -1,3 +1,6 @@
 import { runTensorSmoke } from "@workflows/knowledge";
 
-await runTensorSmoke();
+runTensorSmoke().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
