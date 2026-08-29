@@ -4,6 +4,7 @@
  */
 
 import { createHash } from "node:crypto";
+import type { AxisName } from "./axes.js";
 import type { EncodeEmbedder } from "./encode.js";
 
 const STOP = new Set([
@@ -22,6 +23,7 @@ export function tokenize(text: string): string[] {
 
 export class TfidfEmbedder implements EncodeEmbedder {
   readonly model = "tfidf";
+  readonly channel: AxisName = "d";
   modelVersion = "unfitted";
   dimension = 0;
 
