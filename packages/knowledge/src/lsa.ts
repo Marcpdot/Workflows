@@ -3,6 +3,7 @@
  * After fit, the living channel is r.
  */
 
+import type { AxisName } from "./axes.js";
 import type { EncodeEmbedder } from "./encode.js";
 import { createTfidfEmbedder } from "./tfidf.js";
 import { projectVector, truncatedSvd, type ThinSvd } from "./svd.js";
@@ -17,6 +18,7 @@ function l2(vector: number[]): number[] {
 
 export class LsaEmbedder implements EncodeEmbedder {
   readonly model = "lsa";
+  readonly channel: AxisName = "r";
   modelVersion = "unfitted";
   dimension = 0;
   singularValues: number[] = [];
@@ -32,7 +34,6 @@ export class LsaEmbedder implements EncodeEmbedder {
     return this.tfidf.dimension;
   }
 
-  /** V[d, r] maps vocab onto latent axes. */
   get V(): number[][] | null {
     return this.svd?.V ?? null;
   }

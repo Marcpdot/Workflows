@@ -15,6 +15,8 @@ export interface EncodeEmbedder {
   readonly model: string;
   readonly modelVersion: string;
   readonly dimension: number;
+  /** Living channel after embed. TF-IDF = d, LSA = r. */
+  readonly channel?: AxisName;
   embed(texts: readonly string[]): Promise<readonly (readonly number[])[]>;
 }
 
@@ -39,14 +41,13 @@ export interface CatalogEntry {
   evidence: EvidenceType;
   rowCount: number;
   dimension: number;
+  channel: AxisName;
   rows: EncodeRow[];
 }
 
 export interface EncodedSource {
   catalog: CatalogEntry;
-  /** X[k, d] row-major. */
   X: Factor;
-  /** one-hot-ish mark along e, length = EVIDENCE_TYPES. */
   eIndex: number;
 }
 
@@ -58,8 +59,24 @@ export const EVIDENCE_TYPES: EvidenceType[] = [
   "conversation",
 ];
 
-export function encodeId(model: string, modelVersion: string, dimension: number): string {
-  return `${AXES_VERSION}:${model}:${modelVersion}:d${dimension}`;
+export class EmptyQueryError extends Error {
+  constructor(message = "query has no mass on the fitted basis") {
+    super(message);
+    this.name = "EmptyQueryError";
+  }
+}
+
+export function channelOf(embedder: EncodeEmbedder): AxisName {
+  return embedder.channel ?? "d";
+}
+
+export function encodeId(
+  model: string,
+  modelVersion: string,
+  dimension: number,
+  channel: AxisName = "d"
+): string {
+  return `${AXES_VERSION}:${model}:${modelVersion}:${channel}${dimension}`;
 }
 
 export function sourceIdFromPath(path: string, body: string): string {
@@ -71,17 +88,21 @@ function hashText(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
-function l2normalize(vector: readonly number[]): number[] {
+export function l2norm(vector: readonly number[]): number {
   let sum = 0;
   for (const value of vector) sum += value * value;
-  const n = Math.sqrt(sum);
+  return Math.sqrt(sum);
+}
+
+function l2normalize(vector: readonly number[]): number[] {
+  const n = l2norm(vector);
   if (!(n > 0)) return vector.map(() => 0);
   return vector.map((value) => value / n);
 }
 
-/** Split into rows. Whole document is one row when it does not break. */
+/** Split into rows. Keep short blocks; empty text still yields no rows. */
 export function rowsFromText(text: string, options?: { minChars?: number }): EncodeRow[] {
-  const minChars = options?.minChars ?? 40;
+  const minChars = options?.minChars ?? 1;
   const cleaned = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   if (!cleaned) return [];
 
@@ -131,6 +152,7 @@ export async function encodeText(input: {
   }
 
   const dim = input.embedder.dimension;
+  const channel = channelOf(input.embedder);
   const values: number[] = [];
   for (const vector of vectors) {
     if (vector.length !== dim) {
@@ -149,16 +171,17 @@ export async function encodeText(input: {
     catalog: {
       sourceId,
       sourcePath: input.sourcePath,
-      encodeId: encodeId(input.embedder.model, input.embedder.modelVersion, dim),
+      encodeId: encodeId(input.embedder.model, input.embedder.modelVersion, dim, channel),
       axesVersion: AXES_VERSION,
       evidence: input.evidence,
       rowCount: rows.length,
       dimension: dim,
+      channel,
       rows,
     },
     X: {
       name: "X",
-      axes: ["k", "d"],
+      axes: ["k", channel],
       shape: [rows.length, dim],
       values,
     },
@@ -192,22 +215,21 @@ export async function encodeQuery(
     sourceId: hashText(text).slice(0, 32),
     minChars: 1,
   });
+  const vector = encoded.X.values.slice(0, embedder.dimension);
+  if (!(l2norm(vector) > 0)) throw new EmptyQueryError();
   return {
-    vector: encoded.X.values.slice(0, embedder.dimension),
-    axes: ["d"],
+    vector,
+    axes: [channelOf(embedder)],
     encodeId: encoded.catalog.encodeId,
   };
 }
 
-/**
- * Deterministic stand-in so encode can run without Ollama.
- * Replace with a real EncodeEmbedder when you want semantic d.
- */
 export function createHashEmbedder(dimension = 32): EncodeEmbedder {
   return {
     model: "hash",
     modelVersion: "1",
     dimension,
+    channel: "d",
     async embed(texts) {
       return texts.map((text) => {
         const digest = createHash("sha256").update(text).digest();
@@ -221,20 +243,21 @@ export function createHashEmbedder(dimension = 32): EncodeEmbedder {
   };
 }
 
-/** Row-major X[k,d] · q[d] → scores[k]. Same as read_chunks. */
+/** Row-major X[k, channel] · q[channel] → scores[k]. */
 export function readChunks(X: Factor, query: readonly number[]): number[] {
-  if (X.axes.join("") !== "kd" || X.shape.length !== 2) {
-    throw new Error("readChunks expects factor axes [k,d]");
+  const axis = X.axes.join("");
+  if ((axis !== "kd" && axis !== "kr") || X.shape.length !== 2) {
+    throw new Error(`readChunks expects factor axes [k,d] or [k,r], got [${X.axes.join(",")}]");
   }
   const [rowCount, dim] = X.shape;
   if (query.length !== dim) {
-    throw new Error(`query d=${query.length} != X d=${dim}`);
+    throw new Error(`query length ${query.length} != channel ${dim}`);
   }
   const scores = Array.from({ length: rowCount }, () => 0);
   for (let k = 0; k < rowCount; k++) {
     let sum = 0;
     const offset = k * dim;
-    for (let d = 0; d < dim; d++) sum += X.values[offset + d]! * query[d]!;
+    for (let i = 0; i < dim; i++) sum += X.values[offset + i]! * query[i]!;
     scores[k] = sum;
   }
   return scores;
