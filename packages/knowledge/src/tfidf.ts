@@ -52,12 +52,8 @@ export class TfidfEmbedder implements EncodeEmbedder {
     return this.vocab;
   }
 
-  async embed(texts: readonly string[]): Promise<number[][]> {
+  vectorize(text: string): number[] {
     if (this.dimension === 0) throw new Error("tfidf embedder must be fit before embed");
-    return texts.map((text) => this.vectorize(text));
-  }
-
-  private vectorize(text: string): number[] {
     const counts = new Map<number, number>();
     for (const token of tokenize(text)) {
       const at = this.index.get(token);
@@ -76,6 +72,10 @@ export class TfidfEmbedder implements EncodeEmbedder {
       for (let i = 0; i < vector.length; i++) vector[i] = vector[i]! / n;
     }
     return vector;
+  }
+
+  async embed(texts: readonly string[]): Promise<number[][]> {
+    return texts.map((text) => this.vectorize(text));
   }
 }
 
