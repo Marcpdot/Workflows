@@ -369,3 +369,4 @@ export {
   openTensorStore,
   askStore,
 } from "./tensorCorpus.js";
+export { createTensorTools } from "./tensorTools.js";
