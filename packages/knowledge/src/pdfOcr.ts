@@ -1,8 +1,8 @@
-/** Optional OCR. Off unless TENSOR_OCR=1. */
+/** OCR when the PDF text layer is empty or garbled. TENSOR_OCR=0 disables. */
 
 import { looksGarbled } from "./pdfQuality.js";
 
-const DEFAULT_PAGES = 8;
+const DEFAULT_PAGES = 4;
 
 interface PdfDoc {
   numPages: number;
@@ -16,6 +16,10 @@ interface PdfPage {
 }
 
 type GetDocument = (opts: Record<string, unknown>) => { promise: Promise<PdfDoc> };
+
+function ocrEnabled(): boolean {
+  return process.env.TENSOR_OCR !== "0";
+}
 
 async function loadPdfjs(): Promise<{ getDocument: GetDocument } | null> {
   const paths = [
@@ -79,8 +83,8 @@ export async function extractPdfOcr(
   data: Buffer,
   options?: { maxPages?: number }
 ): Promise<{ text: string; pages: number; used: boolean; error?: string }> {
-  if (process.env.TENSOR_OCR !== "1") {
-    return { text: "", pages: 0, used: false, error: "TENSOR_OCR not enabled" };
+  if (!ocrEnabled()) {
+    return { text: "", pages: 0, used: false, error: "TENSOR_OCR=0" };
   }
 
   try {
@@ -88,12 +92,7 @@ export async function extractPdfOcr(
     const canvasMod = await import("@napi-rs/canvas").catch(() => null);
     const tessMod = await import("tesseract.js").catch(() => null);
     if (!pdfjs || !canvasMod || !tessMod) {
-      return {
-        text: "",
-        pages: 0,
-        used: false,
-        error: "OCR deps missing",
-      };
+      return { text: "", pages: 0, used: false, error: "OCR deps missing" };
     }
 
     const doc = await openPdf(pdfjs.getDocument, data);
@@ -141,7 +140,7 @@ export async function recoverPdfText(data: Buffer, firstPass: string): Promise<s
   candidates.sort((a, b) => Number(looksGarbled(a)) - Number(looksGarbled(b)) || b.length - a.length);
   const best = candidates[0] ?? "";
   if (best && !looksGarbled(best)) return best;
-  if (process.env.TENSOR_OCR !== "1") return best;
+  if (!ocrEnabled()) return best;
 
   const ocr = await extractPdfOcr(data);
   if (ocr.used && ocr.text && (!best || looksGarbled(best))) {
