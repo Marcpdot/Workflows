@@ -110,9 +110,9 @@ function l2normalize(vector: readonly number[]): number[] {
 }
 
 function isPageStamp(text: string): boolean {
-  return /^
-?
-?.{0,80}?(\d+\s+of\s+\d+|page\s+\d+)\s*$/i.test(text.trim());
+  const trimmed = text.trim();
+  if (trimmed.length === 0 || trimmed.length > 80) return false;
+  return /\d+\s+of\s+\d+/i.test(trimmed) || /^page\s+\d+$/i.test(trimmed);
 }
 
 function coalesceBlocks(blocks: string[], minChars: number): string[] {
