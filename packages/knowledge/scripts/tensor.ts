@@ -1,9 +1,14 @@
 /**
  * npx tsx scripts/tensor.ts build ..\\..\\work .tensor-store 8
  * npx tsx scripts/tensor.ts ask .tensor-store "spørsmål"
+ * npx tsx scripts/tensor.ts ocr path\to\file.pdf
  */
 
+import { readFile } from "node:fs/promises";
 import { mkdir } from "node:fs/promises";
+import { extractPdfOcr, extractPdfJsText } from "../src/pdfOcr.ts";
+import { extractPdfText } from "../src/pdfText.ts";
+import { looksGarbled } from "../src/pdfQuality.ts";
 import { askStore, buildTensorFromDir } from "../src/tensorCorpus.ts";
 
 async function main(): Promise<void> {
@@ -32,7 +37,22 @@ async function main(): Promise<void> {
     }
     return;
   }
-  throw new Error("usage: npx tsx scripts/tensor.ts build|ask ...");
+  if (cmd === "ocr") {
+    const path = a;
+    if (!path) throw new Error("usage: npx tsx scripts/tensor.ts ocr file.pdf");
+    process.env.TENSOR_OCR = process.env.TENSOR_OCR || "1";
+    const data = await readFile(path);
+    const first = await extractPdfText(data);
+    const jsText = await extractPdfJsText(data).catch(() => "");
+    const ocr = await extractPdfOcr(data);
+    console.log("ocr env", process.env.TENSOR_OCR, "pages", process.env.TENSOR_OCR_PAGES ?? "default");
+    console.log("pdf-parse chars", first.chars, "garbled", looksGarbled(first.text), first.text.slice(0, 120));
+    console.log("pdfjs chars", jsText.length, "garbled", looksGarbled(jsText), jsText.slice(0, 120));
+    console.log("ocr used", ocr.used, "pages", ocr.pages, ocr.error ?? "");
+    console.log(ocr.text.slice(0, 500) || "(no ocr text)");
+    return;
+  }
+  throw new Error("usage: npx tsx scripts/tensor.ts build|ask|ocr ...");
 }
 
 main().catch((error) => {
