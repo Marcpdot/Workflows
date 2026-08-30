@@ -81,6 +81,25 @@ export function ingest(core: TensorCore, encoded: EncodedSource): TensorCore {
   };
 }
 
+function diversify(hits: ReadHit[], limit: number): ReadHit[] {
+  const out: ReadHit[] = [];
+  const used = new Map<string, number>();
+  const overflow: ReadHit[] = [];
+  for (const hit of hits) {
+    const key = hit.ref.sourcePath ?? hit.ref.sourceId;
+    const n = used.get(key) ?? 0;
+    if (n < 2 && out.length < limit) {
+      out.push(hit);
+      used.set(key, n + 1);
+    } else overflow.push(hit);
+  }
+  for (const hit of overflow) {
+    if (out.length >= limit) break;
+    out.push(hit);
+  }
+  return out;
+}
+
 export function read(
   core: TensorCore,
   query: readonly number[],
@@ -94,7 +113,7 @@ export function read(
     .map((score, k) => ({ score, ref: core.rows[k]! }))
     .sort((a, b) => b.score - a.score);
   const limit = options?.limit ?? ranked.length;
-  return ranked.slice(0, Math.max(0, limit));
+  return diversify(ranked, Math.max(0, limit));
 }
 
 export async function ingestTextSource(
