@@ -56,15 +56,19 @@ export async function buildTensorFromDir(input: {
   for (const path of files) {
     try {
       const source = await loadSourceText(path);
+      const pdf = source.evidence === "pdf";
       const rows = rowsFromText(source.text, {
-        minChars: source.evidence === "pdf" ? 80 : 1,
+        minChars: pdf ? 80 : 1,
+        targetChars: pdf ? 700 : 0,
       });
       if (rows.length === 0) {
         skipped.push(path);
         continue;
       }
       loaded.push({ path });
-      for (const row of rows) rowTexts.push(withSourceTitle(row.text, path));
+      rows.forEach((row, index) => {
+        rowTexts.push(index === 0 ? withSourceTitle(row.text, path) : row.text);
+      });
     } catch (error) {
       skipped.push(path);
       console.warn("skip", basename(path), error instanceof Error ? error.message : error);
