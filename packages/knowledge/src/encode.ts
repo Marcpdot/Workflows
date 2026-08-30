@@ -8,6 +8,7 @@ import { readFile } from "node:fs/promises";
 import { basename, extname } from "node:path";
 import { AXES_VERSION, type AxisName } from "./axes.js";
 import { extractPdfText } from "./pdfText.js";
+import { expandQuery } from "./queryExpand.js";
 
 export type EvidenceType = "file" | "pdf" | "note" | "query" | "conversation";
 
@@ -115,29 +116,28 @@ function isPageStamp(text: string): boolean {
   return /\d+\s+of\s+\d+/i.test(trimmed) || /^page\s+\d+$/i.test(trimmed);
 }
 
-function coalesceBlocks(blocks: string[], minChars: number): string[] {
-  const out: string[] = [];
-  let pending = "";
-  const flushPending = () => {
-    if (!pending) return;
-    if (out.length > 0) out[out.length - 1] = `${out[out.length - 1]}\n${pending}`;
-    else if (pending.length >= minChars) out.push(pending);
-    pending = "";
-  };
+function packBlocks(blocks: string[], minChars: number, target: number): string[] {
+  const packed: string[] = [];
+  let buf = "";
   for (const block of blocks) {
-    if (isPageStamp(block) || block.length < minChars) {
-      pending = pending ? `${pending}\n${block}` : block;
+    if (isPageStamp(block)) continue;
+    if (buf && buf.length + block.length + 1 > target && buf.length >= minChars) {
+      packed.push(buf);
+      buf = block;
       continue;
     }
-    out.push(pending ? `${pending}\n${block}` : block);
-    pending = "";
+    buf = buf ? `${buf}\n${block}` : block;
   }
-  flushPending();
-  return out.length > 0 ? out : blocks;
+  if (buf) packed.push(buf);
+  return packed.filter((part) => part.length >= minChars || packed.length === 1);
 }
 
-export function rowsFromText(text: string, options?: { minChars?: number }): EncodeRow[] {
+export function rowsFromText(
+  text: string,
+  options?: { minChars?: number; targetChars?: number }
+): EncodeRow[] {
   const minChars = options?.minChars ?? 1;
+  const target = options?.targetChars ?? 0;
   const cleaned = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   if (!cleaned) return [];
 
@@ -145,7 +145,12 @@ export function rowsFromText(text: string, options?: { minChars?: number }): Enc
     .split(/\n{2,}/)
     .map((block) => block.trim())
     .filter(Boolean);
-  const parts = coalesceBlocks(raw.length > 0 ? raw : [cleaned], minChars);
+  const parts =
+    target > 0
+      ? packBlocks(raw.length > 0 ? raw : [cleaned], minChars, target)
+      : (raw.length > 0 ? raw : [cleaned]).filter(
+          (block) => block.length >= minChars || raw.length === 0
+        );
   return parts.map((part, k) => ({
     k,
     text: part,
@@ -176,10 +181,17 @@ export async function encodeText(input: {
   sourcePath?: string;
   minChars?: number;
 }): Promise<EncodedSource> {
-  const minChars = input.minChars ?? (input.evidence === "pdf" ? 80 : 1);
-  const rows = rowsFromText(input.text, { minChars }).map((row) => ({
+  const pdf = input.evidence === "pdf";
+  const minChars = input.minChars ?? (pdf ? 80 : 1);
+  const rows = rowsFromText(input.text, {
+    minChars,
+    targetChars: pdf ? 700 : 0,
+  }).map((row, index) => ({
     ...row,
-    text: withSourceTitle(row.text, input.sourcePath),
+    text:
+      index === 0
+        ? withSourceTitle(row.text, input.sourcePath)
+        : row.text,
   }));
   if (rows.length === 0) throw new Error("encode produced no rows");
 
@@ -246,7 +258,7 @@ export async function encodeQuery(
   embedder: EncodeEmbedder
 ): Promise<{ vector: number[]; axes: AxisName[]; encodeId: string }> {
   const encoded = await encodeText({
-    text,
+    text: expandQuery(text),
     embedder,
     evidence: "query",
     sourceId: hashText(text).slice(0, 32),
