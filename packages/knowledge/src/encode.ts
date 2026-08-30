@@ -15,7 +15,6 @@ export interface EncodeEmbedder {
   readonly model: string;
   readonly modelVersion: string;
   readonly dimension: number;
-  /** Living channel after embed. TF-IDF = d, LSA = r. */
   readonly channel?: AxisName;
   embed(texts: readonly string[]): Promise<readonly (readonly number[])[]>;
 }
@@ -110,18 +109,43 @@ function l2normalize(vector: readonly number[]): number[] {
   return vector.map((value) => value / n);
 }
 
-/** Split into rows. Keep short blocks; empty text still yields no rows. */
+function isPageStamp(text: string): boolean {
+  return /^
+?
+?.{0,80}?(\d+\s+of\s+\d+|page\s+\d+)\s*$/i.test(text.trim());
+}
+
+function coalesceBlocks(blocks: string[], minChars: number): string[] {
+  const out: string[] = [];
+  let pending = "";
+  const flushPending = () => {
+    if (!pending) return;
+    if (out.length > 0) out[out.length - 1] = `${out[out.length - 1]}\n${pending}`;
+    else if (pending.length >= minChars) out.push(pending);
+    pending = "";
+  };
+  for (const block of blocks) {
+    if (isPageStamp(block) || block.length < minChars) {
+      pending = pending ? `${pending}\n${block}` : block;
+      continue;
+    }
+    out.push(pending ? `${pending}\n${block}` : block);
+    pending = "";
+  }
+  flushPending();
+  return out.length > 0 ? out : blocks;
+}
+
 export function rowsFromText(text: string, options?: { minChars?: number }): EncodeRow[] {
   const minChars = options?.minChars ?? 1;
   const cleaned = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   if (!cleaned) return [];
 
-  const blocks = cleaned
+  const raw = cleaned
     .split(/\n{2,}/)
     .map((block) => block.trim())
-    .filter((block) => block.length >= minChars);
-
-  const parts = blocks.length > 0 ? blocks : [cleaned];
+    .filter(Boolean);
+  const parts = coalesceBlocks(raw.length > 0 ? raw : [cleaned], minChars);
   return parts.map((part, k) => ({
     k,
     text: part,
@@ -152,7 +176,8 @@ export async function encodeText(input: {
   sourcePath?: string;
   minChars?: number;
 }): Promise<EncodedSource> {
-  const rows = rowsFromText(input.text, { minChars: input.minChars }).map((row) => ({
+  const minChars = input.minChars ?? (input.evidence === "pdf" ? 80 : 1);
+  const rows = rowsFromText(input.text, { minChars }).map((row) => ({
     ...row,
     text: withSourceTitle(row.text, input.sourcePath),
   }));
@@ -255,7 +280,6 @@ export function createHashEmbedder(dimension = 32): EncodeEmbedder {
   };
 }
 
-/** Row-major X[k, channel] times q[channel] -> scores[k]. */
 export function readChunks(X: Factor, query: readonly number[]): number[] {
   const axis = X.axes.join("");
   if ((axis !== "kd" && axis !== "kr") || X.shape.length !== 2) {
