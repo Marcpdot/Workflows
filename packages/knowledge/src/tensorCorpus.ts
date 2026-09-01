@@ -58,8 +58,9 @@ export async function buildTensorFromDir(input: {
       const source = await loadSourceText(path);
       const pdf = source.evidence === "pdf";
       const rows = rowsFromText(source.text, {
-        minChars: pdf ? 80 : 1,
-        targetChars: pdf ? 700 : 0,
+        minChars: pdf ? 40 : 1,
+        targetChars: pdf ? 280 : 0,
+        pdf,
       });
       if (rows.length === 0) {
         skipped.push(path);
