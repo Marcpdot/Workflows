@@ -19,6 +19,7 @@ import {
   type Factor,
 } from "./encode.js";
 import { createLsaEmbedder } from "./lsa.js";
+import { parseRowFact, type RowFact } from "./parse.js";
 
 export interface CatalogRowRef {
   sourceId: string;
@@ -31,6 +32,7 @@ export interface CatalogRowRef {
 export interface ReadHit {
   score: number;
   ref: CatalogRowRef;
+  fact?: RowFact;
 }
 
 export interface TensorCore {
@@ -136,7 +138,10 @@ export function read(
     scores.map((score, k) => ({ score, ref: core.rows[k]! }))
   );
   const limit = options?.limit ?? ranked.length;
-  return diversify(ranked, Math.max(0, limit));
+  return diversify(ranked, Math.max(0, limit)).map((hit) => ({
+    ...hit,
+    fact: parseRowFact(hit.ref.row.text),
+  }));
 }
 
 export async function ingestTextSource(
