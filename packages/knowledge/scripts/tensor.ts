@@ -8,6 +8,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { extractPdfOcr, extractPdfJsText } from "../src/pdfOcr.ts";
 import { extractPdfText } from "../src/pdfText.ts";
 import { looksGarbled } from "../src/pdfQuality.ts";
+import { parseRowFact } from "../src/parse.ts";
 import { askStore, buildTensorFromDir } from "../src/tensorCorpus.ts";
 
 async function main(): Promise<void> {
@@ -30,7 +31,9 @@ async function main(): Promise<void> {
     const hits = await askStore(storeDir, query, { limit: 8 });
     for (const hit of hits) {
       const name = (hit.ref.sourcePath ?? "").split(/[\\/]/).pop();
+      const fact = hit.fact ?? parseRowFact(hit.ref.row.text);
       console.log(hit.score.toFixed(3), name);
+      if (fact) console.log(JSON.stringify(fact));
       console.log(hit.ref.row.text.trim());
       console.log();
     }
