@@ -8,7 +8,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { extractPdfOcr, extractPdfJsText } from "../src/pdfOcr.ts";
 import { extractPdfText } from "../src/pdfText.ts";
 import { looksGarbled } from "../src/pdfQuality.ts";
-import { parseRowFact } from "../src/parse.ts";
+import { parseRowFacts } from "../src/parse.ts";
 import { askStore, buildTensorFromDir } from "../src/tensorCorpus.ts";
 
 async function main(): Promise<void> {
@@ -30,12 +30,12 @@ async function main(): Promise<void> {
     if (!query) throw new Error('usage: npx tsx scripts/tensor.ts ask .tensor-store "spørsmål"');
     const hits = await askStore(storeDir, query, { limit: 8 });
     for (const hit of hits) {
+      const facts = parseRowFacts(hit.ref.row.text);
+      if (facts.length === 0) continue;
       const name = (hit.ref.sourcePath ?? "").split(/[\\/]/).pop();
-      const fact = hit.fact ?? parseRowFact(hit.ref.row.text);
-      console.log(hit.score.toFixed(3), name);
-      if (fact) console.log(JSON.stringify(fact));
-      console.log(hit.ref.row.text.trim());
-      console.log();
+      for (const fact of facts) {
+        console.log(hit.score.toFixed(3), name, JSON.stringify(fact));
+      }
     }
     return;
   }
