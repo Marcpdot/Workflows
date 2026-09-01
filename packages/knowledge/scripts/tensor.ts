@@ -1,11 +1,10 @@
 /**
  * npx tsx scripts/tensor.ts build ..\\..\\work .tensor-store 8
  * npx tsx scripts/tensor.ts ask .tensor-store "spørsmål"
- * npx tsx scripts/tensor.ts ocr path\to\file.pdf
+ * npx tsx scripts/tensor.ts ocr path\\to\\file.pdf
  */
 
-import { readFile } from "node:fs/promises";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { extractPdfOcr, extractPdfJsText } from "../src/pdfOcr.ts";
 import { extractPdfText } from "../src/pdfText.ts";
 import { looksGarbled } from "../src/pdfQuality.ts";
@@ -28,11 +27,11 @@ async function main(): Promise<void> {
     const storeDir = a ?? ".tensor-store";
     const query = b ?? "";
     if (!query) throw new Error('usage: npx tsx scripts/tensor.ts ask .tensor-store "spørsmål"');
-    const hits = await askStore(storeDir, query, { limit: 5 });
+    const hits = await askStore(storeDir, query, { limit: 8 });
     for (const hit of hits) {
       const name = (hit.ref.sourcePath ?? "").split(/[\\/]/).pop();
       console.log(hit.score.toFixed(3), name);
-      console.log(hit.ref.row.text.slice(0, 300).replace(/\n/g, " "));
+      console.log(hit.ref.row.text.trim());
       console.log();
     }
     return;
@@ -49,7 +48,7 @@ async function main(): Promise<void> {
     console.log("pdf-parse chars", first.chars, "garbled", looksGarbled(first.text), first.text.slice(0, 120));
     console.log("pdfjs chars", jsText.length, "garbled", looksGarbled(jsText), jsText.slice(0, 120));
     console.log("ocr used", ocr.used, "pages", ocr.pages, ocr.error ?? "");
-    console.log(ocr.text.slice(0, 500) || "(no ocr text)");
+    console.log(ocr.text.slice(0, 800) || "(no ocr text)");
     return;
   }
   throw new Error("usage: npx tsx scripts/tensor.ts build|ask|ocr ...");
