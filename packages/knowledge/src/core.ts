@@ -81,6 +81,29 @@ export function ingest(core: TensorCore, encoded: EncodedSource): TensorCore {
   };
 }
 
+function pointerRow(text: string): boolean {
+  return /available in pdf|refers to the notes|refers to the scheduled|updated lecture plan for is available/i.test(
+    text
+  );
+}
+
+function primaryContent(text: string): boolean {
+  return /\bchapter\s+\d+/i.test(text) || /\bkapittel\s+\d+/i.test(text) || /\b\d{1,2}\/\d{1,2}\b/.test(text);
+}
+
+function rerank(hits: ReadHit[]): ReadHit[] {
+  return hits
+    .map((hit) => {
+      const text = hit.ref.row.text;
+      let score = hit.score;
+      if (pointerRow(text)) score -= 0.35;
+      if (primaryContent(text)) score += 0.25;
+      if (hit.ref.evidence === "pdf" && primaryContent(text)) score += 0.1;
+      return { ...hit, score };
+    })
+    .sort((a, b) => b.score - a.score);
+}
+
 function diversify(hits: ReadHit[], limit: number): ReadHit[] {
   const out: ReadHit[] = [];
   const used = new Map<string, number>();
@@ -109,9 +132,9 @@ export function read(
   assertRegistered(`${channel},k${channel}->k`);
   if (core.rows.length === 0) return [];
   const scores = readChunks(core.S, query);
-  const ranked = scores
-    .map((score, k) => ({ score, ref: core.rows[k]! }))
-    .sort((a, b) => b.score - a.score);
+  const ranked = rerank(
+    scores.map((score, k) => ({ score, ref: core.rows[k]! }))
+  );
   const limit = options?.limit ?? ranked.length;
   return diversify(ranked, Math.max(0, limit));
 }
