@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { basename, extname } from "node:path";
 import { AXES_VERSION, type AxisName } from "./axes.js";
+import { unfoldPdfText } from "./pdfChunk.js";
 import { extractPdfText } from "./pdfText.js";
 import { expandQuery } from "./queryExpand.js";
 
@@ -134,11 +135,12 @@ function packBlocks(blocks: string[], minChars: number, target: number): string[
 
 export function rowsFromText(
   text: string,
-  options?: { minChars?: number; targetChars?: number }
+  options?: { minChars?: number; targetChars?: number; pdf?: boolean }
 ): EncodeRow[] {
   const minChars = options?.minChars ?? 1;
   const target = options?.targetChars ?? 0;
-  const cleaned = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+  const source = options?.pdf ? unfoldPdfText(text) : text;
+  const cleaned = source.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   if (!cleaned) return [];
 
   const raw = cleaned
@@ -182,10 +184,11 @@ export async function encodeText(input: {
   minChars?: number;
 }): Promise<EncodedSource> {
   const pdf = input.evidence === "pdf";
-  const minChars = input.minChars ?? (pdf ? 80 : 1);
+  const minChars = input.minChars ?? (pdf ? 40 : 1);
   const rows = rowsFromText(input.text, {
     minChars,
-    targetChars: pdf ? 700 : 0,
+    targetChars: pdf ? 280 : 0,
+    pdf,
   }).map((row, index) => ({
     ...row,
     text:
